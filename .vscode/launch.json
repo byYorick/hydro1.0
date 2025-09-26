@@ -1,0 +1,66 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "gdbtarget",
+      "request": "attach",
+      "name": "Eclipse CDT GDB Adapter"
+    },
+    {
+      "type": "espidf",
+      "name": "Launch",
+      "request": "launch"
+    },
+    {
+      "name": "ESP-IDF Build",
+      "type": "shell",
+      "request": "launch",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "C:\\Espressif\\idf_cmd_init.bat esp-idf-ab7213b7273352b64422b1f400ff27a0 && idf.py build"
+      ],
+      "cwd": "${workspaceFolder}",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      }
+    },
+    {
+      "name": "ESP-IDF Flash",
+      "type": "shell",
+      "request": "launch",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "C:\\Espressif\\idf_cmd_init.bat esp-idf-ab7213b7273352b64422b1f400ff27a0 && idf.py flash"
+      ],
+      "cwd": "${workspaceFolder}",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      }
+    },
+    {
+      "name": "ESP-IDF Monitor",
+      "type": "shell",
+      "request": "launch",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "C:\\Espressif\\idf_cmd_init.bat esp-idf-ab7213b7273352b64422b1f400ff27a0 && idf.py monitor"
+      ],
+      "cwd": "${workspaceFolder}",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      }
+    }
+  ]
+}

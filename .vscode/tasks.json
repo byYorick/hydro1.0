@@ -1,0 +1,119 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "ESP-IDF Terminal",
+            "type": "shell",
+            "command": "C:\\Windows\\system32\\cmd.exe",
+            "args": [
+                "/k",
+                "C:\\Espressif\\idf_cmd_init.bat esp-idf-ab7213b7273352b64422b1f400ff27a0"
+            ],
+            "windows": {
+                "command": "C:\\Windows\\system32\\cmd.exe",
+                "args": [
+                    "/k",
+                    "C:\\Espressif\\idf_cmd_init.bat esp-idf-ab7213b7273352b64422b1f400ff27a0"
+                ]
+            },
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "label": "Build Project",
+            "type": "shell",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "C:\\Espressif\\idf_cmd_init.bat esp-idf-ab7213b7273352b64422b1f400ff27a0 && idf.py build"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": "absolute",
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            }
+        },
+        {
+            "label": "Flash Project",
+            "type": "shell",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "C:\\Espressif\\idf_cmd_init.bat esp-idf-ab7213b7273352b64422b1f400ff27a0 && idf.py flash"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "label": "Monitor",
+            "type": "shell",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "C:\\Espressif\\idf_cmd_init.bat esp-idf-ab7213b7273352b64422b1f400ff27a0 && idf.py monitor"
+            ],
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "label": "Build, Flash and Monitor",
+            "type": "shell",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "C:\\Espressif\\idf_cmd_init.bat esp-idf-ab7213b7273352b64422b1f400ff27a0 && idf.py build flash monitor"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        }
+    ]
+}

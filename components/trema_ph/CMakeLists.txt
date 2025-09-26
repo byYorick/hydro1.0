@@ -1,0 +1,1 @@
+idf_component_register(SRCS "trema_ph.c" INCLUDE_DIRS "." REQUIRES i2c_bus)

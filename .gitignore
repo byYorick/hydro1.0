@@ -1,0 +1,14 @@
+# Build outputs
+build/
+managed_components/
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# OS generated files
+Thumbs.db
+.DS_Store
