@@ -1,0 +1,11 @@
+# CMakeLists.txt for LCD test application
+idf_component_register(
+    SRCS "lcd_test_main.c"
+    INCLUDE_DIRS ""
+    PRIV_REQUIRES
+        driver
+        freertos
+        nvs_flash
+        lcd_ili9341
+        lvgl
+)
