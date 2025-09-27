@@ -233,9 +233,16 @@ void touch_task(void *pv)
     
     ESP_LOGI(TAG, "Touch task started");
     
+    // Add a small delay to ensure initialization is complete
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    
     while (1) {
+        ESP_LOGD(TAG, "Checking for touch input...");
         // Check for touch input
-        if (xpt2046_read_touch(&touch_x, &touch_y)) {
+        bool touch_detected = xpt2046_read_touch(&touch_x, &touch_y);
+        ESP_LOGD(TAG, "xpt2046_read_touch returned: %s", touch_detected ? "true" : "false");
+        
+        if (touch_detected) {
             uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
             
             // Log touch event with timestamp and count
@@ -254,7 +261,7 @@ void touch_task(void *pv)
             // For example, send it to LVGL or handle UI interactions
             
             // Brief delay to avoid multiple detections of the same touch
-            vTaskDelay(pdMS_TO_TICKS(10));
+            vTaskDelay(pdMS_TO_TICKS(100));
         } else {
             // Log that no touch was detected (at debug level to avoid spam)
             ESP_LOGD(TAG, "No touch detected");
@@ -343,19 +350,16 @@ void app_main(void)
 
     // Initialize touch controller AFTER LCD (so SPI bus is already initialized)
     ESP_LOGI(TAG, "Initializing touch controller...");
-    if (!xpt2046_init()) {
+    bool touch_initialized = xpt2046_init();
+    if (!touch_initialized) {
         ESP_LOGW(TAG, "Failed to initialize touch controller");
         ESP_LOGW(TAG, "Check XPT2046_DEBUGGING.md for troubleshooting steps");
-        // Still create touch task to log any touch attempts
-        xTaskCreate(touch_task, "touch", 4096, NULL, 3, NULL);
     } else {
         ESP_LOGI(TAG, "Touch controller initialized successfully");
         // Calibrate touch controller with default values
         xpt2046_calibrate(300, 3800, 200, 3900);
-        // Create touch task for direct logging of touch coordinates
-        xTaskCreate(touch_task, "touch", 4096, NULL, 3, NULL);
     }
-
+    
     // Run diagnostics (uncomment to run diagnostics)
     // run_diagnostics();
     
@@ -381,16 +385,36 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(3000));  // Increased delay to 3 seconds
     
     // Initialize touch input device for LVGL after display is ready
+    ESP_LOGI(TAG, "Initializing LVGL touch input device");
     static lv_indev_drv_t indev_drv;
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = touchpad_read;
+    ESP_LOGI(TAG, "Registering touch input device with LVGL");
     lv_indev_t *touch_indev = lv_indev_drv_register(&indev_drv);
     
     if (touch_indev) {
         ESP_LOGI(TAG, "Touch input device registered successfully");
+        // Log the indev pointer for debugging
+        ESP_LOGD(TAG, "Touch input device pointer: %p", touch_indev);
     } else {
         ESP_LOGE(TAG, "Failed to register touch input device");
+        // Try to get more information about why it failed
+        if (!lv_is_initialized()) {
+            ESP_LOGE(TAG, "LVGL is not initialized");
+        }
+        if (!lv_scr_act()) {
+            ESP_LOGE(TAG, "No active screen");
+        }
+    }
+    
+    // Create touch task for direct logging of touch coordinates
+    // Only create if touch controller was initialized successfully
+    if (touch_initialized) {
+        ESP_LOGI(TAG, "Creating touch task");
+        xTaskCreate(touch_task, "touch", 4096, NULL, 3, NULL);
+    } else {
+        ESP_LOGW(TAG, "Touch controller not initialized, skipping touch task creation");
     }
     
     // Create sensor task with actual sensor readings

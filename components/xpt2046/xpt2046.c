@@ -22,7 +22,7 @@ static uint16_t min_raw_y = XPT2046_MIN_RAW_Y;
 static uint16_t max_raw_y = XPT2046_MAX_RAW_Y;
 
 // Touch detection threshold
-static const uint16_t PRESS_THRESHOLD = 300;
+static const uint16_t PRESS_THRESHOLD = 150;  // Reduced from 300 to 150 for better sensitivity
 
 // Touch debounce parameters
 static const uint16_t STUCK_TOUCH_THRESHOLD = 10;  // Number of consecutive stuck readings to ignore
@@ -52,7 +52,7 @@ bool xpt2046_init(void)
         .clock_speed_hz = XPT2046_CLOCK_SPEED_HZ,
         .input_delay_ns = 0,
         .spics_io_num = 5,                  // Chip select pin
-        .flags = 0,
+        .flags = SPI_DEVICE_NO_DUMMY,       // Add this flag for shared SPI bus
         .queue_size = 1,
         .pre_cb = NULL,
         .post_cb = NULL,
@@ -94,6 +94,15 @@ bool xpt2046_init(void)
     uint16_t test_value = xpt2046_read_register(0xB0); // Read Z1 position register
     ESP_LOGI(TAG, "XPT2046 communication test - Z1 register response: 0x%04X", test_value);
     
+    // Additional test by reading Z2 register
+    uint16_t test_value2 = xpt2046_read_register(0xC0); // Read Z2 position register
+    ESP_LOGI(TAG, "XPT2046 communication test - Z2 register response: 0x%04X", test_value2);
+    
+    // Check if we got valid responses
+    if (test_value == 0 && test_value2 == 0) {
+        ESP_LOGW(TAG, "Warning: Zero values from touch controller registers - possible communication issue");
+    }
+    
     ESP_LOGI(TAG, "XPT2046 touch controller initialized successfully");
     return true;
 }
@@ -128,14 +137,14 @@ static uint16_t xpt2046_read_register(uint8_t command)
     uint8_t rx_data[3] = {0};                    // Response buffer
     
     spi_transaction_t t = {
-        .flags = 0,
+        .flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA, // Use tx_data and rx_data directly
         .cmd = 0,
         .addr = 0,
         .length = 24,           // 3 bytes * 8 bits
-        .rxlength = 24,         // Same as tx length to avoid full duplex issue
+        .rxlength = 0,          // Set to 0 when using SPI_TRANS_USE_RXDATA
         .user = NULL,
-        .tx_buffer = tx_data,
-        .rx_buffer = rx_data,
+        .tx_data = {command, 0x00, 0x00},  // Directly use tx_data
+        .rx_data = {0},                    // Directly use rx_data
     };
     
     // Perform the transaction
@@ -151,7 +160,7 @@ static uint16_t xpt2046_read_register(uint8_t command)
     
     // Extract the 12-bit value from the response (rx_data[1] and rx_data[2])
     // XPT2046 returns data in the format: [command_response, data_high, data_low]
-    uint16_t response = ((uint16_t)rx_data[1] << 8) | rx_data[2];
+    uint16_t response = ((uint16_t)t.rx_data[1] << 8) | t.rx_data[2];
     
     // Convert 12-bit value (MSB first)
     uint16_t result = (response >> 3) & 0x0FFF;
@@ -173,6 +182,8 @@ bool xpt2046_is_touched(void)
     
     // Also read Z2 to verify touch consistency
     uint16_t z2 = xpt2046_read_register(XPT2046_CMD_Z2POS);
+    
+    ESP_LOGD(TAG, "Touch detection values - Z1: %d, Z2: %d, Threshold: %d", z1, z2, PRESS_THRESHOLD);
     
     // Additional check for stuck touch - if Z1 is at maximum, it's likely stuck
     if (z1 >= 4000 || z2 >= 4000) {
@@ -215,7 +226,10 @@ bool xpt2046_read_touch(uint16_t *x, uint16_t *y)
     
     ESP_LOGD(TAG, "Checking for touch...");
     // Check if touch is detected
-    if (!xpt2046_is_touched()) {
+    bool is_touched = xpt2046_is_touched();
+    ESP_LOGD(TAG, "xpt2046_is_touched returned: %s", is_touched ? "true" : "false");
+    
+    if (!is_touched) {
         ESP_LOGD(TAG, "No touch detected");
         // Reset stuck touch counter when no touch is detected
         stuck_touch_count = 0;
@@ -228,6 +242,8 @@ bool xpt2046_read_touch(uint16_t *x, uint16_t *y)
     // Read X and Y positions
     uint16_t raw_x = xpt2046_read_register(XPT2046_CMD_XPOS);
     uint16_t raw_y = xpt2046_read_register(XPT2046_CMD_YPOS);
+    
+    ESP_LOGI(TAG, "Raw touch data: X=%d, Y=%d", raw_x, raw_y);
     
     // Validate raw data to avoid stuck touch
     // Check for maximum values that indicate stuck touch
@@ -252,24 +268,22 @@ bool xpt2046_read_touch(uint16_t *x, uint16_t *y)
         return false;
     }
     
-    ESP_LOGI(TAG, "Raw touch data: X=%d, Y=%d", raw_x, raw_y);
-    
     // Apply calibration
     if (raw_x < min_raw_x) raw_x = min_raw_x;
     if (raw_x > max_raw_x) raw_x = max_raw_x;
     if (raw_y < min_raw_y) raw_y = min_raw_y;
     if (raw_y > max_raw_y) raw_y = max_raw_y;
     
-    // Convert to screen coordinates (assuming 320x240 display)
-    *x = ((raw_x - min_raw_x) * 320) / (max_raw_x - min_raw_x);
-    *y = ((raw_y - min_raw_y) * 240) / (max_raw_y - min_raw_y);
+    // Convert to screen coordinates (assuming 240x320 display in portrait mode)
+    *x = ((raw_x - min_raw_x) * 240) / (max_raw_x - min_raw_x);
+    *y = ((raw_y - min_raw_y) * 320) / (max_raw_y - min_raw_y);
     
     // Ensure coordinates are within bounds
-    if (*x >= 320) *x = 319;
-    if (*y >= 240) *y = 239;
+    if (*x >= 240) *x = 239;
+    if (*y >= 320) *y = 319;
     
     // Additional validation for stuck touch at edge coordinates
-    if (*x == 319 && *y == 239) {
+    if (*x == 239 && *y == 319) {
         ESP_LOGW(TAG, "Possible stuck touch at edge coordinates: X=%d, Y=%d", *x, *y);
         stuck_touch_count++;
         
@@ -308,4 +322,7 @@ void xpt2046_calibrate(uint16_t min_x, uint16_t max_x, uint16_t min_y, uint16_t 
     max_raw_y = max_y;
     
     ESP_LOGI(TAG, "Touch calibration updated: X(%d-%d), Y(%d-%d)", min_x, max_x, min_y, max_y);
+    
+    // Log the expected coordinate ranges
+    ESP_LOGI(TAG, "Expected screen coordinates: X(0-239), Y(0-319)");
 }

@@ -1,11 +1,14 @@
-# CMakeLists.txt for LCD test application
+# This is a test CMakeLists.txt for touch debugging
+# To use this, rename it to CMakeLists.txt temporarily
+
 idf_component_register(
-    SRCS "lcd_test_main.c"
+    SRCS "touch_debug_test.c"
     INCLUDE_DIRS ""
     PRIV_REQUIRES
         driver
         freertos
         nvs_flash
-        lcd_ili9341
         lvgl
+        lcd_ili9341
+        xpt2046
 )

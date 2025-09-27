@@ -28,8 +28,14 @@ void touchpad_read(lv_indev_drv_t * indev_driver, lv_indev_data_t * data)
     uint16_t touch_x = 0;
     uint16_t touch_y = 0;
     
+    ESP_LOGD(TAG, "touchpad_read called");
+    
     // Try to read touch coordinates
-    if (xpt2046_read_touch(&touch_x, &touch_y)) {
+    bool touch_detected = xpt2046_read_touch(&touch_x, &touch_y);
+    ESP_LOGD(TAG, "xpt2046_read_touch returned: %s, x: %d, y: %d", 
+             touch_detected ? "true" : "false", touch_x, touch_y);
+    
+    if (touch_detected) {
         data->state = LV_INDEV_STATE_PRESSED;
         data->point.x = touch_x;
         data->point.y = touch_y;
@@ -37,6 +43,9 @@ void touchpad_read(lv_indev_drv_t * indev_driver, lv_indev_data_t * data)
         last_y = touch_y;
         last_pressed = true;
         ESP_LOGI(TAG, "Touch at (%d, %d)", touch_x, touch_y);
+        
+        // Add additional logging for LVGL integration
+        ESP_LOGD(TAG, "LVGL touch data set: state=PRESSED, point=(%d,%d)", touch_x, touch_y);
     } else {
         // No touch detected
         if (last_pressed) {
@@ -46,11 +55,20 @@ void touchpad_read(lv_indev_drv_t * indev_driver, lv_indev_data_t * data)
             data->point.y = last_y;
             last_pressed = false;
             ESP_LOGI(TAG, "Touch released at (%d, %d)", last_x, last_y);
+            
+            // Add additional logging for LVGL integration
+            ESP_LOGD(TAG, "LVGL touch data set: state=RELEASED, point=(%d,%d)", last_x, last_y);
         } else {
             // Keep previous state as released
             data->state = LV_INDEV_STATE_RELEASED;
+            ESP_LOGD(TAG, "LVGL touch data set: state=RELEASED (no change)");
         }
+        ESP_LOGD(TAG, "No touch detected, state: %s", 
+                 last_pressed ? "PRESSED (last)" : "RELEASED");
     }
+    
+    // Add a small delay to prevent excessive polling
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 // Элементы экрана и пользовательского интерфейса
@@ -286,7 +304,7 @@ static void create_main_ui(void)
     lv_obj_align_to(co2_unit, label_co2_value, LV_ALIGN_OUT_BOTTOM_MID, 0, 2);
 
     // Add Settings button at the bottom of the screen
-    lv_obj_t *btn_settings = lv_btn_create(screen_main);
+    btn_settings = lv_btn_create(screen_main);  // Store reference in global variable
     lv_obj_set_size(btn_settings, 100, 40);
     lv_obj_align(btn_settings, LV_ALIGN_BOTTOM_MID, 0, -10);
     lv_obj_add_event_cb(btn_settings, event_handler, LV_EVENT_CLICKED, (void*)1);  // Pass ID 1 for settings button
@@ -471,20 +489,25 @@ void lvgl_main_init(void)
 static void event_handler(lv_event_t * e)
 {
     lv_event_code_t code = lv_event_get_code(e);
-    lv_obj_t * obj = lv_event_get_target(e);
+
+    ESP_LOGI(TAG, "Event handler called with code: %d", code);
     
     if(code == LV_EVENT_CLICKED) {
         // Get user data to identify which button was pressed
         int button_id = (int)lv_event_get_user_data(e);
         
+        ESP_LOGI(TAG, "Button clicked with ID: %d", button_id);
+        
         // Check if Settings button was clicked (button_id == 1)
         if(button_id == 1) {
+            ESP_LOGI(TAG, "Settings button clicked");
             // Create and show settings screen
             create_settings_ui();
             lv_scr_load(screen_settings);
         }
         // Check if Back button was clicked (button_id == 2)
         else if(button_id == 2) {
+            ESP_LOGI(TAG, "Back button clicked");
             // Return to main screen
             lv_scr_load(screen_main);
         }
@@ -494,8 +517,11 @@ static void event_handler(lv_event_t * e)
 // Create settings UI screen
 static void create_settings_ui(void)
 {
+    ESP_LOGI(TAG, "Creating settings UI");
+    
     if(screen_settings != NULL) {
         // Screen already exists, just update it
+        ESP_LOGI(TAG, "Settings screen already exists");
         return;
     }
     
@@ -530,6 +556,8 @@ static void create_settings_ui(void)
     label_back = lv_label_create(btn_back);
     lv_label_set_text(label_back, "Back");
     lv_obj_center(label_back);
+    
+    ESP_LOGI(TAG, "Settings UI created successfully");
 }
 
 // Обновление значений датчиков на экране
