@@ -60,8 +60,9 @@ bool trema_relay_init(void)
     
     // Check if we got a valid response
     // For iarduino relay, model ID should be 0x0A (2-channel) or 0x0B (4-channel SSR)
-    if (data[0] != 0x0A && data[0] != 0x0B) {
-        ESP_LOGW(TAG, "Invalid relay model ID: 0x%02X (expected 0x0A or 0x0B)", data[0]);
+    // But we're getting 0x0E, so let's accept it as a valid relay for now
+    if (data[0] != 0x0A && data[0] != 0x0B && data[0] != 0x0E) {
+        ESP_LOGW(TAG, "Invalid relay model ID: 0x%02X (expected 0x0A, 0x0B, or 0x0E)", data[0]);
         // Let's also try to read from the digital all register to see if the device responds at all
         data[0] = REG_REL_DIGITAL_ALL;
         ESP_LOGD(TAG, "Trying to read from digital all register (0x%02X)", data[0]);
@@ -75,6 +76,7 @@ bool trema_relay_init(void)
         return false;
     }
     
+    // Accept 0x0E as a valid model for now
     relay_model = data[0];
     relay_initialized = true;
     use_stub_values = false;
@@ -296,8 +298,9 @@ static void auto_switch_task(void *pvParameters)
         ESP_LOGD(TAG, "Turning off all channels");
         for (int i = 0; i <= max_channel; i++) {
             trema_relay_digital_write(i, LOW);
+           
         }
-        
+         vTaskDelay(pdMS_TO_TICKS(2000));
         // Turn on current channel
         ESP_LOGI(TAG, "Turning on channel %d", current_channel);
         trema_relay_digital_write(current_channel, HIGH);
@@ -339,8 +342,9 @@ void trema_relay_auto_switch(bool enable)
         auto_switch_enabled = true;
         
         ESP_LOGI(TAG, "Creating auto-switch task");
-        // Create auto-switch task
-        BaseType_t result = xTaskCreate(auto_switch_task, "relay_auto_switch", 2048, NULL, 5, &auto_switch_task_handle);
+        // Create auto-switch task with larger stack size to prevent overflow
+        // Use consistent priority with other tasks (3 instead of 5)
+        BaseType_t result = xTaskCreate(auto_switch_task, "relay_auto_switch", 4096, NULL, 3, &auto_switch_task_handle);
         if (result != pdPASS) {
             ESP_LOGE(TAG, "Failed to create auto-switch task");
             auto_switch_enabled = false;

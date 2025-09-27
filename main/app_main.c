@@ -14,6 +14,19 @@
 #include "lcd_ili9341.h"
 #include "lvgl_main.h"
 #include "trema_relay.h"
+#include "xpt2046.h"
+#include "lvgl.h"
+
+// Forward declarations for trema_relay functions (IDE workaround)
+bool trema_relay_init(void);
+void trema_relay_digital_write(uint8_t channel, uint8_t value);
+void trema_relay_auto_switch(bool enable);
+
+// Forward declarations for xpt2046 functions (IDE workaround)
+bool xpt2046_init(void);
+bool xpt2046_read_touch(uint16_t *x, uint16_t *y);
+
+// Touch input device callback is now declared in lvgl_main.h
 
 /* =============================
  *  PIN CONFIGURATION
@@ -24,6 +37,13 @@
 #define ENC_A_PIN           1   // CLK - Encoder pin (clock signal)
 #define ENC_B_PIN           2   // DT - Encoder pin (data)
 #define ENC_SW_PIN          3   // Encoder button
+
+// XPT2046 Touch Panel Pins
+#define XPT2046_IRQ         4   // Touch interrupt pin
+#define XPT2046_CS          5   // Chip select pin
+#define XPT2046_CLK         12  // Clock pin (shared with LCD)
+#define XPT2046_MOSI        11  // MOSI pin (shared with LCD)
+#define XPT2046_MISO        13  // MISO pin
 
 // Add HIGH definition for relay
 #ifndef HIGH
@@ -201,7 +221,49 @@ void sensor_task(void *pv)
     }
 }
 
-
+/* =============================
+ *  TOUCH TASK
+ * ============================= */
+// Task for handling touch input
+void touch_task(void *pv)
+{
+    uint16_t touch_x, touch_y;
+    static uint32_t touch_count = 0;
+    static uint32_t last_touch_time = 0;
+    
+    ESP_LOGI(TAG, "Touch task started");
+    
+    while (1) {
+        // Check for touch input
+        if (xpt2046_read_touch(&touch_x, &touch_y)) {
+            uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            
+            // Log touch event with timestamp and count
+            ESP_LOGI(TAG, "Touch #%lu at coordinates: X=%d, Y=%d", 
+                     (unsigned long)++touch_count, touch_x, touch_y);
+            
+            // Log time since last touch (if not the first touch)
+            if (last_touch_time > 0) {
+                uint32_t time_diff = current_time - last_touch_time;
+                ESP_LOGI(TAG, "Time since last touch: %lu ms", (unsigned long)time_diff);
+            }
+            
+            last_touch_time = current_time;
+            
+            // Additional touch processing can be added here
+            // For example, send it to LVGL or handle UI interactions
+            
+            // Brief delay to avoid multiple detections of the same touch
+            vTaskDelay(pdMS_TO_TICKS(10));
+        } else {
+            // Log that no touch was detected (at debug level to avoid spam)
+            ESP_LOGD(TAG, "No touch detected");
+        }
+        
+        // Check every 50ms for touch input
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
 
 /* =============================
  *  PUMP INITIALIZATION
@@ -269,13 +331,27 @@ void app_main(void)
         ESP_LOGI(TAG, "Auto-switching mode started");
     }
 
-    // Initialize LCD display
+    // Initialize LCD display FIRST, before touch controller
+    ESP_LOGI(TAG, "Initializing LCD display...");
     lv_disp_t* disp = lcd_ili9341_init();
     
     // Verify display initialization
     if (disp == NULL) {
         ESP_LOGE(TAG, "Failed to initialize LCD display");
         return;
+    }
+
+    // Initialize touch controller AFTER LCD (so SPI bus is already initialized)
+    ESP_LOGI(TAG, "Initializing touch controller...");
+    if (!xpt2046_init()) {
+        ESP_LOGW(TAG, "Failed to initialize touch controller");
+        ESP_LOGW(TAG, "Check XPT2046_DEBUGGING.md for troubleshooting steps");
+        // Still create touch task to log any touch attempts
+        xTaskCreate(touch_task, "touch", 4096, NULL, 3, NULL);
+    } else {
+        ESP_LOGI(TAG, "Touch controller initialized successfully");
+        // Create touch task for direct logging of touch coordinates
+        xTaskCreate(touch_task, "touch", 4096, NULL, 3, NULL);
     }
 
     // Run diagnostics (uncomment to run diagnostics)
@@ -301,6 +377,19 @@ void app_main(void)
     
     // Longer delay to ensure UI is fully initialized
     vTaskDelay(pdMS_TO_TICKS(3000));  // Increased delay to 3 seconds
+    
+    // Initialize touch input device for LVGL after display is ready
+    static lv_indev_drv_t indev_drv;
+    lv_indev_drv_init(&indev_drv);
+    indev_drv.type = LV_INDEV_TYPE_POINTER;
+    indev_drv.read_cb = touchpad_read;
+    lv_indev_t *touch_indev = lv_indev_drv_register(&indev_drv);
+    
+    if (touch_indev) {
+        ESP_LOGI(TAG, "Touch input device registered successfully");
+    } else {
+        ESP_LOGE(TAG, "Failed to register touch input device");
+    }
     
     // Create sensor task with actual sensor readings
     xTaskCreate(sensor_task, "sensors", 4096, NULL, 3, NULL);

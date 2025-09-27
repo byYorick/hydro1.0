@@ -1,6 +1,7 @@
 #include "lvgl_main.h"
 #include "lvgl.h"
 #include "lcd_ili9341.h"
+// Touch controller support will be added through function declarations
 // Font declarations
 LV_FONT_DECLARE(lv_font_montserrat_14)
 LV_FONT_DECLARE(lv_font_montserrat_18)
@@ -12,6 +13,28 @@ LV_FONT_DECLARE(lv_font_montserrat_20)
 #include "freertos/queue.h"
 
 static const char *TAG = "LVGL_MAIN";
+
+// Forward declarations for touch functions
+bool xpt2046_read_touch(uint16_t *x, uint16_t *y);
+
+// LVGL input device driver
+// Touch input device driver callback
+void touchpad_read(lv_indev_drv_t * indev_driver, lv_indev_data_t * data)
+{
+    uint16_t touch_x = 0;
+    uint16_t touch_y = 0;
+    
+    // Try to read touch coordinates
+    if (xpt2046_read_touch(&touch_x, &touch_y)) {
+        data->state = LV_INDEV_STATE_PRESSED;
+        data->point.x = touch_x;
+        data->point.y = touch_y;
+        ESP_LOGI(TAG, "Touch at (%d, %d)", touch_x, touch_y);
+    } else {
+        // No touch detected, keep previous state but mark as released
+        data->state = LV_INDEV_STATE_RELEASED;
+    }
+}
 
 // Элементы экрана и пользовательского интерфейса
 static lv_obj_t *screen_main;
@@ -30,6 +53,12 @@ static lv_obj_t *label_temp_value;
 static lv_obj_t *label_hum_value;
 static lv_obj_t *label_lux_value;
 static lv_obj_t *label_co2_value;
+
+// Settings screen elements
+static lv_obj_t *screen_settings;
+static lv_obj_t *btn_back;
+static lv_obj_t *label_back;
+static lv_obj_t *btn_settings;  // Add reference to settings button
 
 // Стили
 static lv_style_t style_title;
@@ -65,6 +94,8 @@ static void display_update_task(void *pvParameters);
 static void init_styles(void);
 static lv_obj_t* create_sensor_card(lv_obj_t *parent);
 static void update_sensor_display(sensor_data_t *data);
+static void create_settings_ui(void);
+static void event_handler(lv_event_t * e);
 
 // УЛУЧШЕННАЯ ИНИЦИАЛИЗАЦИЯ СТИЛЕЙ
 static void init_styles(void)
@@ -120,6 +151,12 @@ static void create_main_ui(void)
 {
     screen_main = lv_scr_act();
     lv_obj_clean(screen_main);
+    
+    // Clean up settings screen if it exists
+    if(screen_settings != NULL) {
+        lv_obj_del(screen_settings);
+        screen_settings = NULL;
+    }
     
     // Установка фона (уже в init_styles)
     init_styles();
@@ -230,6 +267,16 @@ static void create_main_ui(void)
     lv_label_set_text(co2_unit, "ppm");
     lv_obj_add_style(co2_unit, &style_unit, 0);
     lv_obj_align_to(co2_unit, label_co2_value, LV_ALIGN_OUT_BOTTOM_MID, 0, 2);
+
+    // Add Settings button at the bottom of the screen
+    lv_obj_t *btn_settings = lv_btn_create(screen_main);
+    lv_obj_set_size(btn_settings, 100, 40);
+    lv_obj_align(btn_settings, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_add_event_cb(btn_settings, event_handler, LV_EVENT_CLICKED, (void*)1);  // Pass ID 1 for settings button
+    
+    lv_obj_t *label_settings = lv_label_create(btn_settings);
+    lv_label_set_text(label_settings, "Settings");
+    lv_obj_center(label_settings);
 
     // Очередь и задача (без изменений)
     sensor_data_queue = xQueueCreate(SENSOR_DATA_QUEUE_SIZE, sizeof(sensor_data_t));
@@ -375,6 +422,19 @@ static void display_update_task(void *pvParameters)
 // Инициализация пользовательского интерфейса LVGL
 void lvgl_main_init(void)
 {
+    // Initialize settings screen pointer
+    screen_settings = NULL;
+    
+    // Create sensor data queue if not already created
+    if (sensor_data_queue == NULL) {
+        sensor_data_queue = xQueueCreate(SENSOR_DATA_QUEUE_SIZE, sizeof(sensor_data_t));
+        if (sensor_data_queue == NULL) {
+            ESP_LOGE("LVGL_MAIN", "Failed to create sensor data queue");
+            return;
+        }
+        ESP_LOGI("LVGL_MAIN", "Sensor data queue created successfully");
+    }
+    
     // Ensure LVGL is properly initialized and ready
     vTaskDelay(pdMS_TO_TICKS(100));
     
@@ -385,6 +445,74 @@ void lvgl_main_init(void)
     } else {
         ESP_LOGE("LVGL_MAIN", "Failed to acquire LVGL lock for UI initialization");
     }
+    
+    // Create display update task
+    xTaskCreate(display_update_task, "display_update", 4096, NULL, 3, NULL);
+}
+
+// Event handler for UI elements
+static void event_handler(lv_event_t * e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_obj_t * obj = lv_event_get_target(e);
+    
+    if(code == LV_EVENT_CLICKED) {
+        // Get user data to identify which button was pressed
+        int button_id = (int)lv_event_get_user_data(e);
+        
+        // Check if Settings button was clicked (button_id == 1)
+        if(button_id == 1) {
+            // Create and show settings screen
+            create_settings_ui();
+            lv_scr_load(screen_settings);
+        }
+        // Check if Back button was clicked (button_id == 2)
+        else if(button_id == 2) {
+            // Return to main screen
+            lv_scr_load(screen_main);
+        }
+    }
+}
+
+// Create settings UI screen
+static void create_settings_ui(void)
+{
+    if(screen_settings != NULL) {
+        // Screen already exists, just update it
+        return;
+    }
+    
+    // Create settings screen
+    screen_settings = lv_obj_create(NULL);
+    
+    // Add title
+    lv_obj_t *label_title = lv_label_create(screen_settings);
+    lv_label_set_text(label_title, "Settings");
+    lv_obj_set_style_text_font(label_title, &lv_font_montserrat_18, 0);
+    lv_obj_align(label_title, LV_ALIGN_TOP_MID, 0, 10);
+    
+    // Add some example settings
+    lv_obj_t *label_setting1 = lv_label_create(screen_settings);
+    lv_label_set_text(label_setting1, "WiFi Settings");
+    lv_obj_align_to(label_setting1, label_title, LV_ALIGN_OUT_BOTTOM_MID, 0, 20);
+    
+    lv_obj_t *label_setting2 = lv_label_create(screen_settings);
+    lv_label_set_text(label_setting2, "Sensor Calibration");
+    lv_obj_align_to(label_setting2, label_setting1, LV_ALIGN_OUT_BOTTOM_MID, 0, 15);
+    
+    lv_obj_t *label_setting3 = lv_label_create(screen_settings);
+    lv_label_set_text(label_setting3, "System Info");
+    lv_obj_align_to(label_setting3, label_setting2, LV_ALIGN_OUT_BOTTOM_MID, 0, 15);
+    
+    // Add Back button
+    btn_back = lv_btn_create(screen_settings);
+    lv_obj_set_size(btn_back, 80, 30);
+    lv_obj_align(btn_back, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_add_event_cb(btn_back, event_handler, LV_EVENT_CLICKED, (void*)2);  // Pass ID 2 for back button
+    
+    label_back = lv_label_create(btn_back);
+    lv_label_set_text(label_back, "Back");
+    lv_obj_center(label_back);
 }
 
 // Обновление значений датчиков на экране

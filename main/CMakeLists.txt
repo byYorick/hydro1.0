@@ -17,4 +17,5 @@ idf_component_register(
         peristaltic_pump
         lcd_ili9341
         trema_relay
+        xpt2046
 )
