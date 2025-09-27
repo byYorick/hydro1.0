@@ -350,6 +350,8 @@ void app_main(void)
         xTaskCreate(touch_task, "touch", 4096, NULL, 3, NULL);
     } else {
         ESP_LOGI(TAG, "Touch controller initialized successfully");
+        // Calibrate touch controller with default values
+        xpt2046_calibrate(300, 3800, 200, 3900);
         // Create touch task for direct logging of touch coordinates
         xTaskCreate(touch_task, "touch", 4096, NULL, 3, NULL);
     }

@@ -10,9 +10,6 @@
 bool lvgl_lock(int timeout_ms);
 void lvgl_unlock(void);
 
-// Forward declaration
-static uint16_t xpt2046_read_register(uint8_t command);
-
 static const char *TAG = "xpt2046";
 
 // SPI device handle
@@ -24,12 +21,8 @@ static uint16_t max_raw_x = XPT2046_MAX_RAW_X;
 static uint16_t min_raw_y = XPT2046_MIN_RAW_Y;
 static uint16_t max_raw_y = XPT2046_MAX_RAW_Y;
 
-// Forward declaration for LVGL lock/unlock functions
-bool lvgl_lock(int timeout_ms);
-void lvgl_unlock(void);
-
 // Touch detection threshold
-static const uint16_t PRESS_THRESHOLD = 500;
+static const uint16_t PRESS_THRESHOLD = 300;
 
 // Touch debounce parameters
 static const uint16_t STUCK_TOUCH_THRESHOLD = 10;  // Number of consecutive stuck readings to ignore
@@ -39,6 +32,9 @@ static uint16_t last_valid_y = 0;                 // Last valid Y coordinate
 
 // Using the same SPI host as the LCD
 #define XPT2046_HOST SPI2_HOST
+
+// Forward declaration
+static uint16_t xpt2046_read_register(uint8_t command);
 
 bool xpt2046_init(void)
 {
@@ -66,13 +62,9 @@ bool xpt2046_init(void)
              devcfg.spics_io_num, devcfg.clock_speed_hz);
     
     // Try to add device to the existing SPI bus (LCD should initialize the bus first)
-    // We'll handle the bus initialization in a way that doesn't conflict
     esp_err_t ret = spi_bus_add_device(XPT2046_HOST, &devcfg, &spi_touch_handle);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "Failed to add SPI device to existing bus: %s", esp_err_to_name(ret));
-        
-        // Don't try to initialize the bus here as it might conflict with LCD
-        // Instead, return false and let the application handle the order
         return false;
     }
     

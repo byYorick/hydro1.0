@@ -21,6 +21,10 @@ bool xpt2046_read_touch(uint16_t *x, uint16_t *y);
 // Touch input device driver callback
 void touchpad_read(lv_indev_drv_t * indev_driver, lv_indev_data_t * data)
 {
+    static uint16_t last_x = 0;
+    static uint16_t last_y = 0;
+    static bool last_pressed = false;
+    
     uint16_t touch_x = 0;
     uint16_t touch_y = 0;
     
@@ -29,10 +33,23 @@ void touchpad_read(lv_indev_drv_t * indev_driver, lv_indev_data_t * data)
         data->state = LV_INDEV_STATE_PRESSED;
         data->point.x = touch_x;
         data->point.y = touch_y;
+        last_x = touch_x;
+        last_y = touch_y;
+        last_pressed = true;
         ESP_LOGI(TAG, "Touch at (%d, %d)", touch_x, touch_y);
     } else {
-        // No touch detected, keep previous state but mark as released
-        data->state = LV_INDEV_STATE_RELEASED;
+        // No touch detected
+        if (last_pressed) {
+            // If we were pressed before, send the last known coordinates with released state
+            data->state = LV_INDEV_STATE_RELEASED;
+            data->point.x = last_x;
+            data->point.y = last_y;
+            last_pressed = false;
+            ESP_LOGI(TAG, "Touch released at (%d, %d)", last_x, last_y);
+        } else {
+            // Keep previous state as released
+            data->state = LV_INDEV_STATE_RELEASED;
+        }
     }
 }
 
