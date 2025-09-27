@@ -4,6 +4,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+static const char *TAG = "sht3x";
+
 #define SHT3X_ADDR 0x44
 
 // Stub values for when sensor is not connected
@@ -15,6 +17,7 @@ bool sht3x_read(float *temp, float *hum)
 {
     uint8_t cmd[2] = {0x2C, 0x06};
     if (i2c_bus_write(SHT3X_ADDR, cmd, 2) != ESP_OK) {
+        ESP_LOGD(TAG, "SHT3x sensor not connected, using stub values");
         // Use stub values when sensor is not connected
         *temp = stub_temperature;
         *hum = stub_humidity;
@@ -26,6 +29,7 @@ bool sht3x_read(float *temp, float *hum)
 
     uint8_t data[6];
     if (i2c_bus_read(SHT3X_ADDR, data, 6) != ESP_OK) {
+        ESP_LOGD(TAG, "SHT3x sensor read failed, using stub values");
         // Use stub values when sensor is not connected
         *temp = stub_temperature;
         *hum = stub_humidity;
