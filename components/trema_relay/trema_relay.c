@@ -37,9 +37,11 @@ bool trema_relay_init(void)
     // Try to communicate with the relay
     // Read the model register to verify relay presence
     data[0] = 0x04; // REG_MODEL
-    ESP_LOGD(TAG, "Writing to register 0x%02X", data[0]);
-    if (i2c_bus_write(TREMA_RELAY_ADDR, data, 1) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to write to I2C relay at address 0x%02X", TREMA_RELAY_ADDR);
+    ESP_LOGD(TAG, "Writing to register 0x%02X to read model ID", data[0]);
+    
+    esp_err_t write_result = i2c_bus_write(TREMA_RELAY_ADDR, data, 1);
+    if (write_result != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to write to I2C relay at address 0x%02X: %s", TREMA_RELAY_ADDR, esp_err_to_name(write_result));
         use_stub_values = true;
         return false;
     }
@@ -47,8 +49,9 @@ bool trema_relay_init(void)
     vTaskDelay(pdMS_TO_TICKS(10));
     
     ESP_LOGD(TAG, "Reading model ID from relay");
-    if (i2c_bus_read(TREMA_RELAY_ADDR, data, 1) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to read from I2C relay at address 0x%02X", TREMA_RELAY_ADDR);
+    esp_err_t read_result = i2c_bus_read(TREMA_RELAY_ADDR, data, 1);
+    if (read_result != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to read from I2C relay at address 0x%02X: %s", TREMA_RELAY_ADDR, esp_err_to_name(read_result));
         use_stub_values = true;
         return false;
     }
@@ -59,6 +62,15 @@ bool trema_relay_init(void)
     // For iarduino relay, model ID should be 0x0A (2-channel) or 0x0B (4-channel SSR)
     if (data[0] != 0x0A && data[0] != 0x0B) {
         ESP_LOGW(TAG, "Invalid relay model ID: 0x%02X (expected 0x0A or 0x0B)", data[0]);
+        // Let's also try to read from the digital all register to see if the device responds at all
+        data[0] = REG_REL_DIGITAL_ALL;
+        ESP_LOGD(TAG, "Trying to read from digital all register (0x%02X)", data[0]);
+        if (i2c_bus_write(TREMA_RELAY_ADDR, data, 1) == ESP_OK) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            if (i2c_bus_read(TREMA_RELAY_ADDR, data, 1) == ESP_OK) {
+                ESP_LOGI(TAG, "Digital all register value: 0x%02X", data[0]);
+            }
+        }
         use_stub_values = true;
         return false;
     }
@@ -72,6 +84,8 @@ bool trema_relay_init(void)
 
 void trema_relay_digital_write(uint8_t channel, uint8_t value)
 {
+    ESP_LOGD(TAG, "Digital write called: channel=%d, value=%d", channel, value);
+    
     // Validate channel number based on model
     uint8_t max_channel = (relay_model == 0x0B) ? 3 : 1; // 4-channel SSR vs 2-channel relay
     if (channel > max_channel) {
@@ -94,22 +108,30 @@ void trema_relay_digital_write(uint8_t channel, uint8_t value)
     
     // If using stub values, just return
     if (use_stub_values) {
+        ESP_LOGD(TAG, "Using stub values, not writing to hardware");
         return;
     }
+    
+    ESP_LOGD(TAG, "Writing to relay hardware: channel=%d, value=%d", channel, value);
     
     // Write to the appropriate register based on value
     if (value) {
         // Set bit high
         data[0] = REG_REL_DIGITAL_ONE;
         data[1] = (1 << (channel + 4));  // Set high bits for this channel
+        ESP_LOGD(TAG, "Setting channel %d high with data[1]=0x%02X", channel, data[1]);
     } else {
         // Set bit low
         data[0] = REG_REL_DIGITAL_ONE;
         data[1] = (1 << channel);        // Set low bits for this channel
+        ESP_LOGD(TAG, "Setting channel %d low with data[1]=0x%02X", channel, data[1]);
     }
     
-    if (i2c_bus_write(TREMA_RELAY_ADDR, data, 2) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to write digital value to relay");
+    esp_err_t result = i2c_bus_write(TREMA_RELAY_ADDR, data, 2);
+    if (result != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to write digital value to relay: %s", esp_err_to_name(result));
+    } else {
+        ESP_LOGD(TAG, "Successfully wrote to relay");
     }
 }
 
@@ -259,19 +281,25 @@ bool trema_relay_is_using_stub_values(void)
 // Auto-switching task function
 static void auto_switch_task(void *pvParameters)
 {
+    ESP_LOGI(TAG, "Auto-switch task started");
+    
     uint8_t current_channel = 0;
     
     // For 4-channel relay, cycle through channels 0-3
     // For 2-channel relay, cycle through channels 0-1
     uint8_t max_channel = (relay_model == 0x0B) ? 3 : 1;
     
+    ESP_LOGI(TAG, "Max channel: %d, Relay model: 0x%02X", max_channel, relay_model);
+    
     while (auto_switch_enabled) {
         // Turn off all channels first
+        ESP_LOGD(TAG, "Turning off all channels");
         for (int i = 0; i <= max_channel; i++) {
             trema_relay_digital_write(i, LOW);
         }
         
         // Turn on current channel
+        ESP_LOGI(TAG, "Turning on channel %d", current_channel);
         trema_relay_digital_write(current_channel, HIGH);
         
         // Log which channel is active
@@ -281,10 +309,12 @@ static void auto_switch_task(void *pvParameters)
         current_channel = (current_channel + 1) % (max_channel + 1);
         
         // Wait for 2 seconds
+        ESP_LOGD(TAG, "Waiting 2 seconds before switching to next channel");
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
     
     // Turn off all channels when stopping
+    ESP_LOGI(TAG, "Auto-switch stopping, turning off all channels");
     for (int i = 0; i <= max_channel; i++) {
         trema_relay_digital_write(i, LOW);
     }
@@ -295,6 +325,9 @@ static void auto_switch_task(void *pvParameters)
 
 void trema_relay_auto_switch(bool enable)
 {
+    ESP_LOGI(TAG, "Auto-switch function called with enable=%d", enable);
+    ESP_LOGI(TAG, "Relay initialized: %d, Auto-switch already enabled: %d", relay_initialized, auto_switch_enabled);
+    
     // Check if relay is initialized
     if (!relay_initialized && !use_stub_values) {
         ESP_LOGW(TAG, "Relay not initialized");
@@ -305,6 +338,7 @@ void trema_relay_auto_switch(bool enable)
     if (enable && !auto_switch_enabled) {
         auto_switch_enabled = true;
         
+        ESP_LOGI(TAG, "Creating auto-switch task");
         // Create auto-switch task
         BaseType_t result = xTaskCreate(auto_switch_task, "relay_auto_switch", 2048, NULL, 5, &auto_switch_task_handle);
         if (result != pdPASS) {
@@ -317,6 +351,7 @@ void trema_relay_auto_switch(bool enable)
     }
     // If disabling and currently enabled
     else if (!enable && auto_switch_enabled) {
+        ESP_LOGI(TAG, "Stopping auto-switch");
         auto_switch_enabled = false;
         
         // Task will clean itself up
@@ -327,5 +362,7 @@ void trema_relay_auto_switch(bool enable)
         }
         
         ESP_LOGI(TAG, "Auto-switch stopped");
+    } else {
+        ESP_LOGI(TAG, "Auto-switch state unchanged (enable=%d, already enabled=%d)", enable, auto_switch_enabled);
     }
 }

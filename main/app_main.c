@@ -247,6 +247,9 @@ void app_main(void)
 
     // I2C initialization
     i2c_bus_init_custom();
+    
+    // Add a small delay to ensure I2C is fully initialized
+    vTaskDelay(pdMS_TO_TICKS(100));
 
     // Initialize relay
     ESP_LOGI(TAG, "Attempting to initialize relay...");
