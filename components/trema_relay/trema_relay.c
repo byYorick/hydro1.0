@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 
 static const char *TAG = "trema_relay";
 
@@ -25,29 +26,39 @@ static uint8_t digital_reg = 0x00;
 static bool wdt_enabled = false;
 static uint8_t wdt_timeout = 0;
 
+// Auto-switching variables
+static bool auto_switch_enabled = false;
+static TaskHandle_t auto_switch_task_handle = NULL;
+
 bool trema_relay_init(void)
 {
+    ESP_LOGI(TAG, "Initializing trema relay at address 0x%02X", TREMA_RELAY_ADDR);
+    
     // Try to communicate with the relay
     // Read the model register to verify relay presence
     data[0] = 0x04; // REG_MODEL
+    ESP_LOGD(TAG, "Writing to register 0x%02X", data[0]);
     if (i2c_bus_write(TREMA_RELAY_ADDR, data, 1) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to write to I2C relay");
+        ESP_LOGW(TAG, "Failed to write to I2C relay at address 0x%02X", TREMA_RELAY_ADDR);
         use_stub_values = true;
         return false;
     }
     
     vTaskDelay(pdMS_TO_TICKS(10));
     
+    ESP_LOGD(TAG, "Reading model ID from relay");
     if (i2c_bus_read(TREMA_RELAY_ADDR, data, 1) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to read from I2C relay");
+        ESP_LOGW(TAG, "Failed to read from I2C relay at address 0x%02X", TREMA_RELAY_ADDR);
         use_stub_values = true;
         return false;
     }
     
+    ESP_LOGI(TAG, "Received model ID: 0x%02X", data[0]);
+    
     // Check if we got a valid response
     // For iarduino relay, model ID should be 0x0A (2-channel) or 0x0B (4-channel SSR)
     if (data[0] != 0x0A && data[0] != 0x0B) {
-        ESP_LOGW(TAG, "Invalid relay model ID: 0x%02X", data[0]);
+        ESP_LOGW(TAG, "Invalid relay model ID: 0x%02X (expected 0x0A or 0x0B)", data[0]);
         use_stub_values = true;
         return false;
     }
@@ -243,4 +254,78 @@ bool trema_relay_get_state_wdt(void)
 bool trema_relay_is_using_stub_values(void)
 {
     return use_stub_values;
+}
+
+// Auto-switching task function
+static void auto_switch_task(void *pvParameters)
+{
+    uint8_t current_channel = 0;
+    
+    // For 4-channel relay, cycle through channels 0-3
+    // For 2-channel relay, cycle through channels 0-1
+    uint8_t max_channel = (relay_model == 0x0B) ? 3 : 1;
+    
+    while (auto_switch_enabled) {
+        // Turn off all channels first
+        for (int i = 0; i <= max_channel; i++) {
+            trema_relay_digital_write(i, LOW);
+        }
+        
+        // Turn on current channel
+        trema_relay_digital_write(current_channel, HIGH);
+        
+        // Log which channel is active
+        ESP_LOGD(TAG, "Auto-switch: Channel %d activated", current_channel);
+        
+        // Move to next channel
+        current_channel = (current_channel + 1) % (max_channel + 1);
+        
+        // Wait for 2 seconds
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+    
+    // Turn off all channels when stopping
+    for (int i = 0; i <= max_channel; i++) {
+        trema_relay_digital_write(i, LOW);
+    }
+    
+    auto_switch_task_handle = NULL;
+    vTaskDelete(NULL);
+}
+
+void trema_relay_auto_switch(bool enable)
+{
+    // Check if relay is initialized
+    if (!relay_initialized && !use_stub_values) {
+        ESP_LOGW(TAG, "Relay not initialized");
+        return;
+    }
+    
+    // If enabling and not already enabled
+    if (enable && !auto_switch_enabled) {
+        auto_switch_enabled = true;
+        
+        // Create auto-switch task
+        BaseType_t result = xTaskCreate(auto_switch_task, "relay_auto_switch", 2048, NULL, 5, &auto_switch_task_handle);
+        if (result != pdPASS) {
+            ESP_LOGE(TAG, "Failed to create auto-switch task");
+            auto_switch_enabled = false;
+            auto_switch_task_handle = NULL;
+        } else {
+            ESP_LOGI(TAG, "Auto-switch started");
+        }
+    }
+    // If disabling and currently enabled
+    else if (!enable && auto_switch_enabled) {
+        auto_switch_enabled = false;
+        
+        // Task will clean itself up
+        if (auto_switch_task_handle != NULL) {
+            // Give the task time to clean up
+            vTaskDelay(pdMS_TO_TICKS(100));
+            auto_switch_task_handle = NULL;
+        }
+        
+        ESP_LOGI(TAG, "Auto-switch stopped");
+    }
 }

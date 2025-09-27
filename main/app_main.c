@@ -13,6 +13,7 @@
 #include "peristaltic_pump.h"
 #include "lcd_ili9341.h"
 #include "lvgl_main.h"
+#include "trema_relay.h"
 
 /* =============================
  *  PIN CONFIGURATION
@@ -23,6 +24,11 @@
 #define ENC_A_PIN           1   // CLK - Encoder pin (clock signal)
 #define ENC_B_PIN           2   // DT - Encoder pin (data)
 #define ENC_SW_PIN          3   // Encoder button
+
+// Add HIGH definition for relay
+#ifndef HIGH
+#define HIGH 1
+#endif
 
 // Pump pin configuration - Using valid GPIO pins for ESP32-S3
 // Avoiding pins that might cause issues
@@ -242,6 +248,24 @@ void app_main(void)
     // I2C initialization
     i2c_bus_init_custom();
 
+    // Initialize relay
+    ESP_LOGI(TAG, "Attempting to initialize relay...");
+    if (!trema_relay_init()) {
+        ESP_LOGW(TAG, "Failed to initialize relay");
+        // Let's check if we're using stub values
+        if (trema_relay_is_using_stub_values()) {
+            ESP_LOGW(TAG, "Relay is using stub values (not connected)");
+        }
+    } else {
+        ESP_LOGI(TAG, "Relay initialized successfully");
+        // Turn on channel 0 as an example
+        trema_relay_digital_write(0, HIGH);
+        ESP_LOGI(TAG, "Channel 0 turned ON");
+        // Start auto-switching mode
+        trema_relay_auto_switch(true);
+        ESP_LOGI(TAG, "Auto-switching mode started");
+    }
+
     // Initialize LCD display
     lv_disp_t* disp = lcd_ili9341_init();
     
@@ -285,6 +309,6 @@ void app_main(void)
             lv_timer_handler();
             lvgl_unlock();
         }
-        vTaskDelay(pdMS_TO_TICKS(5000)); // Sleep to reduce CPU usage
+        vTaskDelay(pdMS_TO_TICKS(2000)); // Sleep to reduce CPU usage
     }
 }

@@ -16,4 +16,5 @@ idf_component_register(
         encoder
         peristaltic_pump
         lcd_ili9341
+        trema_relay
 )

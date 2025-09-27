@@ -1,6 +1,40 @@
 #ifndef TREMA_RELAY_H
 #define TREMA_RELAY_H
 
+/**
+ * @file trema_relay.h
+ * @brief Trema I2C Relay Component for ESP-IDF
+ * 
+ * This component provides an interface to control the Trema I2C Relay module.
+ * It supports both 2-channel and 4-channel relay modules with auto-switching capability.
+ * 
+ * ## Usage
+ * 
+ * 1. Include this header in your source file:
+ *    ```c
+ *    #include "trema_relay.h"
+ *    ```
+ * 
+ * 2. Initialize the relay:
+ *    ```c
+ *    if (trema_relay_init()) {
+ *        // Relay initialized successfully
+ *    }
+ *    ```
+ * 
+ * 3. Control relay channels:
+ *    ```c
+ *    trema_relay_digital_write(0, HIGH);  // Turn on channel 0
+ *    trema_relay_digital_write(0, LOW);   // Turn off channel 0
+ *    ```
+ * 
+ * 4. Use auto-switching feature:
+ *    ```c
+ *    trema_relay_auto_switch(true);   // Start auto-switching
+ *    trema_relay_auto_switch(false);  // Stop auto-switching
+ *    ```
+ */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -73,6 +107,12 @@ bool trema_relay_get_state_wdt(void);
  * @return true if using stub values, false if relay is connected
  */
 bool trema_relay_is_using_stub_values(void);
+
+/**
+ * @brief Automatically switch relay channels 1-4 every 2 seconds
+ * @param enable true to start auto-switching, false to stop
+ */
+void trema_relay_auto_switch(bool enable);
 
 #ifdef __cplusplus
 }
