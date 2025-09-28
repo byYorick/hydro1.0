@@ -204,7 +204,7 @@ lv_disp_t* lcd_ili9341_init(void)
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
         .spi_mode = 0,
-        .trans_queue_depth = 10,
+        .trans_queue_depth = 0,  // Set to 0 for polling mode to avoid ISR issues
         .on_color_trans_done = notify_lvgl_flush_ready,  // Add callback for flush ready notification
         .user_ctx = &disp_drv,  // Pass display driver as user context
     };
@@ -367,17 +367,17 @@ void lcd_ili9341_set_brightness(uint8_t brightness)
 // Notifies screen refresh readiness
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
-    ESP_LOGD("LCD", "notify_lvgl_flush_ready called");
+    //ESP_LOGD("LCD", "notify_lvgl_flush_ready called");
     lv_disp_drv_t *disp_driver = (lv_disp_drv_t *)user_ctx;
     
     // Check if we can acquire the mutex without blocking to avoid deadlock
     if (xSemaphoreTakeRecursive(lvgl_mux, 0) == pdTRUE) {
         lv_disp_flush_ready(disp_driver);
         xSemaphoreGiveRecursive(lvgl_mux);
-        ESP_LOGD("LCD", "lv_disp_flush_ready completed");
+        //ESP_LOGD("LCD", "lv_disp_flush_ready completed");
     } else {
         // If we can't acquire the mutex immediately, defer the flush ready call
-        ESP_LOGW("LCD", "Could not acquire mutex in callback, deferring flush ready");
+        //ESP_LOGW("LCD", "Could not acquire mutex in callback, deferring flush ready");
     }
     
     return false;
@@ -387,7 +387,7 @@ static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_
 // Draws bitmap to the specified area of the display
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
-    ESP_LOGD("LCD", "lvgl_flush_cb called");
+    //ESP_LOGD("LCD", "lvgl_flush_cb called");
     
     // Safety check for null pointers
     if (!drv || !area || !color_map) {
@@ -417,18 +417,18 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
     // Log flush operations for debugging (only for larger areas to avoid spam)
     int area_size = (offsetx2 - offsetx1 + 1) * (offsety2 - offsety1 + 1);
     if (area_size > 1000) {  // Only log for areas larger than 1000 pixels
-        ESP_LOGD("LCD", "Flush area: (%d,%d) to (%d,%d), size: %d pixels", 
-                 offsetx1, offsety1, offsetx2, offsety2, area_size);
+        //ESP_LOGD("LCD", "Flush area: (%d,%d) to (%d,%d), size: %d pixels", 
+        //         offsetx1, offsety1, offsetx2, offsety2, area_size);
     }
     
-    ESP_LOGD("LCD", "Calling esp_lcd_panel_draw_bitmap");
+    //ESP_LOGD("LCD", "Calling esp_lcd_panel_draw_bitmap");
     // copy a buffer's content to a specific area of the display
     esp_err_t result = esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
     
     if (result != ESP_OK) {
         ESP_LOGW("LCD", "Failed to draw bitmap: %s", esp_err_to_name(result));
     } else {
-        ESP_LOGD("LCD", "Successfully drew bitmap: (%d,%d) to (%d,%d)", offsetx1, offsety1, offsetx2, offsety2);
+        //ESP_LOGD("LCD", "Successfully drew bitmap: (%d,%d) to (%d,%d)", offsetx1, offsety1, offsetx2, offsety2);
     }
     
     // NOTE: We no longer call lv_disp_flush_ready here as it's handled in the callback

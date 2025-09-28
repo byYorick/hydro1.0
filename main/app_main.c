@@ -72,6 +72,113 @@ static void i2c_bus_init_custom(void)
 }
 
 /* =============================
+ *  APPLICATION INITIALIZATION
+ * ============================= */
+static void app_init(void)
+{
+    // Reduce log levels for components that may log from ISR context
+    // This prevents crashes due to mutex acquisition in interrupt context
+    esp_log_level_set("spi_master", ESP_LOG_INFO);  // Reduce from DEBUG to INFO
+    esp_log_level_set("LCD", ESP_LOG_INFO);         // Reduce LCD logging level
+    
+    // Initialize NVS (Non-Volatile Storage)
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        nvs_flash_erase();
+        nvs_flash_init();
+    }
+
+    // I2C initialization
+    i2c_bus_init_custom();
+    
+    // Add a small delay to ensure I2C is fully initialized
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // Initialize relay
+    ESP_LOGI(TAG, "Attempting to initialize relay...");
+    if (!trema_relay_init()) {
+        ESP_LOGW(TAG, "Failed to initialize relay");
+        // Let's check if we're using stub values
+        if (trema_relay_is_using_stub_values()) {
+            ESP_LOGW(TAG, "Relay is using stub values (not connected)");
+        }
+    } else {
+        ESP_LOGI(TAG, "Relay initialized successfully");
+        // Turn on channel 0 as an example
+        trema_relay_digital_write(0, HIGH);
+        ESP_LOGI(TAG, "Channel 0 turned ON");
+        // Start auto-switching mode
+        trema_relay_auto_switch(true);
+        ESP_LOGI(TAG, "Auto-switching mode started");
+    }
+
+    // Initialize LCD display
+    lv_disp_t* disp = lcd_ili9341_init();
+    
+    // Verify display initialization
+    if (disp == NULL) {
+        ESP_LOGE(TAG, "Failed to initialize LCD display");
+        return;
+    }
+
+    // Run diagnostics (uncomment to run diagnostics)
+    // run_diagnostics();
+    
+    // Longer delay to ensure display is ready
+    vTaskDelay(pdMS_TO_TICKS(3000));  // Increased delay to 3 seconds
+    
+    // Create LCD UI using lvgl_main component
+    lvgl_main_init();
+
+    // Add a small delay to ensure UI is fully initialized
+    vTaskDelay(pdMS_TO_TICKS(500));  // Increased delay
+
+    // Verify LVGL is initialized
+    if (!lv_is_initialized()) {
+        ESP_LOGE(TAG, "LVGL failed to initialize properly");
+        return;
+    }
+
+    // Force a display refresh to ensure everything is properly initialized
+    ESP_LOGI(TAG, "Attempting to acquire LVGL lock for initial refresh");
+    if (lvgl_lock(1000)) {  // Increased timeout to 1 second
+        ESP_LOGI(TAG, "LVGL lock acquired for initial refresh");
+        lv_obj_invalidate(lv_scr_act());
+        lvgl_unlock();
+        ESP_LOGI(TAG, "Initial display refresh completed");
+    } else {
+        ESP_LOGE(TAG, "Failed to acquire LVGL lock for initial refresh");
+    }
+
+    // Verify screen is active
+    if (lv_scr_act() == NULL) {
+        ESP_LOGE(TAG, "No active screen after initialization");
+        return;
+    } else {
+        ESP_LOGI(TAG, "Active screen verified after initialization");
+    }
+
+    // Longer delay to ensure UI is fully initialized
+    vTaskDelay(pdMS_TO_TICKS(3000));  // Increased delay to 3 seconds
+    
+    // Initialize rotary encoder
+    encoder_config_t encoder_config = {
+        .a_pin = ENC_A_PIN,
+        .b_pin = ENC_B_PIN,
+        .sw_pin = ENC_SW_PIN,
+        .high_limit = 100,
+        .low_limit = -100
+    };
+
+    // Initialize encoder without callback - LVGL will handle it through the input device
+    if (!encoder_init_with_config(&encoder_config, NULL, NULL)) {
+        ESP_LOGE(TAG, "Failed to initialize rotary encoder");
+    } else {
+        ESP_LOGI(TAG, "Rotary encoder initialized successfully");
+    }
+}
+
+/* =============================
  *  SENSOR TASK
  * ============================= */
 // Task for handling sensor data
@@ -210,102 +317,9 @@ void sensor_task(void *pv)
 // Initializes all system components and starts tasks
 void app_main(void)
 {
-    // Initialize NVS (Non-Volatile Storage)
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        nvs_flash_erase();
-        nvs_flash_init();
-    }
-
-    // I2C initialization
-    i2c_bus_init_custom();
+    // Initialize application components with proper log levels
+    app_init();
     
-    // Add a small delay to ensure I2C is fully initialized
-    vTaskDelay(pdMS_TO_TICKS(100));
-
-    // Initialize relay
-    ESP_LOGI(TAG, "Attempting to initialize relay...");
-    if (!trema_relay_init()) {
-        ESP_LOGW(TAG, "Failed to initialize relay");
-        // Let's check if we're using stub values
-        if (trema_relay_is_using_stub_values()) {
-            ESP_LOGW(TAG, "Relay is using stub values (not connected)");
-        }
-    } else {
-        ESP_LOGI(TAG, "Relay initialized successfully");
-        // Turn on channel 0 as an example
-        trema_relay_digital_write(0, HIGH);
-        ESP_LOGI(TAG, "Channel 0 turned ON");
-        // Start auto-switching mode
-        trema_relay_auto_switch(true);
-        ESP_LOGI(TAG, "Auto-switching mode started");
-    }
-
-    // Initialize LCD display
-    lv_disp_t* disp = lcd_ili9341_init();
-    
-    // Verify display initialization
-    if (disp == NULL) {
-        ESP_LOGE(TAG, "Failed to initialize LCD display");
-        return;
-    }
-
-    // Run diagnostics (uncomment to run diagnostics)
-    // run_diagnostics();
-    
-    // Longer delay to ensure display is ready
-    vTaskDelay(pdMS_TO_TICKS(3000));  // Increased delay to 3 seconds
-    
-    // Create LCD UI using lvgl_main component
-    lvgl_main_init();
-
-    // Add a small delay to ensure UI is fully initialized
-    vTaskDelay(pdMS_TO_TICKS(500));  // Increased delay
-
-    // Verify LVGL is initialized
-    if (!lv_is_initialized()) {
-        ESP_LOGE(TAG, "LVGL failed to initialize properly");
-        return;
-    }
-
-    // Force a display refresh to ensure everything is properly initialized
-    ESP_LOGI(TAG, "Attempting to acquire LVGL lock for initial refresh");
-    if (lvgl_lock(1000)) {  // Increased timeout to 1 second
-        ESP_LOGI(TAG, "LVGL lock acquired for initial refresh");
-        lv_obj_invalidate(lv_scr_act());
-        lvgl_unlock();
-        ESP_LOGI(TAG, "Initial display refresh completed");
-    } else {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock for initial refresh");
-    }
-
-    // Verify screen is active
-    if (lv_scr_act() == NULL) {
-        ESP_LOGE(TAG, "No active screen after initialization");
-        return;
-    } else {
-        ESP_LOGI(TAG, "Active screen verified after initialization");
-    }
-
-    // Longer delay to ensure UI is fully initialized
-    vTaskDelay(pdMS_TO_TICKS(3000));  // Increased delay to 3 seconds
-    
-    // Initialize rotary encoder
-    encoder_config_t encoder_config = {
-        .a_pin = ENC_A_PIN,
-        .b_pin = ENC_B_PIN,
-        .sw_pin = ENC_SW_PIN,
-        .high_limit = 100,
-        .low_limit = -100
-    };
-
-    // Initialize encoder without callback - LVGL will handle it through the input device
-    if (!encoder_init_with_config(&encoder_config, NULL, NULL)) {
-        ESP_LOGE(TAG, "Failed to initialize rotary encoder");
-    } else {
-        ESP_LOGI(TAG, "Rotary encoder initialized successfully");
-    }
-
     // Create sensor task with actual sensor readings
     xTaskCreate(sensor_task, "sensors", 4096, NULL, 3, NULL);
 
