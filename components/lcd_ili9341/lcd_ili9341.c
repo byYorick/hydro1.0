@@ -26,7 +26,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////// LCD Configuration //////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-#define LCD_PIXEL_CLOCK_HZ     (40 * 1000 * 1000)  // Increased from 20MHz to 40MHz for better pixel clarity
+#define LCD_PIXEL_CLOCK_HZ     (20 * 1000 * 1000)  // Reduced from 40MHz to 20MHz for stability
 
 // LCD backlight on level (1 - high level, 0 - low level)
 #define LCD_BK_LIGHT_ON_LEVEL  1
@@ -55,16 +55,16 @@
 // Backlight control pin number
 #define PIN_NUM_BK_LIGHT       15
 
-#define LVGL_TICK_PERIOD_MS    2  // Reset to 2ms for balanced performance
+#define LVGL_TICK_PERIOD_MS    2
 #define LVGL_TASK_MAX_DELAY_MS 500
 #define LVGL_TASK_MIN_DELAY_MS 1
 #define LVGL_TASK_STACK_SIZE   (12 * 1024)
-#define LVGL_TASK_PRIORITY     5  // Increased priority to prevent conflicts
+#define LVGL_TASK_PRIORITY     5
 
 static SemaphoreHandle_t lvgl_mux = NULL;
 static esp_timer_handle_t lvgl_tick_timer = NULL;
-static TaskHandle_t lvgl_task_handle = NULL;  // Task handle for debugging
-static esp_lcd_panel_io_handle_t lcd_io_handle = NULL;  // Store IO handle for callback
+static TaskHandle_t lvgl_task_handle = NULL;
+static esp_lcd_panel_io_handle_t lcd_io_handle = NULL;
 
 // Forward declarations
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx);
@@ -74,24 +74,19 @@ static void increase_lvgl_tick(void *arg);
 static void lvgl_task_handler(void *pvParameters);
 
 // Lock LVGL mutex
-// Used to ensure thread safety when working with LVGL API
 bool lvgl_lock(int timeout_ms)
 {
-    // Convert timeout from milliseconds to FreeRTOS ticks
-    // If `timeout_ms` is -1, the program will block until the condition is met
     const TickType_t timeout_ticks = (timeout_ms == -1) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
     return xSemaphoreTakeRecursive(lvgl_mux, timeout_ticks) == pdTRUE;
 }
 
 // Unlock LVGL mutex
-// Releases the mutex after finishing work with LVGL API
 void lvgl_unlock(void)
 {
     xSemaphoreGiveRecursive(lvgl_mux);
 }
 
 // Deprecated function for updating sensor values
-// UI is now handled by the lvgl_main component
 void lcd_ili9341_update_sensor_values(float ph, float ec, float temp, float hum, float lux, float co2)
 {
     // This function is now deprecated as UI is handled by lvgl_main component
@@ -99,7 +94,6 @@ void lcd_ili9341_update_sensor_values(float ph, float ec, float temp, float hum,
 }
 
 // LVGL task handler
-// Executes LVGL timer handling and manages display updates
 static void lvgl_task_handler(void *pvParameters)
 {
     uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
@@ -107,19 +101,15 @@ static void lvgl_task_handler(void *pvParameters)
     ESP_LOGI("LCD", "LVGL task handler started");
     
     while (1) {
-        // Lock the mutex as LVGL APIs are not thread-safe
-        if (lvgl_lock(200)) {  // Increased timeout to 200ms
-            // Additional check to ensure LVGL is initialized
+        if (lvgl_lock(200)) {
             if (lv_is_initialized()) {
                 task_delay_ms = lv_timer_handler();
             } else {
                 ESP_LOGW("LCD", "LVGL not initialized, skipping timer handler");
                 task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
             }
-            // Release the mutex
             lvgl_unlock();
         } else {
-            // If we can't lock the mutex, continue to retry
             ESP_LOGW("LCD", "Failed to acquire LVGL lock, retrying");
         }
         
@@ -134,7 +124,6 @@ static void lvgl_task_handler(void *pvParameters)
 }
 
 // Initialize LCD ILI9341 display
-// Configures SPI, initializes the panel, and registers the display driver for LVGL
 lv_disp_t* lcd_ili9341_init(void)
 {
     ESP_LOGI("LCD", "Initializing LCD ILI9341 display");
@@ -155,8 +144,7 @@ lv_disp_t* lcd_ili9341_init(void)
         return NULL;
     }
 
-    // Install LVGL tick timer BEFORE creating any LVGL objects
-    // Tick interface for LVGL (using esp_timer to generate 2ms periodic event)
+    // Install LVGL tick timer
     const esp_timer_create_args_t lvgl_tick_timer_args = {
         .callback = &increase_lvgl_tick,
         .name = "lvgl_tick"
@@ -184,7 +172,7 @@ lv_disp_t* lcd_ili9341_init(void)
         .miso_io_num = PIN_NUM_MISO,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = 240 * 40 * sizeof(uint16_t), // Increased buffer size for efficiency
+        .max_transfer_sz = 240 * 40 * sizeof(uint16_t),
     };
     ESP_LOGI("LCD", "Initializing SPI bus");
     esp_err_t spi_result = spi_bus_initialize(LCD_HOST, &buscfg, SPI_DMA_CH_AUTO);
@@ -196,7 +184,7 @@ lv_disp_t* lcd_ili9341_init(void)
     }
     ESP_ERROR_CHECK(spi_result);
 
-    static lv_disp_drv_t disp_drv;      // contains callback functions
+    static lv_disp_drv_t disp_drv;
     esp_lcd_panel_io_spi_config_t io_config = {
         .dc_gpio_num = PIN_NUM_LCD_DC,
         .cs_gpio_num = PIN_NUM_LCD_CS,
@@ -204,12 +192,11 @@ lv_disp_t* lcd_ili9341_init(void)
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
         .spi_mode = 0,
-        .trans_queue_depth = 0,  // Set to 0 for polling mode to avoid ISR issues
-        .on_color_trans_done = notify_lvgl_flush_ready,  // Add callback for flush ready notification
-        .user_ctx = &disp_drv,  // Pass display driver as user context
+        .trans_queue_depth = 10,  // Changed back to 10 for proper operation
+        .on_color_trans_done = notify_lvgl_flush_ready,
+        .user_ctx = &disp_drv,
     };
     ESP_LOGI("LCD", "Creating panel IO handle");
-    // Attach the LCD to the SPI bus
     esp_err_t io_result = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_config, &lcd_io_handle);
     if (io_result != ESP_OK) {
         ESP_LOGE("LCD", "Failed to create panel IO: %s", esp_err_to_name(io_result));
@@ -222,7 +209,7 @@ lv_disp_t* lcd_ili9341_init(void)
     esp_lcd_panel_handle_t panel_handle = NULL;
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = PIN_NUM_LCD_RST,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,  // Changed from RGB to BGR for ILI9341
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
         .bits_per_pixel = 16,
     };
     ESP_LOGI("LCD", "Creating panel handle");
@@ -256,11 +243,10 @@ lv_disp_t* lcd_ili9341_init(void)
     ESP_ERROR_CHECK(init_result);
     
     ESP_LOGI("LCD", "Configuring panel orientation");
-    // Настройка панели:
     esp_lcd_panel_swap_xy(panel_handle, false);
-    esp_lcd_panel_mirror(panel_handle, false, true); // стандарт для 240x320 портрет
+    esp_lcd_panel_mirror(panel_handle, false, true);
 
-    // user can flush pre-defined pattern to the screen before we turn on the screen or backlight
+    // Turn on LCD display
     ESP_LOGI("LCD", "Turning on display");
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
@@ -274,11 +260,9 @@ lv_disp_t* lcd_ili9341_init(void)
         return NULL;
     }
 
-    // alloc draw buffers used by LVGL
-    // it's recommended to choose the size of the draw buffer(s) to be at least 1/10 screen sized
+    // Allocate draw buffers used by LVGL
     ESP_LOGI("LCD", "Allocating draw buffers: %d bytes each", 240 * 40 * sizeof(lv_color_t));
     lv_color_t *buf1 = heap_caps_malloc(240 * 40 * sizeof(lv_color_t), MALLOC_CAP_DMA);
-    assert(buf1);
     if (buf1 == NULL) {
         ESP_LOGE("LCD", "Failed to allocate first draw buffer");
         esp_timer_delete(lvgl_tick_timer);
@@ -288,7 +272,6 @@ lv_disp_t* lcd_ili9341_init(void)
     ESP_LOGI("LCD", "First draw buffer allocated at %p", buf1);
     
     lv_color_t *buf2 = heap_caps_malloc(240 * 40 * sizeof(lv_color_t), MALLOC_CAP_DMA);
-    assert(buf2);
     if (buf2 == NULL) {
         ESP_LOGE("LCD", "Failed to allocate second draw buffer");
         heap_caps_free(buf1);
@@ -298,8 +281,8 @@ lv_disp_t* lcd_ili9341_init(void)
     }
     ESP_LOGI("LCD", "Second draw buffer allocated at %p", buf2);
 
-    // initialize LVGL draw buffers with recommended size
-    static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffers called draw buffers
+    // Initialize LVGL draw buffers
+    static lv_disp_draw_buf_t disp_buf;
     lv_disp_draw_buf_init(&disp_buf, buf1, buf2, 240 * 40);
     ESP_LOGI("LCD", "Draw buffers initialized with %d pixels", 240 * 40);
 
@@ -307,23 +290,17 @@ lv_disp_t* lcd_ili9341_init(void)
     lv_disp_drv_init(&disp_drv);
     disp_drv.hor_res = 240;
     disp_drv.ver_res = 320;
-    // В драйвере:
-    disp_drv.antialiasing = 1;
     disp_drv.flush_cb = lvgl_flush_cb;
     disp_drv.drv_update_cb = lvgl_port_update_callback;
     disp_drv.draw_buf = &disp_buf;
     disp_drv.user_data = panel_handle;
 
-    // Enable anti-aliasing for better text rendering
+    // Enable anti-aliasing and rotation support
     disp_drv.antialiasing = 1;
-    
-    // Enable screen rotation support
     disp_drv.sw_rotate = 1;
     disp_drv.rotated = LV_DISP_ROT_NONE;
-    
-    // Improve text rendering quality
-    disp_drv.full_refresh = 0;  // Partial refresh for better performance
-    disp_drv.direct_mode = 0;   // Use buffer mode for better text quality
+    disp_drv.full_refresh = 0;
+    disp_drv.direct_mode = 0;
 
     lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
     if (disp == NULL) {
@@ -335,10 +312,9 @@ lv_disp_t* lcd_ili9341_init(void)
         return NULL;
     }
 
-    // Small delay to ensure the display driver is fully registered
     vTaskDelay(pdMS_TO_TICKS(10));
 
-    // Create LVGL task with higher priority
+    // Create LVGL task
     BaseType_t task_result = xTaskCreate(lvgl_task_handler, "lvgl_task", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, &lvgl_task_handle);
     if (task_result != pdPASS) {
         ESP_LOGE("LCD", "Failed to create LVGL task");
@@ -353,124 +329,62 @@ lv_disp_t* lcd_ili9341_init(void)
 }
 
 // Set display brightness
-// Takes brightness value from 0 to 100
 void lcd_ili9341_set_brightness(uint8_t brightness)
 {
     if (brightness > 100) brightness = 100;
-    
-    // For simple on/off control, we'll just turn it on/off
-    // For PWM control, you would need to implement PWM on the backlight pin
     gpio_set_level(PIN_NUM_BK_LIGHT, brightness > 0 ? LCD_BK_LIGHT_ON_LEVEL : LCD_BK_LIGHT_OFF_LEVEL);
 }
 
 // Callback functions
-// Notifies screen refresh readiness
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
-    //ESP_LOGD("LCD", "notify_lvgl_flush_ready called");
     lv_disp_drv_t *disp_driver = (lv_disp_drv_t *)user_ctx;
     
-    // Check if we can acquire the mutex without blocking to avoid deadlock
     if (xSemaphoreTakeRecursive(lvgl_mux, 0) == pdTRUE) {
         lv_disp_flush_ready(disp_driver);
         xSemaphoreGiveRecursive(lvgl_mux);
-        //ESP_LOGD("LCD", "lv_disp_flush_ready completed");
-    } else {
-        // If we can't acquire the mutex immediately, defer the flush ready call
-        //ESP_LOGW("LCD", "Could not acquire mutex in callback, deferring flush ready");
     }
     
     return false;
 }
 
 // Screen refresh callback function
-// Draws bitmap to the specified area of the display
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
-    //ESP_LOGD("LCD", "lvgl_flush_cb called");
-    
-    // Safety check for null pointers
-    if (!drv || !area || !color_map) {
-        ESP_LOGE("LCD", "Null pointer in lvgl_flush_cb");
-        return;
-    }
-    
     esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t) drv->user_data;
-    
-    // Safety check for panel handle
-    if (!panel_handle) {
-        ESP_LOGE("LCD", "Invalid panel handle in lvgl_flush_cb");
-        return;
-    }
     
     int offsetx1 = area->x1;
     int offsetx2 = area->x2;
     int offsety1 = area->y1;
     int offsety2 = area->y2;
     
-    // Bounds checking
-    if (offsetx1 < 0 || offsety1 < 0 || offsetx2 >= 240 || offsety2 >= 320) {
-        ESP_LOGW("LCD", "Invalid area coordinates: (%d,%d) to (%d,%d)", offsetx1, offsety1, offsetx2, offsety2);
-        // Don't return here, let the panel handle deal with it
-    }
-    
-    // Log flush operations for debugging (only for larger areas to avoid spam)
-    int area_size = (offsetx2 - offsetx1 + 1) * (offsety2 - offsety1 + 1);
-    if (area_size > 1000) {  // Only log for areas larger than 1000 pixels
-        //ESP_LOGD("LCD", "Flush area: (%d,%d) to (%d,%d), size: %d pixels", 
-        //         offsetx1, offsety1, offsetx2, offsety2, area_size);
-    }
-    
-    //ESP_LOGD("LCD", "Calling esp_lcd_panel_draw_bitmap");
     // copy a buffer's content to a specific area of the display
     esp_err_t result = esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
     
     if (result != ESP_OK) {
         ESP_LOGW("LCD", "Failed to draw bitmap: %s", esp_err_to_name(result));
-    } else {
-        //ESP_LOGD("LCD", "Successfully drew bitmap: (%d,%d) to (%d,%d)", offsetx1, offsety1, offsetx2, offsety2);
     }
-    
-    // NOTE: We no longer call lv_disp_flush_ready here as it's handled in the callback
-    // This prevents the deadlock that was occurring
 }
 
 // Port update callback function
-// Handles display rotation
 static void lvgl_port_update_callback(lv_disp_drv_t *drv)
 {
-    // Safety check for null pointer
-    if (!drv) {
-        ESP_LOGE("LCD", "Null pointer in lvgl_port_update_callback");
-        return;
-    }
-    
     esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t) drv->user_data;
-    
-    // Safety check for panel handle
-    if (!panel_handle) {
-        ESP_LOGE("LCD", "Invalid panel handle in lvgl_port_update_callback");
-        return;
-    }
 
     switch (drv->rotated) {
     case LV_DISP_ROT_NONE:
-        // Rotate LCD display
         esp_lcd_panel_swap_xy(panel_handle, false);
         esp_lcd_panel_mirror(panel_handle, false, false);
         break;
     case LV_DISP_ROT_90:
-        // Rotate LCD display
         esp_lcd_panel_swap_xy(panel_handle, true);
         esp_lcd_panel_mirror(panel_handle, false, true);
         break;
     case LV_DISP_ROT_180:
-        // Rotate LCD display
         esp_lcd_panel_swap_xy(panel_handle, false);
-        esp_lcd_panel_mirror(panel_handle, false, true);  // mirror Y = true
+        esp_lcd_panel_mirror(panel_handle, false, true);
         break;
     case LV_DISP_ROT_270:
-        // Rotate LCD display
         esp_lcd_panel_swap_xy(panel_handle, true);
         esp_lcd_panel_mirror(panel_handle, true, false);
         break;
@@ -479,17 +393,13 @@ static void lvgl_port_update_callback(lv_disp_drv_t *drv)
         break;
     }
     
-    // After rotation, force a full screen refresh to ensure text clarity
-    // Only invalidate if LVGL is initialized
     if (lv_is_initialized() && lv_scr_act()) {
         lv_obj_invalidate(lv_scr_act());
     }
 }
 
 // Increase LVGL ticks
-// Tells LVGL how many milliseconds have elapsed
 static void increase_lvgl_tick(void *arg)
 {
-    /* Tell LVGL how many milliseconds has elapsed */
     lv_tick_inc(LVGL_TICK_PERIOD_MS);
 }

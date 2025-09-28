@@ -47,21 +47,32 @@ static void encoder_task(void *pvParameters)
     int event_count = 0;
     int last_count = 0;
     
+    // For filtering - only trigger events every N counts
+    static int32_t last_filtered_count = 0;
+    const int32_t COUNT_FILTER = 4; // Adjust this value to change sensitivity (higher = less sensitive)
+    
     while (1) {
         // Check for watch point events
         // Use portMAX_DELAY to wait indefinitely for events, reducing CPU usage
         if (encoder_queue != NULL && xQueueReceive(encoder_queue, &event_count, portMAX_DELAY)) {
-            // Determine rotation direction based on count change
-            if (event_count > last_count) {
-                if (enc_callback) {
-                    enc_callback(ENCODER_EVENT_RIGHT, enc_user_ctx);
+            // Apply filtering to reduce sensitivity
+            int32_t current_count = encoder_get_count();
+            int32_t count_diff = current_count - last_filtered_count;
+            
+            // Only trigger events when we have enough count difference
+            if (abs(count_diff) >= COUNT_FILTER) {
+                // Determine rotation direction based on count change
+                if (count_diff > 0) {
+                    if (enc_callback) {
+                        enc_callback(ENCODER_EVENT_RIGHT, enc_user_ctx);
+                    }
+                } else if (count_diff < 0) {
+                    if (enc_callback) {
+                        enc_callback(ENCODER_EVENT_LEFT, enc_user_ctx);
+                    }
                 }
-            } else if (event_count < last_count) {
-                if (enc_callback) {
-                    enc_callback(ENCODER_EVENT_LEFT, enc_user_ctx);
-                }
+                last_filtered_count = current_count;
             }
-            last_count = event_count;
         }
         
         // Check button press (with debouncing)

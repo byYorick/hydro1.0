@@ -37,7 +37,7 @@ static void encoder_read_cb(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     // Clear count if there was movement to prevent accumulation
     if (enc_data.enc_diff != 0) {
         encoder_clear_count();
-        ESP_LOGD(TAG, "Encoder diff: %ld, Button: %d", (long)enc_data.enc_diff, enc_data.state);
+        //ESP_LOGD(TAG, "Encoder diff: %ld, Button: %d", (long)enc_data.enc_diff, enc_data.state);
     }
 }
 
