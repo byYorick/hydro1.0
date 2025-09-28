@@ -93,35 +93,8 @@ void lcd_ili9341_update_sensor_values(float ph, float ec, float temp, float hum,
     // Kept for backward compatibility
 }
 
-// LVGL task handler
-static void lvgl_task_handler(void *pvParameters)
-{
-    uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
-    
-    ESP_LOGI("LCD", "LVGL task handler started");
-    
-    while (1) {
-        if (lvgl_lock(200)) {
-            if (lv_is_initialized()) {
-                task_delay_ms = lv_timer_handler();
-            } else {
-                ESP_LOGW("LCD", "LVGL not initialized, skipping timer handler");
-                task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
-            }
-            lvgl_unlock();
-        } else {
-            ESP_LOGW("LCD", "Failed to acquire LVGL lock, retrying");
-        }
-        
-        if (task_delay_ms > LVGL_TASK_MAX_DELAY_MS) {
-            task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
-        } else if (task_delay_ms < LVGL_TASK_MIN_DELAY_MS) {
-            task_delay_ms = LVGL_TASK_MIN_DELAY_MS;
-        }
-        
-        vTaskDelay(pdMS_TO_TICKS(task_delay_ms));
-    }
-}
+// LVGL task handler - REMOVED to avoid duplicate timer tasks
+// The timer task is now handled by lvgl_main component
 
 // Initialize LCD ILI9341 display
 lv_disp_t* lcd_ili9341_init(void)
@@ -312,18 +285,8 @@ lv_disp_t* lcd_ili9341_init(void)
         return NULL;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(10));
-
-    // Create LVGL task
-    BaseType_t task_result = xTaskCreate(lvgl_task_handler, "lvgl_task", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, &lvgl_task_handle);
-    if (task_result != pdPASS) {
-        ESP_LOGE("LCD", "Failed to create LVGL task");
-        heap_caps_free(buf1);
-        heap_caps_free(buf2);
-        esp_timer_delete(lvgl_tick_timer);
-        vSemaphoreDelete(lvgl_mux);
-        return NULL;
-    }
+    // Note: We no longer create a timer task here to avoid duplication
+    // The timer task is created in lvgl_main component
 
     return disp;
 }

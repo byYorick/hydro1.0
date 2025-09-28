@@ -94,14 +94,33 @@ static void lvgl_timer_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "LVGL timer task started");
     
+    uint32_t last_sleep_time = 0;
+    
     while (1) {
-        if (lvgl_lock(100)) {  // Short timeout to prevent blocking
-            lv_timer_handler();
+        // Try to acquire the lock with a very short timeout to prevent blocking
+        if (lvgl_lock(10)) {  // 10ms timeout
+            // Run the LVGL timer handler
+            uint32_t sleep_ms = lv_timer_handler();
             lvgl_unlock();
+            
+            // Use the sleep time suggested by LVGL, but with reasonable limits
+            if (sleep_ms > 50) {
+                sleep_ms = 50;  // Cap to 50ms to prevent watchdog issues
+            } else if (sleep_ms < 5) {
+                sleep_ms = 5;   // Minimum 5ms delay
+            }
+            
+            last_sleep_time = sleep_ms;
+        } else {
+            // If we can't acquire the lock, use the last known good sleep time
+            // but with a minimum to prevent busy waiting
+            if (last_sleep_time < 5) {
+                last_sleep_time = 10;
+            }
         }
         
-        // Delay for 5ms as configured in sdkconfig.defaults
-        vTaskDelay(pdMS_TO_TICKS(5));
+        // Delay based on LVGL's recommendation or last known good value
+        vTaskDelay(pdMS_TO_TICKS(last_sleep_time));
     }
 }
 
@@ -497,9 +516,8 @@ static void display_update_task(void *pvParameters)
             ESP_LOGI(TAG, "Received sensor data from queue: pH=%.2f, EC=%.2f, Temp=%.1f", 
                      sensor_data.ph, sensor_data.ec, sensor_data.temp);
             
-            // Попытка блокировки мьютекса, так как API LVGL не являются потокобезопасными
-            // Use a longer timeout to avoid contention with the main loop
-            if (!lvgl_lock(1000)) {  // Increased timeout to 1000ms
+            // Try to acquire the lock with a reasonable timeout
+            if (!lvgl_lock(500)) {  // 500ms timeout
                 ESP_LOGW(TAG, "Failed to acquire LVGL lock, skipping update");
                 continue;
             }
@@ -519,8 +537,8 @@ static void display_update_task(void *pvParameters)
             ESP_LOGD(TAG, "No sensor data received within timeout");
         }
         
-        // Small delay to prevent excessive CPU usage
-        vTaskDelay(pdMS_TO_TICKS(100));
+        // Small delay to prevent excessive CPU usage and reduce contention
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
 }
 
@@ -546,7 +564,7 @@ void lvgl_main_init(void)
     }
     ESP_LOGI(TAG, "Display update task created successfully");
     
-    // Create LVGL timer task
+    // Create LVGL timer task - this is the only timer task needed
     task_result = xTaskCreate(lvgl_timer_task, "lvgl_timer", 4096, NULL, 7, &lvgl_timer_task_handle);
     if (task_result != pdPASS) {
         ESP_LOGE(TAG, "Failed to create LVGL timer task");
