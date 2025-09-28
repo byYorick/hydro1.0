@@ -26,7 +26,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////// LCD Configuration //////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-#define LCD_PIXEL_CLOCK_HZ     (20 * 1000 * 1000)  // Increased from 20MHz to 40MHz for better pixel clarity
+#define LCD_PIXEL_CLOCK_HZ     (40 * 1000 * 1000)  // Increased from 20MHz to 40MHz for better pixel clarity
 
 // LCD backlight on level (1 - high level, 0 - low level)
 #define LCD_BK_LIGHT_ON_LEVEL  1
@@ -59,7 +59,7 @@
 #define LVGL_TASK_MAX_DELAY_MS 500
 #define LVGL_TASK_MIN_DELAY_MS 1
 #define LVGL_TASK_STACK_SIZE   (12 * 1024)
-#define LVGL_TASK_PRIORITY     1  // Reset to original priority
+#define LVGL_TASK_PRIORITY     5  // Increased priority to prevent conflicts
 
 static SemaphoreHandle_t lvgl_mux = NULL;
 static esp_timer_handle_t lvgl_tick_timer = NULL;
@@ -102,6 +102,8 @@ void lcd_ili9341_update_sensor_values(float ph, float ec, float temp, float hum,
 static void lvgl_task_handler(void *pvParameters)
 {
     uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
+    
+    ESP_LOGI("LCD", "LVGL task handler started");
     
     while (1) {
         // Lock the mutex as LVGL APIs are not thread-safe
@@ -181,7 +183,7 @@ lv_disp_t* lcd_ili9341_init(void)
         .miso_io_num = PIN_NUM_MISO,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = 240 * 20 * sizeof(uint16_t), // Match buffer size for efficiency
+        .max_transfer_sz = 240 * 40 * sizeof(uint16_t), // Increased buffer size for efficiency
     };
     ESP_LOGI("LCD", "Initializing SPI bus");
     esp_err_t spi_result = spi_bus_initialize(LCD_HOST, &buscfg, SPI_DMA_CH_AUTO);
@@ -203,8 +205,8 @@ lv_disp_t* lcd_ili9341_init(void)
         .lcd_param_bits = 8,
         .spi_mode = 0,
         .trans_queue_depth = 10,
-        .on_color_trans_done = notify_lvgl_flush_ready,
-        .user_ctx = &disp_drv,
+        .on_color_trans_done = notify_lvgl_flush_ready,  // Add callback for flush ready notification
+        .user_ctx = &disp_drv,  // Pass display driver as user context
     };
     ESP_LOGI("LCD", "Creating panel IO handle");
     // Attach the LCD to the SPI bus
@@ -274,8 +276,8 @@ lv_disp_t* lcd_ili9341_init(void)
 
     // alloc draw buffers used by LVGL
     // it's recommended to choose the size of the draw buffer(s) to be at least 1/10 screen sized
-    ESP_LOGI("LCD", "Allocating draw buffers: %d bytes each", 240 * 20 * sizeof(lv_color_t));
-    lv_color_t *buf1 = heap_caps_malloc(240 * 20 * sizeof(lv_color_t), MALLOC_CAP_DMA);
+    ESP_LOGI("LCD", "Allocating draw buffers: %d bytes each", 240 * 40 * sizeof(lv_color_t));
+    lv_color_t *buf1 = heap_caps_malloc(240 * 40 * sizeof(lv_color_t), MALLOC_CAP_DMA);
     assert(buf1);
     if (buf1 == NULL) {
         ESP_LOGE("LCD", "Failed to allocate first draw buffer");
@@ -285,7 +287,7 @@ lv_disp_t* lcd_ili9341_init(void)
     }
     ESP_LOGI("LCD", "First draw buffer allocated at %p", buf1);
     
-    lv_color_t *buf2 = heap_caps_malloc(240 * 20 * sizeof(lv_color_t), MALLOC_CAP_DMA);
+    lv_color_t *buf2 = heap_caps_malloc(240 * 40 * sizeof(lv_color_t), MALLOC_CAP_DMA);
     assert(buf2);
     if (buf2 == NULL) {
         ESP_LOGE("LCD", "Failed to allocate second draw buffer");
@@ -298,8 +300,8 @@ lv_disp_t* lcd_ili9341_init(void)
 
     // initialize LVGL draw buffers with recommended size
     static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffers called draw buffers
-    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, 240 * 20);
-    ESP_LOGI("LCD", "Draw buffers initialized with %d pixels", 240 * 20);
+    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, 240 * 40);
+    ESP_LOGI("LCD", "Draw buffers initialized with %d pixels", 240 * 40);
 
     // Register display driver to LVGL
     lv_disp_drv_init(&disp_drv);
@@ -336,7 +338,7 @@ lv_disp_t* lcd_ili9341_init(void)
     // Small delay to ensure the display driver is fully registered
     vTaskDelay(pdMS_TO_TICKS(10));
 
-    // Create LVGL task
+    // Create LVGL task with higher priority
     BaseType_t task_result = xTaskCreate(lvgl_task_handler, "lvgl_task", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, &lvgl_task_handle);
     if (task_result != pdPASS) {
         ESP_LOGE("LCD", "Failed to create LVGL task");
@@ -365,8 +367,10 @@ void lcd_ili9341_set_brightness(uint8_t brightness)
 // Notifies screen refresh readiness
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
+    ESP_LOGD("LCD", "notify_lvgl_flush_ready called");
     lv_disp_drv_t *disp_driver = (lv_disp_drv_t *)user_ctx;
     lv_disp_flush_ready(disp_driver);
+    ESP_LOGD("LCD", "lv_disp_flush_ready completed");
     return false;
 }
 
@@ -374,6 +378,8 @@ static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_
 // Draws bitmap to the specified area of the display
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
+    ESP_LOGD("LCD", "lvgl_flush_cb called");
+    
     // Safety check for null pointers
     if (!drv || !area || !color_map) {
         ESP_LOGE("LCD", "Null pointer in lvgl_flush_cb");
@@ -396,7 +402,7 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
     // Bounds checking
     if (offsetx1 < 0 || offsety1 < 0 || offsetx2 >= 240 || offsety2 >= 320) {
         ESP_LOGW("LCD", "Invalid area coordinates: (%d,%d) to (%d,%d)", offsetx1, offsety1, offsetx2, offsety2);
-        return;
+        // Don't return here, let the panel handle deal with it
     }
     
     // Log flush operations for debugging (only for larger areas to avoid spam)
@@ -406,21 +412,20 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
                  offsetx1, offsety1, offsetx2, offsety2, area_size);
     }
     
+    ESP_LOGD("LCD", "Calling esp_lcd_panel_draw_bitmap");
     // copy a buffer's content to a specific area of the display
     esp_err_t result = esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
     
-    // Force full screen refresh for better text consistency
-    if (area_size > 240 * 320 * 0.8) {  // If area is more than 80% of screen
-        ESP_LOGD("LCD", "Forcing full screen refresh for better text consistency");
-    }
-    
     if (result != ESP_OK) {
         ESP_LOGW("LCD", "Failed to draw bitmap: %s", esp_err_to_name(result));
+    } else {
+        ESP_LOGD("LCD", "Successfully drew bitmap: (%d,%d) to (%d,%d)", offsetx1, offsety1, offsetx2, offsety2);
     }
     
-    // НЕ ВЫЗЫВАЙТЕ lv_disp_flush_ready здесь!
-    // Это сделает колбэк notify_lvgl_flush_ready после завершения DMA.
-    // lv_disp_flush_ready(drv);  // Removed as per guidance
+    // VERY IMPORTANT: Notify LVGL that the flush is complete
+    // This is what was missing and causing the deadlock!
+    lv_disp_flush_ready(drv);
+    ESP_LOGD("LCD", "lvgl_flush_cb completed");
 }
 
 // Port update callback function

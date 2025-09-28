@@ -9,17 +9,58 @@ extern "C" {
 #include <stdbool.h>
 
 /**
- * @brief Set encoder pin configuration
- * @param a_pin CLK pin
- * @param b_pin DT pin
- * @param sw_pin Switch pin
+ * @brief Encoder event types
  */
-void encoder_set_pins(int a_pin, int b_pin, int sw_pin);
+typedef enum {
+    ENCODER_EVENT_LEFT,     /*!< Encoder rotated left/counterclockwise */
+    ENCODER_EVENT_RIGHT,    /*!< Encoder rotated right/clockwise */
+    ENCODER_EVENT_BUTTON    /*!< Encoder button pressed */
+} encoder_event_t;
 
 /**
- * @brief Initialize the encoder
+ * @brief Encoder configuration structure
  */
-void encoder_init(void);
+typedef struct {
+    int a_pin;              /*!< CLK pin */
+    int b_pin;              /*!< DT pin */
+    int sw_pin;             /*!< Switch pin */
+    int high_limit;         /*!< High count limit */
+    int low_limit;          /*!< Low count limit */
+} encoder_config_t;
+
+/**
+ * @brief Callback function type for encoder events
+ */
+typedef void (*encoder_callback_t)(encoder_event_t event, void* user_ctx);
+
+/**
+ * @brief Initialize the rotary encoder with configuration
+ * 
+ * @param config Pointer to encoder configuration
+ * @param callback Callback function for encoder events
+ * @param user_ctx User context to pass to callback
+ * @return true if successful, false otherwise
+ */
+bool encoder_init_with_config(const encoder_config_t* config, encoder_callback_t callback, void* user_ctx);
+
+/**
+ * @brief Get current encoder count
+ * 
+ * @return Current encoder count
+ */
+int encoder_get_count(void);
+
+/**
+ * @brief Clear encoder count to zero
+ */
+void encoder_clear_count(void);
+
+/**
+ * @brief Check if encoder button is pressed
+ * 
+ * @return true if button is pressed, false otherwise
+ */
+bool encoder_button_pressed(void);
 
 #ifdef __cplusplus
 }

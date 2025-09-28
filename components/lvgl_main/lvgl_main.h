@@ -16,3 +16,18 @@ void lvgl_main_init(void);
  * @param co2 CO2 value
  */
 void lvgl_update_sensor_values(float ph, float ec, float temp, float hum, float lux, float co2);
+
+/**
+ * @brief Show settings screen
+ */
+void lvgl_show_settings_screen(void);
+
+/**
+ * @brief Show main dashboard screen
+ */
+void lvgl_show_main_screen(void);
+
+/**
+ * @brief Test function to simulate sensor updates
+ */
+void lvgl_test_sensor_updates(void);

@@ -45,6 +45,39 @@
 
 static const char *TAG = "app_main";
 
+// Encoder event callback
+static void encoder_event_callback(encoder_event_t event, void* user_ctx)
+{
+    switch (event) {
+        case ENCODER_EVENT_LEFT:
+            ESP_LOGI(TAG, "Encoder rotated left");
+            // Handle left rotation - could be used for navigation
+            break;
+        case ENCODER_EVENT_RIGHT:
+            ESP_LOGI(TAG, "Encoder rotated right");
+            // Handle right rotation - could be used for navigation
+            break;
+        case ENCODER_EVENT_BUTTON:
+            ESP_LOGI(TAG, "Encoder button pressed");
+            // Handle button press - toggle between screens
+            // Use LVGL lock to ensure thread safety
+            if (lvgl_lock(1000)) {  // Wait up to 1 second for the lock
+                static bool showing_main = true;
+                if (showing_main) {
+                    lvgl_show_settings_screen();
+                    showing_main = false;
+                } else {
+                    lvgl_show_main_screen();
+                    showing_main = true;
+                }
+                lvgl_unlock();
+            } else {
+                ESP_LOGE(TAG, "Failed to acquire LVGL lock for screen toggle");
+            }
+            break;
+    }
+}
+
 /* =============================
  *  I2C DRIVER WITH MUTEX
  * ============================= */
@@ -166,6 +199,8 @@ void sensor_task(void *pv)
         }
 
         // Update LVGL UI with sensor values
+        ESP_LOGI(TAG, "Updating LVGL UI with sensor values: pH=%.2f, EC=%.2f, Temp=%.1f", 
+                 ph_value, ec_value, temp_value);
         lvgl_update_sensor_values(
             ph_value,
             ec_value,
@@ -200,36 +235,6 @@ void sensor_task(void *pv)
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
-
-
-
-/* =============================
- *  PUMP INITIALIZATION
- * ============================= */
-/*
-// Initialize pumps
-// Configures all system pumps with corresponding pins
-static void pumps_init(void)
-{
-    ESP_LOGI(TAG, "Initializing pumps...");
-    ESP_LOGI(TAG, "PUMP_PH_ACID: IA=%d, IB=%d", PUMP_PH_ACID_IA, PUMP_PH_ACID_IB);
-    pump_init(PUMP_PH_ACID_IA, PUMP_PH_ACID_IB);
-    
-    ESP_LOGI(TAG, "PUMP_PH_BASE: IA=%d, IB=%d", PUMP_PH_BASE_IA, PUMP_PH_BASE_IB);
-    pump_init(PUMP_PH_BASE_IA, PUMP_PH_BASE_IB);
-    
-    ESP_LOGI(TAG, "PUMP_EC_A: IA=%d, IB=%d", PUMP_EC_A_IA, PUMP_EC_A_IB);
-    pump_init(PUMP_EC_A_IA, PUMP_EC_A_IB);
-    
-    ESP_LOGI(TAG, "PUMP_EC_B: IA=%d, IB=%d", PUMP_EC_B_IA, PUMP_EC_B_IB);
-    pump_init(PUMP_EC_B_IA, PUMP_EC_B_IB);
-    
-    ESP_LOGI(TAG, "PUMP_EC_C: IA=%d, IB=%d", PUMP_EC_C_IA, PUMP_EC_C_IB);
-    pump_init(PUMP_EC_C_IA, PUMP_EC_C_IB);
-    
-    ESP_LOGI(TAG, "Pumps initialization completed");
-}
-*/
 
 /* =============================
  *  MAIN FUNCTION
@@ -286,32 +291,100 @@ void app_main(void)
     
     // Create LCD UI using lvgl_main component
     lvgl_main_init();
-    
+
     // Add a small delay to ensure UI is fully initialized
     vTaskDelay(pdMS_TO_TICKS(500));  // Increased delay
-    
+
+    // Verify LVGL is initialized
+    if (!lv_is_initialized()) {
+        ESP_LOGE(TAG, "LVGL failed to initialize properly");
+        return;
+    }
+
     // Force a display refresh to ensure everything is properly initialized
+    ESP_LOGI(TAG, "Attempting to acquire LVGL lock for initial refresh");
     if (lvgl_lock(1000)) {  // Increased timeout to 1 second
+        ESP_LOGI(TAG, "LVGL lock acquired for initial refresh");
         lv_obj_invalidate(lv_scr_act());
         lv_timer_handler();
         lvgl_unlock();
+        ESP_LOGI(TAG, "Initial display refresh completed");
     } else {
         ESP_LOGE(TAG, "Failed to acquire LVGL lock for initial refresh");
     }
-    
+
+    // Verify screen is active
+    if (lv_scr_act() == NULL) {
+        ESP_LOGE(TAG, "No active screen after initialization");
+        return;
+    } else {
+        ESP_LOGI(TAG, "Active screen verified after initialization");
+    }
+
     // Longer delay to ensure UI is fully initialized
     vTaskDelay(pdMS_TO_TICKS(3000));  // Increased delay to 3 seconds
     
+    // Initialize rotary encoder
+    encoder_config_t encoder_config = {
+        .a_pin = ENC_A_PIN,
+        .b_pin = ENC_B_PIN,
+        .sw_pin = ENC_SW_PIN,
+        .high_limit = 100,
+        .low_limit = -100
+    };
+
+    if (!encoder_init_with_config(&encoder_config, encoder_event_callback, NULL)) {
+        ESP_LOGE(TAG, "Failed to initialize rotary encoder");
+    } else {
+        ESP_LOGI(TAG, "Rotary encoder initialized successfully");
+    }
+
     // Create sensor task with actual sensor readings
     xTaskCreate(sensor_task, "sensors", 4096, NULL, 3, NULL);
 
+    // For testing purposes, periodically call the test function
+    // This can be removed in production
+    static uint32_t test_count = 0;
+
     // Keep the main task alive
+    static uint32_t refresh_count = 0;
+    static uint32_t screen_check_count = 0;
     while (1) {
-        // Periodically refresh the display to ensure consistent rendering
-        if (lvgl_lock(10)) {
-            lv_timer_handler();
-            lvgl_unlock();
+        // Check if LVGL is still initialized
+        if (!lv_is_initialized()) {
+            ESP_LOGE(TAG, "LVGL is no longer initialized");
+            vTaskDelay(pdMS_TO_TICKS(5000)); // Increased delay to 5 seconds to reduce CPU usage and mutex contention
+            continue;
         }
+        
+        // Periodically check if the main screen is active (every 50 cycles)
+        if (++screen_check_count % 50 == 0) {
+            lv_obj_t* current_screen = lv_scr_act();
+            // We can't easily check the screen pointer from here, so just log for debugging
+            ESP_LOGD(TAG, "Current screen check: %p", current_screen);
+        }
+        
+        // Periodically refresh the display to ensure consistent rendering
+        // Use a longer timeout and check if we can acquire the lock
+        if (lvgl_lock(500)) {  // Increased timeout to 500ms to reduce contention
+            lv_timer_handler();
+            // Force screen invalidation every 100 cycles to ensure updates are visible
+            if (++refresh_count % 100 == 0) {
+                lv_obj_invalidate(lv_scr_act());
+                ESP_LOGD(TAG, "Forced screen invalidation");
+            }
+            lvgl_unlock();
+            ESP_LOGD(TAG, "LVGL timer handler executed");
+        } else {
+            ESP_LOGW(TAG, "Failed to acquire LVGL lock in main loop");
+        }
+        
+        // For testing purposes, periodically call the test function
+        // This can be removed in production
+        if (++test_count % 15 == 0) { // Call test function every 30 seconds
+            lvgl_test_sensor_updates();
+        }
+        
         vTaskDelay(pdMS_TO_TICKS(2000)); // Sleep to reduce CPU usage
     }
 }
