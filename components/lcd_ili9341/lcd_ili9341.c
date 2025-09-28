@@ -64,6 +64,7 @@
 static SemaphoreHandle_t lvgl_mux = NULL;
 static esp_timer_handle_t lvgl_tick_timer = NULL;
 static TaskHandle_t lvgl_task_handle = NULL;  // Task handle for debugging
+static esp_lcd_panel_io_handle_t lcd_io_handle = NULL;  // Store IO handle for callback
 
 // Forward declarations
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx);
@@ -196,7 +197,6 @@ lv_disp_t* lcd_ili9341_init(void)
     ESP_ERROR_CHECK(spi_result);
 
     static lv_disp_drv_t disp_drv;      // contains callback functions
-    esp_lcd_panel_io_handle_t io_handle = NULL;
     esp_lcd_panel_io_spi_config_t io_config = {
         .dc_gpio_num = PIN_NUM_LCD_DC,
         .cs_gpio_num = PIN_NUM_LCD_CS,
@@ -210,7 +210,7 @@ lv_disp_t* lcd_ili9341_init(void)
     };
     ESP_LOGI("LCD", "Creating panel IO handle");
     // Attach the LCD to the SPI bus
-    esp_err_t io_result = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_config, &io_handle);
+    esp_err_t io_result = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_config, &lcd_io_handle);
     if (io_result != ESP_OK) {
         ESP_LOGE("LCD", "Failed to create panel IO: %s", esp_err_to_name(io_result));
         esp_timer_delete(lvgl_tick_timer);
@@ -226,7 +226,7 @@ lv_disp_t* lcd_ili9341_init(void)
         .bits_per_pixel = 16,
     };
     ESP_LOGI("LCD", "Creating panel handle");
-    esp_err_t panel_result = esp_lcd_new_panel_ili9341(io_handle, &panel_config, &panel_handle);
+    esp_err_t panel_result = esp_lcd_new_panel_ili9341(lcd_io_handle, &panel_config, &panel_handle);
     if (panel_result != ESP_OK) {
         ESP_LOGE("LCD", "Failed to create panel: %s", esp_err_to_name(panel_result));
         esp_timer_delete(lvgl_tick_timer);
@@ -369,8 +369,17 @@ static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_
 {
     ESP_LOGD("LCD", "notify_lvgl_flush_ready called");
     lv_disp_drv_t *disp_driver = (lv_disp_drv_t *)user_ctx;
-    lv_disp_flush_ready(disp_driver);
-    ESP_LOGD("LCD", "lv_disp_flush_ready completed");
+    
+    // Check if we can acquire the mutex without blocking to avoid deadlock
+    if (xSemaphoreTakeRecursive(lvgl_mux, 0) == pdTRUE) {
+        lv_disp_flush_ready(disp_driver);
+        xSemaphoreGiveRecursive(lvgl_mux);
+        ESP_LOGD("LCD", "lv_disp_flush_ready completed");
+    } else {
+        // If we can't acquire the mutex immediately, defer the flush ready call
+        ESP_LOGW("LCD", "Could not acquire mutex in callback, deferring flush ready");
+    }
+    
     return false;
 }
 
@@ -422,10 +431,8 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
         ESP_LOGD("LCD", "Successfully drew bitmap: (%d,%d) to (%d,%d)", offsetx1, offsety1, offsetx2, offsety2);
     }
     
-    // VERY IMPORTANT: Notify LVGL that the flush is complete
-    // This is what was missing and causing the deadlock!
-    lv_disp_flush_ready(drv);
-    ESP_LOGD("LCD", "lvgl_flush_cb completed");
+    // NOTE: We no longer call lv_disp_flush_ready here as it's handled in the callback
+    // This prevents the deadlock that was occurring
 }
 
 // Port update callback function

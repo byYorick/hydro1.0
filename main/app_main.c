@@ -45,39 +45,6 @@
 
 static const char *TAG = "app_main";
 
-// Encoder event callback
-static void encoder_event_callback(encoder_event_t event, void* user_ctx)
-{
-    switch (event) {
-        case ENCODER_EVENT_LEFT:
-            ESP_LOGI(TAG, "Encoder rotated left");
-            // Handle left rotation - could be used for navigation
-            break;
-        case ENCODER_EVENT_RIGHT:
-            ESP_LOGI(TAG, "Encoder rotated right");
-            // Handle right rotation - could be used for navigation
-            break;
-        case ENCODER_EVENT_BUTTON:
-            ESP_LOGI(TAG, "Encoder button pressed");
-            // Handle button press - toggle between screens
-            // Use LVGL lock to ensure thread safety
-            if (lvgl_lock(1000)) {  // Wait up to 1 second for the lock
-                static bool showing_main = true;
-                if (showing_main) {
-                    lvgl_show_settings_screen();
-                    showing_main = false;
-                } else {
-                    lvgl_show_main_screen();
-                    showing_main = true;
-                }
-                lvgl_unlock();
-            } else {
-                ESP_LOGE(TAG, "Failed to acquire LVGL lock for screen toggle");
-            }
-            break;
-    }
-}
-
 /* =============================
  *  I2C DRIVER WITH MUTEX
  * ============================= */
@@ -306,7 +273,6 @@ void app_main(void)
     if (lvgl_lock(1000)) {  // Increased timeout to 1 second
         ESP_LOGI(TAG, "LVGL lock acquired for initial refresh");
         lv_obj_invalidate(lv_scr_act());
-        lv_timer_handler();
         lvgl_unlock();
         ESP_LOGI(TAG, "Initial display refresh completed");
     } else {
@@ -333,7 +299,8 @@ void app_main(void)
         .low_limit = -100
     };
 
-    if (!encoder_init_with_config(&encoder_config, encoder_event_callback, NULL)) {
+    // Initialize encoder without callback - LVGL will handle it through the input device
+    if (!encoder_init_with_config(&encoder_config, NULL, NULL)) {
         ESP_LOGE(TAG, "Failed to initialize rotary encoder");
     } else {
         ESP_LOGI(TAG, "Rotary encoder initialized successfully");
@@ -347,7 +314,6 @@ void app_main(void)
     static uint32_t test_count = 0;
 
     // Keep the main task alive
-    static uint32_t refresh_count = 0;
     static uint32_t screen_check_count = 0;
     while (1) {
         // Check if LVGL is still initialized
@@ -362,21 +328,6 @@ void app_main(void)
             lv_obj_t* current_screen = lv_scr_act();
             // We can't easily check the screen pointer from here, so just log for debugging
             ESP_LOGD(TAG, "Current screen check: %p", current_screen);
-        }
-        
-        // Periodically refresh the display to ensure consistent rendering
-        // Use a longer timeout and check if we can acquire the lock
-        if (lvgl_lock(500)) {  // Increased timeout to 500ms to reduce contention
-            lv_timer_handler();
-            // Force screen invalidation every 100 cycles to ensure updates are visible
-            if (++refresh_count % 100 == 0) {
-                lv_obj_invalidate(lv_scr_act());
-                ESP_LOGD(TAG, "Forced screen invalidation");
-            }
-            lvgl_unlock();
-            ESP_LOGD(TAG, "LVGL timer handler executed");
-        } else {
-            ESP_LOGW(TAG, "Failed to acquire LVGL lock in main loop");
         }
         
         // For testing purposes, periodically call the test function

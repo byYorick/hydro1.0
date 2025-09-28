@@ -49,7 +49,8 @@ static void encoder_task(void *pvParameters)
     
     while (1) {
         // Check for watch point events
-        if (encoder_queue != NULL && xQueueReceive(encoder_queue, &event_count, pdMS_TO_TICKS(10))) {
+        // Use portMAX_DELAY to wait indefinitely for events, reducing CPU usage
+        if (encoder_queue != NULL && xQueueReceive(encoder_queue, &event_count, portMAX_DELAY)) {
             // Determine rotation direction based on count change
             if (event_count > last_count) {
                 if (enc_callback) {
@@ -82,7 +83,7 @@ static void encoder_task(void *pvParameters)
             }
         }
         
-        vTaskDelay(pdMS_TO_TICKS(10));
+        // Removed vTaskDelay to reduce latency - events are now handled via queue
     }
 }
 
@@ -178,7 +179,7 @@ bool encoder_init_with_config(const encoder_config_t* config, encoder_callback_t
     }
     
     // Create queue for events
-    encoder_queue = xQueueCreate(10, sizeof(int));
+    encoder_queue = xQueueCreate(20, sizeof(int)); // Increased queue size to prevent overflow
     if (!encoder_queue) {
         ESP_LOGE(TAG, "Failed to create encoder queue");
         return false;

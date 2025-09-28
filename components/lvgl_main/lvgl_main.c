@@ -1,6 +1,7 @@
 #include "lvgl_main.h"
 #include "lvgl.h"
 #include "lcd_ili9341.h"
+#include "lvgl_encoder.h"
 // Font declarations
 LV_FONT_DECLARE(lv_font_montserrat_14)
 LV_FONT_DECLARE(lv_font_montserrat_18)
@@ -12,6 +13,9 @@ LV_FONT_DECLARE(lv_font_montserrat_20)
 #include "freertos/queue.h"
 
 static const char *TAG = "LVGL_MAIN";
+
+// Task handle for LVGL timer
+static TaskHandle_t lvgl_timer_task_handle = NULL;
 
 // Элементы экрана и пользовательского интерфейса
 static lv_obj_t *screen_main;
@@ -76,6 +80,7 @@ typedef struct {
 static void create_main_ui(void);
 static void create_settings_ui(void);
 static void display_update_task(void *pvParameters);
+static void lvgl_timer_task(void *pvParameters);
 static void init_styles(void);
 static lv_obj_t* create_sensor_card(lv_obj_t *parent);
 static void update_sensor_display(sensor_data_t *data);
@@ -83,6 +88,22 @@ static void update_sensor_display(sensor_data_t *data);
 // Event handlers
 static void back_btn_event_handler(lv_event_t * e);
 static void settings_btn_event_handler(lv_event_t * e);
+
+// LVGL timer task
+static void lvgl_timer_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "LVGL timer task started");
+    
+    while (1) {
+        if (lvgl_lock(100)) {  // Short timeout to prevent blocking
+            lv_timer_handler();
+            lvgl_unlock();
+        }
+        
+        // Delay for 5ms as configured in sdkconfig.defaults
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+}
 
 // УЛУЧШЕННАЯ ИНИЦИАЛИЗАЦИЯ СТИЛЕЙ
 static void init_styles(void)
@@ -276,9 +297,7 @@ static void create_main_ui(void)
     lv_obj_add_flag(btn_settings, LV_OBJ_FLAG_CLICKABLE);
     
     // Add to encoder group for navigation
-    if (encoder_group) {
-        lv_group_add_obj(encoder_group, btn_settings);
-    }
+    lvgl_encoder_add_obj(btn_settings);
     
     lv_obj_t *label_settings = lv_label_create(btn_settings);
     lv_label_set_text(label_settings, "Settings");
@@ -308,9 +327,7 @@ static void create_settings_ui(void)
     lv_obj_add_flag(btn_back, LV_OBJ_FLAG_CLICKABLE);
     
     // Add to encoder group for navigation
-    if (encoder_group) {
-        lv_group_add_obj(encoder_group, btn_back);
-    }
+    lvgl_encoder_add_obj(btn_back);
     
     label_back = lv_label_create(btn_back);
     lv_label_set_text(label_back, "Back");
@@ -529,10 +546,16 @@ void lvgl_main_init(void)
     }
     ESP_LOGI(TAG, "Display update task created successfully");
     
-    // Create LVGL group for encoder navigation
-    encoder_group = lv_group_create();
-    lv_group_set_default(encoder_group);
-    lv_group_set_wrap(encoder_group, true);
+    // Create LVGL timer task
+    task_result = xTaskCreate(lvgl_timer_task, "lvgl_timer", 4096, NULL, 7, &lvgl_timer_task_handle);
+    if (task_result != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create LVGL timer task");
+        return;
+    }
+    ESP_LOGI(TAG, "LVGL timer task created successfully");
+    
+    // Initialize LVGL encoder integration
+    lvgl_encoder_init();
     
     // Make sure we can acquire the LVGL lock before creating UI
     ESP_LOGI(TAG, "Attempting to acquire LVGL lock for UI initialization");
@@ -584,7 +607,7 @@ void lvgl_show_settings_screen(void)
     if (lvgl_lock(100)) {
         lv_scr_load(screen_settings);
         // Set focus to back button when switching to settings screen
-        if (encoder_group && btn_back) {
+        if (btn_back) {
             lv_group_focus_obj(btn_back);
         }
         lvgl_unlock();
@@ -628,7 +651,7 @@ void lvgl_show_main_screen(void)
             }
             
             // Set focus to settings button
-            if (encoder_group && btn_settings) {
+            if (btn_settings) {
                 lv_group_focus_obj(btn_settings);
             }
         }
