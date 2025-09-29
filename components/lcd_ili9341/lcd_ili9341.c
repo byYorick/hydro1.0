@@ -134,6 +134,7 @@ static void lvgl_task_handler(void *pvParameters)
 // Configures SPI, initializes the panel, and registers the display driver for LVGL
 lv_disp_t* lcd_ili9341_init(void)
 {
+    
     ESP_LOGI("LCD", "Initializing LCD ILI9341 display");
     
     gpio_config_t bk_gpio_config = {
@@ -271,7 +272,8 @@ lv_disp_t* lcd_ili9341_init(void)
         vSemaphoreDelete(lvgl_mux);
         return NULL;
     }
-
+     // Initialize LVGL library
+    lv_init();
     // alloc draw buffers used by LVGL
     // it's recommended to choose the size of the draw buffer(s) to be at least 1/10 screen sized
     ESP_LOGI("LCD", "Allocating draw buffers: %d bytes each", 240 * 20 * sizeof(lv_color_t));
