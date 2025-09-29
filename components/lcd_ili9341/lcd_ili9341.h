@@ -7,41 +7,41 @@ extern "C" {
 #include "lvgl.h"
 
 /**
- * @brief Initialize the ILI9341 LCD display with LVGL support
+ * @brief Инициализация дисплея ILI9341 с поддержкой LVGL
  * 
- * @return lv_disp_t* Pointer to the LVGL display driver
+ * @return lv_disp_t* Указатель на драйвер дисплея LVGL
  */
 lv_disp_t* lcd_ili9341_init(void);
 
 /**
- * @brief Set the display brightness
+ * @brief Установка яркости дисплея
  * 
- * @param brightness Brightness level (0-100)
+ * @param brightness Уровень яркости (0-100)
  */
 void lcd_ili9341_set_brightness(uint8_t brightness);
 
 /**
- * @brief Update sensor values on the display (deprecated)
+ * @brief Обновление значений датчиков на дисплее (устаревшая функция)
  * 
- * @param ph pH value
- * @param ec EC value
- * @param temp Temperature value
- * @param hum Humidity value
- * @param lux Lux value
- * @param co2 CO2 value
+ * @param ph Значение pH
+ * @param ec Значение EC
+ * @param temp Значение температуры
+ * @param hum Значение влажности
+ * @param lux Значение освещенности
+ * @param co2 Значение CO2
  */
 void lcd_ili9341_update_sensor_values(float ph, float ec, float temp, float hum, float lux, float co2);
 
 /**
- * @brief Lock the LVGL mutex
+ * @brief Блокировка мьютекса LVGL
  * 
- * @param timeout_ms Timeout in milliseconds (-1 for infinite wait)
- * @return true if lock acquired, false otherwise
+ * @param timeout_ms Таймаут в миллисекундах (-1 для бесконечного ожидания)
+ * @return true если блокировка получена, false в противном случае
  */
 bool lvgl_lock(int timeout_ms);
 
 /**
- * @brief Unlock the LVGL mutex
+ * @brief Разблокировка мьютекса LVGL
  */
 void lvgl_unlock(void);
 

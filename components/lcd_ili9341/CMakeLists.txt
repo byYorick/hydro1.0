@@ -6,4 +6,7 @@ idf_component_register(
         esp_lcd
         esp_lcd_ili9341
         lvgl__lvgl
+        lvgl_main
+        encoder
+        esp_timer
 )

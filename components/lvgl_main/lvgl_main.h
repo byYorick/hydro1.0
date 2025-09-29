@@ -1,18 +1,56 @@
 #pragma once
 
 /**
- * @brief Initialize the LVGL UI
+ * @brief Инициализация пользовательского интерфейса LVGL
+ * 
+ * Эта функция инициализирует основной пользовательский интерфейс для отображения
+ * данных сенсоров на дисплее. Она создает все необходимые элементы интерфейса
+ * и запускает задачу обновления отображения.
  */
 void lvgl_main_init(void);
 
 /**
- * @brief Update sensor values on the display
+ * @brief Обновление значений датчиков на дисплее
  * 
- * @param ph pH value
- * @param ec EC value
- * @param temp Temperature value
- * @param hum Humidity value
- * @param lux Lux value
- * @param co2 CO2 value
+ * Эта функция отправляет новые значения датчиков в очередь для обновления
+ * отображения на экране. Значения будут отображены в соответствующих полях
+ * пользовательского интерфейса.
+ * 
+ * @param ph Значение pH (например, 6.5)
+ * @param ec Значение EC (например, 1.2)
+ * @param temp Значение температуры в градусах Цельсия (например, 24.5)
+ * @param hum Значение влажности в процентах (например, 65.0)
+ * @param lux Значение освещенности в люксах (например, 1200.0)
+ * @param co2 Значение CO2 в ppm (например, 450.0)
  */
 void lvgl_update_sensor_values(float ph, float ec, float temp, float hum, float lux, float co2);
+
+// Структура данных датчиков
+typedef struct {
+    float ph;
+    float ec;
+    float temp;
+    float hum;
+    float lux;
+    float co2;
+} sensor_data_t;
+
+/**
+ * @brief Обновление значений датчиков на дисплее из структуры данных
+ * 
+ * Эта функция обновляет отображение значений датчиков на экране, используя
+ * структуру с данными датчиков.
+ * 
+ * @param data Указатель на структуру с данными датчиков
+ */
+void lvgl_update_sensor_values_from_queue(sensor_data_t *data);
+
+/**
+ * @brief Получение дескриптора очереди данных датчиков
+ * 
+ * Эта функция возвращает дескриптор очереди, в которую помещаются данные датчиков
+ * для обновления отображения на экране.
+ * 
+ * @return Дескриптор очереди данных датчиков
+ */
+void* lvgl_get_sensor_data_queue(void);
