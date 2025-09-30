@@ -317,7 +317,7 @@ void app_main(void)
     encoder_init();
     
     // Создаем задачу для тестирования энкодера
-    xTaskCreate(encoder_test_task, "encoder_test", 2048, NULL, 5, NULL);
+    // xTaskCreate(encoder_test_task, "encoder_test", 2048, NULL, 5, NULL);
     
     // Инициализация реле
     ESP_LOGI(TAG, "Attempting to initialize relay...");

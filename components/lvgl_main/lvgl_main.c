@@ -31,11 +31,15 @@ static lv_obj_t *label_hum_value;
 static lv_obj_t *label_lux_value;
 static lv_obj_t *label_co2_value;
 
+// Массив контейнеров для навигации
+static lv_obj_t *sensor_containers[6];
+
 // Стили
 static lv_style_t style_title;
 static lv_style_t style_label;
 static lv_style_t style_value;
 static lv_style_t style_unit;
+static lv_style_t style_focus;  // Стиль для элемента с фокусом
 
 // УПРОЩЕННАЯ ПАЛИТРА
 #define COLOR_NORMAL    lv_color_hex(0x2E7D32)  // Темно-зеленый для нормы
@@ -44,10 +48,15 @@ static lv_style_t style_unit;
 #define COLOR_BG        lv_color_white()
 #define COLOR_TEXT      lv_color_hex(0x212121)  // Почти черный
 #define COLOR_LABEL     lv_color_hex(0x616161)  // Серый для подписей
+#define COLOR_FOCUS     lv_color_hex(0x1976D2)  // Синий для фокуса
 
 // Очередь для обновлений данных датчиков
 static QueueHandle_t sensor_data_queue = NULL;
 #define SENSOR_DATA_QUEUE_SIZE 10
+
+// Переменные для управления фокусом
+static int current_focus_index = 0;
+static const int total_focus_items = 6;
 
 // Объявления функций
 static void create_main_ui(void);
@@ -112,6 +121,15 @@ static void init_styles(void)
     lv_style_set_text_color(&style_unit, COLOR_LABEL);
     lv_style_set_text_font(&style_unit, &lv_font_montserrat_14); // Using 14 instead of 12
     lv_style_set_text_align(&style_unit, LV_TEXT_ALIGN_CENTER);
+    
+    // Стиль для элемента с фокусом
+    lv_style_init(&style_focus);
+    lv_style_set_border_color(&style_focus, COLOR_FOCUS);
+    lv_style_set_border_width(&style_focus, 2);
+    lv_style_set_border_opa(&style_focus, LV_OPA_COVER);
+    lv_style_set_shadow_color(&style_focus, COLOR_FOCUS);
+    lv_style_set_shadow_width(&style_focus, 10);
+    lv_style_set_shadow_spread(&style_focus, 3);
 }
 
 // УПРОЩЕННЫЙ КОНТЕЙНЕР (без рамок и теней!)
@@ -136,6 +154,42 @@ static lv_obj_t* create_sensor_card(lv_obj_t *parent)
     return card;
 }
 
+// Функция для установки фокуса на элемент интерфейса
+void lvgl_set_focus(int index)
+{
+    // Проверяем корректность индекса
+    if (index < 0 || index >= total_focus_items) {
+        ESP_LOGW(TAG, "Invalid focus index: %d", index);
+        return;
+    }
+    
+    // Снимаем фокус с предыдущего элемента
+    if (current_focus_index >= 0 && current_focus_index < total_focus_items) {
+        lv_obj_remove_style(sensor_containers[current_focus_index], &style_focus, LV_PART_MAIN);
+    }
+    
+    // Устанавливаем фокус на новый элемент
+    current_focus_index = index;
+    lv_obj_add_style(sensor_containers[current_focus_index], &style_focus, LV_PART_MAIN);
+    
+    // Прокручиваем экран к элементу с фокусом (если необходимо)
+    lv_obj_scroll_to_view_recursive(sensor_containers[current_focus_index], LV_ANIM_ON);
+    
+    ESP_LOGD(TAG, "Focus set to index: %d", index);
+}
+
+// Получение текущего индекса фокуса
+int lvgl_get_focus_index(void)
+{
+    return current_focus_index;
+}
+
+// Получение общего количества элементов для фокуса
+int lvgl_get_total_focus_items(void)
+{
+    return total_focus_items;
+}
+
 // Создание основного пользовательского интерфейса
 static void create_main_ui(void)
 {
@@ -156,6 +210,7 @@ static void create_main_ui(void)
     // Создаем контейнер для отображения pH
     cont_ph = create_sensor_card(screen_main);
     lv_obj_align(cont_ph, LV_ALIGN_TOP_LEFT, 5, 40);  // Позиционируем слева сверху
+    sensor_containers[0] = cont_ph;  // Добавляем в массив для навигации
 
     // Создаем метку для подписи pH
     lv_obj_t *ph_label = lv_label_create(cont_ph);
@@ -172,6 +227,7 @@ static void create_main_ui(void)
     // Создаем контейнер для отображения EC
     cont_ec = create_sensor_card(screen_main);
     lv_obj_align_to(cont_ec, cont_ph, LV_ALIGN_OUT_RIGHT_TOP, 10, 0);  // Позиционируем справа от pH
+    sensor_containers[1] = cont_ec;  // Добавляем в массив для навигации
 
     // Создаем метку для подписи EC
     lv_obj_t *ec_label = lv_label_create(cont_ec);
@@ -189,6 +245,7 @@ static void create_main_ui(void)
     // Создаем контейнер для отображения температуры
     cont_climate = create_sensor_card(screen_main);
     lv_obj_align_to(cont_climate, cont_ph, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 10);  // Позиционируем под pH
+    sensor_containers[2] = cont_climate;  // Добавляем в массив для навигации
 
     // Создаем метку для подписи температуры
     lv_obj_t *temp_label = lv_label_create(cont_climate);
@@ -211,6 +268,7 @@ static void create_main_ui(void)
     // Создаем контейнер для отображения влажности (Новый контейнер для влажности)
     cont_hum = create_sensor_card(screen_main);
     lv_obj_align_to(cont_hum, cont_climate, LV_ALIGN_OUT_RIGHT_TOP, 10, 0);  // Позиционируем справа от температуры
+    sensor_containers[3] = cont_hum;  // Добавляем в массив для навигации
 
     // Создаем метку для подписи влажности
     lv_obj_t *hum_label = lv_label_create(cont_hum);
@@ -234,6 +292,7 @@ static void create_main_ui(void)
     // Создаем контейнер для отображения освещенности
     cont_light = create_sensor_card(screen_main);
     lv_obj_align_to(cont_light, cont_climate, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 10);  // Позиционируем под температурой
+    sensor_containers[4] = cont_light;  // Добавляем в массив для навигации
 
     // Создаем метку для подписи освещенности
     lv_obj_t *lux_label = lv_label_create(cont_light);
@@ -256,6 +315,7 @@ static void create_main_ui(void)
     // Создаем контейнер для отображения CO2
     cont_air = create_sensor_card(screen_main);
     lv_obj_align_to(cont_air, cont_light, LV_ALIGN_OUT_RIGHT_TOP, 10, 0);  // Позиционируем справа от освещенности
+    sensor_containers[5] = cont_air;  // Добавляем в массив для навигации
 
     // Создаем метку для подписи CO2
     lv_obj_t *co2_label = lv_label_create(cont_air);
@@ -278,6 +338,9 @@ static void create_main_ui(void)
     // Создаем очередь для обновлений данных датчиков и задачу обработки
     sensor_data_queue = xQueueCreate(SENSOR_DATA_QUEUE_SIZE, sizeof(sensor_data_t));
     xTaskCreate(display_update_task, "display_update", 4096, NULL, 5, NULL);
+    
+    // Устанавливаем начальный фокус на первый элемент
+    lvgl_set_focus(0);
 }
 
 // Обновление отображения датчиков с новыми значениями

@@ -32,7 +32,7 @@ static int64_t button_press_time = 0;
 static bool long_press_detected = false;
 
 // Forward declarations
-static void encoder_gpio_isr_handler(void *arg);
+
 static void encoder_button_isr_handler(void *arg);
 static void encoder_button_task(void *arg);
 
@@ -97,8 +97,9 @@ void encoder_init(void)
     pcnt_counter_resume(PCNT_ENCODER_UNIT);
     
     // Configure GPIO for encoder button with interrupt
+    // Only trigger on falling edge (button press) to reduce interrupt frequency
     gpio_config_t io_conf = {
-        .intr_type = GPIO_INTR_ANYEDGE,
+        .intr_type = GPIO_INTR_NEGEDGE,
         .mode = GPIO_MODE_INPUT,
         .pin_bit_mask = (1ULL << enc_sw_pin),
         .pull_up_en = GPIO_PULLUP_ENABLE,
@@ -121,7 +122,6 @@ void encoder_init(void)
 static void encoder_button_isr_handler(void *arg)
 {
     // This is a simple ISR that just wakes up the button task
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     // The button task will handle the actual button logic
     // We just need to make sure it runs when the button state changes
     // The task will check the current button state
@@ -129,56 +129,72 @@ static void encoder_button_isr_handler(void *arg)
 
 static void encoder_button_task(void *arg)
 {
+    // Add debouncing variables
+    static bool last_button_state = true; // Assume button is released initially (active low)
+    static int64_t last_button_change_time = 0;
+    const int64_t debounce_delay_ms = 50; // 50ms debounce time
+    
     while (1) {
         // Check button state
         bool current_button_state = gpio_get_level(enc_sw_pin);
         
-        // Button pressed (active low)
-        if (!current_button_state && !button_pressed) {
-            button_pressed = true;
-            button_press_time = esp_timer_get_time() / 1000; // Convert to milliseconds
-            long_press_detected = false;
-            ESP_LOGD(TAG, "Button pressed at %lld ms", button_press_time);
-        }
-        // Button released
-        else if (current_button_state && button_pressed) {
-            int64_t button_release_time = esp_timer_get_time() / 1000;
-            int64_t press_duration = button_release_time - button_press_time;
+        // Get current time
+        int64_t current_time = esp_timer_get_time() / 1000; // Convert to milliseconds
+        
+        // Check if button state has changed and enough time has passed for debouncing
+        if (current_button_state != last_button_state && 
+            (current_time - last_button_change_time) > debounce_delay_ms) {
+            ESP_LOGD(TAG, "Button state changed: %s (debounced)", current_button_state ? "RELEASED" : "PRESSED");
             
-            button_pressed = false;
+            // Update last button change time
+            last_button_change_time = current_time;
+            last_button_state = current_button_state;
+            ESP_LOGD(TAG, "Button state updated, waiting for stable state");
             
-            // Check if long press was already detected
-            if (long_press_detected) {
-                // Long press already reported, just send release event
-                encoder_event_t event = {
-                    .type = ENCODER_EVENT_BUTTON_RELEASE,
-                    .value = 0
-                };
-                if (encoder_event_queue != NULL) {
-                    xQueueSend(encoder_event_queue, &event, 0);
-                }
-            } else {
-                // Short press - for LVGL encoder, we typically just send press and release
-                encoder_event_t event = {
-                    .type = ENCODER_EVENT_BUTTON_PRESS,
-                    .value = press_duration
-                };
-                if (encoder_event_queue != NULL) {
+            // Button pressed (active low)
+            if (!current_button_state && !button_pressed) {
+                button_pressed = true;
+                button_press_time = current_time;
+                long_press_detected = false;
+                ESP_LOGD(TAG, "Button pressed at %lld ms", button_press_time);
+            }
+            // Button released
+            else if (current_button_state && button_pressed) {
+                int64_t press_duration = current_time - button_press_time;
+                button_pressed = false;
+                
+                // Check if long press was already detected
+                if (long_press_detected) {
+                    // Long press already reported, just send release event
+                    encoder_event_t event = {
+                        .type = ENCODER_EVENT_BUTTON_RELEASE,
+                        .value = 0
+                    };
+                    if (encoder_event_queue != NULL) {
+                        xQueueSend(encoder_event_queue, &event, 0);
+                    }
+                } else {
+                    // Short press - for LVGL encoder, we typically just send press and release
+                    encoder_event_t event = {
+                        .type = ENCODER_EVENT_BUTTON_PRESS,
+                        .value = press_duration
+                    };
+                    if (encoder_event_queue != NULL) {
+                        xQueueSend(encoder_event_queue, &event, 0);
+                    }
+                    
+                    // Also send release event
+                    event.type = ENCODER_EVENT_BUTTON_RELEASE;
+                    event.value = 0;
                     xQueueSend(encoder_event_queue, &event, 0);
                 }
                 
-                // Also send release event
-                event.type = ENCODER_EVENT_BUTTON_RELEASE;
-                event.value = 0;
-                xQueueSend(encoder_event_queue, &event, 0);
+                long_press_detected = false;
+                ESP_LOGD(TAG, "Button released after %lld ms", press_duration);
             }
-            
-            long_press_detected = false;
-            ESP_LOGD(TAG, "Button released after %lld ms", press_duration);
         }
         // Button still pressed - check for long press
         else if (button_pressed && !long_press_detected) {
-            int64_t current_time = esp_timer_get_time() / 1000;
             int64_t press_duration = current_time - button_press_time;
             
             if (press_duration >= long_press_duration_ms) {
@@ -200,17 +216,21 @@ static void encoder_button_task(void *arg)
         if (count != 0) {
             pcnt_counter_clear(PCNT_ENCODER_UNIT);
             
-            encoder_event_t event = {
-                .type = (count > 0) ? ENCODER_EVENT_ROTATE_CW : ENCODER_EVENT_ROTATE_CCW,
-                .value = abs(count)
-            };
+            // Send one event per step, not the accumulated count
+            int steps = abs(count);
+            for (int i = 0; i < steps; i++) {
+                encoder_event_t event = {
+                    .type = (count > 0) ? ENCODER_EVENT_ROTATE_CW : ENCODER_EVENT_ROTATE_CCW,
+                    .value = 1  // Always send 1 for each step
+                };
             
-            if (encoder_event_queue != NULL) {
-                xQueueSend(encoder_event_queue, &event, 0);
+                if (encoder_event_queue != NULL) {
+                    xQueueSend(encoder_event_queue, &event, 0);
+                }
             }
             
-            ESP_LOGD(TAG, "Encoder rotated: %s (%d)", 
-                     (count > 0) ? "CW" : "CCW", abs(count));
+            ESP_LOGD(TAG, "Encoder rotated: %s (%d steps)", 
+                     (count > 0) ? "CW" : "CCW", steps);
         }
         
         // Small delay to prevent excessive CPU usage

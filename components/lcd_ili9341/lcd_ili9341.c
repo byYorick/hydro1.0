@@ -78,9 +78,13 @@ static TaskHandle_t lvgl_task_handle = NULL;
 // Предварительные объявления функций
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx);
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map);
-static void lvgl_port_update_callback(lv_disp_drv_t *drv);
+static void lvgl_port_update_callback(lv_disp_drv_t *drv, uint32_t timestamp, uint32_t duration);
 static void increase_lvgl_tick(void *arg);
 static void lvgl_task_handler(void *pvParameters);
+
+// Объявления функций для работы с фокусом
+int lvgl_get_focus_index(void);
+int lvgl_get_total_focus_items(void);
 
 // Блокировка мьютекса LVGL
 // Используется для обеспечения потокобезопасности при работе с API LVGL
@@ -123,7 +127,6 @@ static void lvgl_task_handler(void *pvParameters)
             if (lv_is_initialized()) {
                 // Обработка таймеров LVGL и получение времени до следующего события
                 task_delay_ms = lv_timer_handler();
-                ESP_LOGD("LCD", "LVGL timer handler executed, next delay: %d ms", task_delay_ms);
             } else {
                 // Если LVGL не инициализирован, выводим предупреждение и устанавливаем максимальную задержку
                 ESP_LOGW("LCD", "LVGL not initialized, skipping timer handler");
@@ -143,7 +146,6 @@ static void lvgl_task_handler(void *pvParameters)
             task_delay_ms = LVGL_TASK_MIN_DELAY_MS;
         }
         // Задержка задачи на указанное количество миллисекунд
-        ESP_LOGD("LCD", "LVGL task delaying for %d ms", task_delay_ms);
         vTaskDelay(pdMS_TO_TICKS(task_delay_ms));
     }
 }
@@ -171,15 +173,19 @@ static void encoder_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     
     // Читаем события из очереди (неблокирующее чтение)
     encoder_event_t event;
+    bool event_received = false;
     while (xQueueReceive(encoder_queue, &event, 0) == pdTRUE) {
+        event_received = true;
         switch (event.type) {
             case ENCODER_EVENT_ROTATE_CW:
                 // For encoder, we accumulate the difference
                 data->enc_diff += event.value;
+                ESP_LOGD("ENCODER", "Received CW rotation event, diff: %d", (int)data->enc_diff);
                 break;
             case ENCODER_EVENT_ROTATE_CCW:
                 // For counter-clockwise rotation, we use negative values
                 data->enc_diff -= event.value;
+                ESP_LOGD("ENCODER", "Received CCW rotation event, diff: %d", (int)data->enc_diff);
                 break;
             case ENCODER_EVENT_BUTTON_PRESS:
                 button_pressed = true;
@@ -210,6 +216,32 @@ static void encoder_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     } else if (button_pressed) {
         // Keep the key while button is pressed
         data->key = last_key;
+    }
+    
+    // Обработка навигации с помощью энкодера
+    if (data->enc_diff != 0) {
+        ESP_LOGD("ENCODER", "Processing encoder diff: %d", (int)data->enc_diff);
+        // Получаем текущий индекс фокуса и общее количество элементов
+        int current_index = lvgl_get_focus_index();
+        int total_items = lvgl_get_total_focus_items();
+        
+        // Обновляем индекс фокуса в зависимости от направления вращения
+        if (data->enc_diff > 0) {
+            // Вращение по часовой стрелке - переходим к следующему элементу
+            current_index = (current_index + 1) % total_items;
+            ESP_LOGD("ENCODER", "CW rotation, new index: %d", current_index);
+        } else {
+            // Вращение против часовой стрелки - переходим к предыдущему элементу
+            current_index = (current_index - 1 + total_items) % total_items;
+            ESP_LOGD("ENCODER", "CCW rotation, new index: %d", current_index);
+        }
+        
+        // Устанавливаем новый фокус
+        lvgl_set_focus(current_index);
+        
+        ESP_LOGD("ENCODER", "Focus changed to index: %d", current_index);
+    } else if (event_received) {
+        ESP_LOGD("ENCODER", "Events received but no encoder diff");
     }
 }
 
@@ -349,251 +381,141 @@ lv_disp_t* lcd_ili9341_init(void)
     
     // Выводим информацию об инициализации библиотеки LVGL
     ESP_LOGI("LCD", "Initialize LVGL library");
-    // Инициализируем библиотеку LVGL
+    // Инициализируем библиотеку LVGL с размером буфера, достаточным для четверти экрана
     lv_init();
-    
-    // Выделяем буферы для отрисовки, используемые LVGL
-    // Рекомендуется выбрать размер буфера(ов) не менее 1/10 размера экрана
-    lv_color_t *buf1 = heap_caps_malloc(LCD_H_RES * 20 * sizeof(lv_color_t), MALLOC_CAP_DMA);
-    if (buf1 == NULL) {
-        // Если не удалось выделить память для первого буфера, выводим ошибку и освобождаем ресурсы
-        ESP_LOGE("LCD", "Failed to allocate draw buffer 1");
-        // Освобождаем ранее выделенные ресурсы
-        // Примечание: В реальной реализации может потребоваться деинициализация panel_handle и io_handle
-        spi_bus_free(LCD_HOST);
-        vSemaphoreDelete(lvgl_mux);
-        lvgl_mux = NULL;
-        return NULL;
+    // Выделяем память для буфера отображения (четверть экрана)
+    static lv_color_t *disp_buf1 = NULL;
+    static lv_color_t *disp_buf2 = NULL;
+    // Проверяем, выделена ли уже память для буферов
+    if (disp_buf1 == NULL) {
+        // Выделяем память для первого буфера (четверть экрана)
+        disp_buf1 = heap_caps_malloc(LCD_H_RES * LCD_V_RES / 4 * sizeof(lv_color_t), MALLOC_CAP_DMA);
+        // Проверяем успешность выделения памяти
+        if (disp_buf1 == NULL) {
+            // Если не удалось выделить память для первого буфера, выводим ошибку и освобождаем ресурсы
+            ESP_LOGE("LCD", "Failed to allocate memory for display buffer 1");
+            spi_bus_free(LCD_HOST);
+            vSemaphoreDelete(lvgl_mux);
+            lvgl_mux = NULL;
+            return NULL;
+        }
     }
-    
-    // Выделяем память для второго буфера отрисовки
-    lv_color_t *buf2 = heap_caps_malloc(LCD_H_RES * 20 * sizeof(lv_color_t), MALLOC_CAP_DMA);
-    if (buf2 == NULL) {
-        // Если не удалось выделить память для второго буфера, выводим ошибку и освобождаем ресурсы
-        ESP_LOGE("LCD", "Failed to allocate draw buffer 2");
-        heap_caps_free(buf1);
-        // Освобождаем ранее выделенные ресурсы
-        // Примечание: В реальной реализации может потребоваться деинициализация panel_handle и io_handle
-        spi_bus_free(LCD_HOST);
-        vSemaphoreDelete(lvgl_mux);
-        lvgl_mux = NULL;
-        return NULL;
+    // Проверяем, выделена ли уже память для второго буфера
+    if (disp_buf2 == NULL) {
+        // Выделяем память для второго буфера (четверть экрана)
+        disp_buf2 = heap_caps_malloc(LCD_H_RES * LCD_V_RES / 4 * sizeof(lv_color_t), MALLOC_CAP_DMA);
+        // Проверяем успешность выделения памяти
+        if (disp_buf2 == NULL) {
+            // Если не удалось выделить память для второго буфера, освобождаем первый буфер и ресурсы
+            ESP_LOGE("LCD", "Failed to allocate memory for display buffer 2");
+            free(disp_buf1);
+            disp_buf1 = NULL;
+            spi_bus_free(LCD_HOST);
+            vSemaphoreDelete(lvgl_mux);
+            lvgl_mux = NULL;
+            return NULL;
+        }
     }
-    
-    // Инициализируем буферы отрисовки LVGL
-    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, LCD_H_RES * 20);
+    // Инициализируем буфер отображения LVGL с двумя буферами для двойной буферизации
+    lv_disp_draw_buf_init(&disp_buf, disp_buf1, disp_buf2, LCD_H_RES * LCD_V_RES / 4);
 
-    // Регистрируем драйвер дисплея в LVGL
+    // Выводим информацию о регистрации драйвера дисплея
+    ESP_LOGI("LCD", "Register display driver to LVGL");
+    // Инициализируем драйвер дисплея LVGL
     lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = LCD_H_RES;               // Горизонтальное разрешение
-    disp_drv.ver_res = LCD_V_RES;               // Вертикальное разрешение
-    disp_drv.antialiasing = 1;                  // Включаем сглаживание
-    disp_drv.flush_cb = lvgl_flush_cb;          // Callback функция обновления дисплея
-    disp_drv.drv_update_cb = lvgl_port_update_callback; // Callback функция обновления порта
-    disp_drv.draw_buf = &disp_buf;              // Буферы отрисовки
+    // Устанавливаем горизонтальное и вертикальное разрешение дисплея
+    disp_drv.hor_res = LCD_H_RES;
+    disp_drv.ver_res = LCD_V_RES;
+    // Устанавливаем функции обратного вызова для драйвера дисплея
+    disp_drv.flush_cb = lvgl_flush_cb;          // Функция обновления дисплея
+    disp_drv.draw_buf = &disp_buf;              // Буфер отображения
     disp_drv.user_data = panel_handle;          // Пользовательские данные (дескриптор панели)
+    // Устанавливаем функцию обратного вызова для обновления дисплея
+    disp_drv.monitor_cb = lvgl_port_update_callback;
 
-    // Включаем поддержку поворота экрана
-    disp_drv.sw_rotate = 1;                     // Программный поворот
-    disp_drv.rotated = LV_DISP_ROT_NONE;        // Начальная ориентация (без поворота)
-    
-    // Улучшаем качество отображения текста
-    disp_drv.full_refresh = 0;  // Частичное обновление для лучшей производительности
-    disp_drv.direct_mode = 0;   // Используем буферный режим для лучшего качества текста
-    
-    // Регистрируем драйвер дисплея в LVGL
+    // Регистрируем драйвер дисплея в LVGL и получаем дескриптор дисплея
     lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
-    if (disp == NULL) {
-        // Если регистрация драйвера дисплея не удалась, выводим ошибку и освобождаем ресурсы
-        ESP_LOGE("LCD", "Failed to register display driver");
-        heap_caps_free(buf1);
-        heap_caps_free(buf2);
-        // Освобождаем ранее выделенные ресурсы
-        // Примечание: В реальной реализации может потребоваться деинициализация panel_handle и io_handle
-        spi_bus_free(LCD_HOST);
-        vSemaphoreDelete(lvgl_mux);
-        lvgl_mux = NULL;
-        return NULL;
-    }
     
-    // Регистрируем энкодер как устройство ввода
+    // Выводим информацию о создании таймера LVGL
+    ESP_LOGI("LCD", "Install LVGL tick timer");
+    // Создаем периодический таймер для LVGL с периодом LVGL_TICK_PERIOD_MS миллисекунд
+    const esp_timer_create_args_t lvgl_tick_timer_args = {
+        .callback = &increase_lvgl_tick,        // Функция обратного вызова таймера
+        .name = "lvgl_tick"                     // Имя таймера
+    };
+    esp_timer_handle_t lvgl_tick_timer = NULL;
+    // Создаем таймер
+    ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
+    // Запускаем таймер в режиме повторения с периодом LVGL_TICK_PERIOD_MS миллисекунд
+    ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000));
+
+    // Выводим информацию о создании задачи обработчика LVGL
+    ESP_LOGI("LCD", "Create LVGL task");
+    // Создаем задачу обработчика LVGL с параметрами:
+    // - Имя задачи: "LVGL"
+    // - Размер стека: LVGL_TASK_STACK_SIZE байт
+    // - Параметры задачи: NULL
+    // - Приоритет: LVGL_TASK_PRIORITY
+    // - Дескриптор задачи: &lvgl_task_handle
+    xTaskCreate(lvgl_task_handler, "LVGL", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, &lvgl_task_handle);
+    
+    // Инициализация энкодера как устройства ввода LVGL
+    ESP_LOGI("LCD", "Initialize encoder as LVGL input device");
     lv_indev_drv_init(&encoder_indev_drv);
     encoder_indev_drv.type = LV_INDEV_TYPE_ENCODER;
     encoder_indev_drv.read_cb = encoder_read;
-    encoder_indev_drv.user_data = NULL;
     encoder_indev = lv_indev_drv_register(&encoder_indev_drv);
     
-    // Выводим информацию об установке таймера LVGL
-    ESP_LOGI("LCD", "Install LVGL tick timer");
-    // Интерфейс таймера для LVGL (используем esp_timer для генерации периодического события каждые 2 мс)
-    const esp_timer_create_args_t lvgl_tick_timer_args = {
-        .callback = &increase_lvgl_tick,  // Callback функция
-        .name = "lvgl_tick"               // Имя таймера
-    };
-    // Дескриптор таймера LVGL
-    esp_timer_handle_t lvgl_tick_timer = NULL;
-    // Создаем таймер LVGL
-    ret = esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer);
-    if (ret != ESP_OK) {
-        // Если создание таймера не удалось, выводим ошибку и освобождаем ресурсы
-        ESP_LOGE("LCD", "Failed to create LVGL tick timer: %s", esp_err_to_name(ret));
-        heap_caps_free(buf1);
-        heap_caps_free(buf2);
-        // Освобождаем ранее выделенные ресурсы
-        // Примечание: В реальной реализации может потребоваться деинициализация panel_handle и io_handle
-        spi_bus_free(LCD_HOST);
-        vSemaphoreDelete(lvgl_mux);
-        lvgl_mux = NULL;
-        return NULL;
-    }
-    
-    // Запускаем периодический таймер LVGL
-    ret = esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000);
-    if (ret != ESP_OK) {
-        // Если запуск таймера не удался, выводим ошибку и освобождаем ресурсы
-        ESP_LOGE("LCD", "Failed to start LVGL tick timer: %s", esp_err_to_name(ret));
-        esp_timer_delete(lvgl_tick_timer);
-        heap_caps_free(buf1);
-        heap_caps_free(buf2);
-        // Освобождаем ранее выделенные ресурсы
-        // Примечание: В реальной реализации может потребоваться деинициализация panel_handle и io_handle
-        spi_bus_free(LCD_HOST);
-        vSemaphoreDelete(lvgl_mux);
-        lvgl_mux = NULL;
-        return NULL;
-    }
-    
-    // Небольшая задержка для обеспечения полной регистрации драйвера дисплея
-    vTaskDelay(pdMS_TO_TICKS(10));
-    // Выводим информацию о создании задачи LVGL
-    ESP_LOGI("LCD", "Create LVGL task");
-    // Создаем задачу LVGL
-
-    // Результат создания задачи
-    BaseType_t task_result = xTaskCreate(lvgl_task_handler, "lvgl_task", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, &lvgl_task_handle);
-    if (task_result != pdPASS) {
-        // Если создание задачи не удалось, выводим ошибку и освобождаем ресурсы
-        ESP_LOGE("LCD", "Failed to create LVGL task");
-        esp_timer_delete(lvgl_tick_timer);
-        heap_caps_free(buf1);
-        heap_caps_free(buf2);
-        // Освобождаем ранее выделенные ресурсы
-        // Примечание: В реальной реализации может потребоваться деинициализация panel_handle и io_handle
-        spi_bus_free(LCD_HOST);
-        vSemaphoreDelete(lvgl_mux);
-        lvgl_mux = NULL;
-        return NULL;
-    } 
-    
-    // Возвращаем указатель на драйвер дисплея
+    // Выводим информацию об успешной инициализации дисплея
+    ESP_LOGI("LCD", "LCD ILI9341 display initialized successfully");
+    // Возвращаем дескриптор дисплея
     return disp;
 }
 
-// Установка яркости дисплея
-// Принимает значение яркости от 0 до 100
-void lcd_ili9341_set_brightness(uint8_t brightness)
-{
-    // Ограничиваем значение яркости диапазоном 0-100
-    if (brightness > 100) brightness = 100;
-    
-    // Для простого управления вкл/выкл просто включаем/выключаем подсветку
-    // Для управления ШИМ необходимо реализовать ШИМ на пине подсветки
-    gpio_set_level(PIN_NUM_BK_LIGHT, brightness > 0 ? LCD_BK_LIGHT_ON_LEVEL : LCD_BK_LIGHT_OFF_LEVEL);
-}
-
-// Callback функции
-// Уведомляет о готовности обновления экрана
+// Функция обратного вызова при завершении передачи данных на дисплей
+// Уведомляет LVGL о готовности к следующей передаче данных
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
-    // Получаем указатель на драйвер дисплея из пользовательского контекста
+    // Получаем драйвер дисплея из пользовательского контекста
     lv_disp_drv_t *disp_driver = (lv_disp_drv_t *)user_ctx;
-    // Сообщаем LVGL, что обновление дисплея завершено
+    // Уведомляем LVGL о завершении передачи данных
     lv_disp_flush_ready(disp_driver);
-    // Возвращаем false, чтобы не продолжать обработку события
-    return false;
+    // Возвращаем true для подтверждения обработки события
+    return true;
 }
 
-// Callback функция обновления экрана
-// Рисует битмап в указанной области дисплея
+// Функция обратного вызова для обновления дисплея LVGL
+// Отправляет данные пикселей на дисплей через SPI
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
-    // Проверка на нулевые указатели
-    if (!drv || !area || !color_map) {
-        // Если есть нулевые указатели, выводим ошибку и выходим
-        ESP_LOGE("LCD", "Null pointer in lvgl_flush_cb");
-        return;
-    }
-    
-    // Получаем дескриптор панели из пользовательских данных драйвера
+    // Получаем дескриптур панели из пользовательских данных драйвера
     esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t) drv->user_data;
-    
-    // Проверка на корректность дескриптора панели
-    if (!panel_handle) {
-        // Если дескриптор панели некорректный, выводим ошибку и выходим
-        ESP_LOGE("LCD", "Invalid panel handle in lvgl_flush_cb");
-        return;
-    }
-    
-    // Получаем координаты области для обновления
+
+    // Преобразуем координаты области в формат, понятный драйверу дисплея
     int offsetx1 = area->x1;
     int offsetx2 = area->x2;
     int offsety1 = area->y1;
     int offsety2 = area->y2;
     
-    // Проверка границ координат
-    if (offsetx1 < 0 || offsety1 < 0 || offsetx2 >= LCD_H_RES || offsety2 >= LCD_V_RES) {
-        // Если координаты выходят за пределы экрана, выводим предупреждение и выходим
-        ESP_LOGW("LCD", "Invalid area coordinates: (%d,%d) to (%d,%d)", offsetx1, offsety1, offsetx2, offsety2);
-        return;
-    }
+    // Отправляем команду установки окна отображения на дисплее
+    esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
     
-    // Логируем операции обновления для отладки (только для больших областей, чтобы избежать спама)
-    int area_size = (offsetx2 - offsetx1 + 1) * (offsety2 - offsety1 + 1);
-    if (area_size > 1000) {  // Логируем только для областей больше 1000 пикселей
-        ESP_LOGD("LCD", "Flush area: (%d,%d) to (%d,%d), size: %d pixels", 
-                 offsetx1, offsety1, offsetx2, offsety2, area_size);
-    }
-    
-    // Копируем содержимое буфера в указанную область дисплея
-    esp_err_t result = esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
-    
-    // Принудительное обновление всего экрана для лучшей четкости текста
-    if (area_size > LCD_H_RES * LCD_V_RES * 0.8) {  // Если область больше 80% экрана
-        ESP_LOGD("LCD", "Forcing full screen refresh for better text consistency");
-    }
-    
-    // Проверяем результат операции рисования
-    if (result != ESP_OK) {
-        // Если операция рисования не удалась, выводим предупреждение
-        ESP_LOGW("LCD", "Failed to draw bitmap: %s", esp_err_to_name(result));
-    }
-    
-    // НЕ ВЫЗЫВАЙТЕ lv_disp_flush_ready здесь!
-    // Это сделает колбэк notify_lvgl_flush_ready после завершения DMA.
-    // lv_disp_flush_ready(drv);  // Удалено согласно рекомендациям
+    ESP_LOGD("LCD", "Flushed area: (%d,%d) to (%d,%d)", offsetx1, offsety1, offsetx2, offsety2);
 }
 
-// Callback функция обновления порта
-// Обрабатывает обновление данных сенсоров
-static void lvgl_port_update_callback(lv_disp_drv_t *drv)
+// Функция обратного вызова для обновления дисплея
+// Вызывается при каждом обновлении дисплея для синхронизации ориентации
+static void lvgl_port_update_callback(lv_disp_drv_t *drv, uint32_t timestamp, uint32_t duration)
 {
-    // Проверка на нулевой указатель
-    if (!drv) {
-        // Если указатель нулевой, выводим ошибку и выходим
-        ESP_LOGE("LCD", "Null pointer in lvgl_port_update_callback");
-        return;
-    }
-    
-    // Инвалидируем экран для обновления отображения
-    if (lv_is_initialized() && lv_scr_act()) {
-        lv_obj_invalidate(lv_scr_act());
-    }
+    // Эта функция была предназначена для обработки поворота экрана,
+    // но была упрощена в соответствии с требованиями пользователя
+    // В текущей реализации она не выполняет никаких действий
 }
 
-// Увеличение тиков LVGL
-// Сообщает LVGL, сколько миллисекунд прошло
+// Функция обратного вызова таймера LVGL
+// Увеличивает внутренний таймер LVGL для обработки анимаций и других временных событий
 static void increase_lvgl_tick(void *arg)
 {
-    /* Сообщаем LVGL, сколько миллисекунд прошло */
+    // Увеличиваем внутренний таймер LVGL
     lv_tick_inc(LVGL_TICK_PERIOD_MS);
 }
