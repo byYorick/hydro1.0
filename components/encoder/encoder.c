@@ -1,6 +1,6 @@
 #include "encoder.h"
 #include "driver/gpio.h"
-#include "driver/pcnt.h"
+#include "driver/pulse_cnt.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -8,6 +8,9 @@
 #include "esp_timer.h"
 
 static const char *TAG = "encoder";
+
+// Для фильтрации - генерировать события только каждые N отсчетов
+const int32_t COUNT_FILTER = 2;  // Снижен порог для лучшей чувствительности
 
 // Encoder pin definitions (will be passed from main app)
 static int enc_a_pin = -1;
@@ -17,10 +20,10 @@ static int enc_sw_pin = -1;
 // Encoder configuration
 static uint32_t long_press_duration_ms = 1000; // Default 1 second for long press
 
-// PCNT unit for encoder
-#define PCNT_ENCODER_UNIT PCNT_UNIT_0
-#define PCNT_ENCODER_CHANNEL_A PCNT_CHANNEL_0
-#define PCNT_ENCODER_CHANNEL_B PCNT_CHANNEL_1
+// Pulse Counter (PCNT) handles
+static pcnt_unit_handle_t pcnt_unit = NULL;
+static pcnt_channel_handle_t pcnt_chan_a = NULL;
+static pcnt_channel_handle_t pcnt_chan_b = NULL;
 
 // Event queue for encoder events
 static QueueHandle_t encoder_event_queue = NULL;
@@ -67,34 +70,59 @@ void encoder_init(void)
         return;
     }
     
-    // Configure PCNT for encoder rotation
-    pcnt_config_t pcnt_config = {
-        .pulse_gpio_num = enc_a_pin,
-        .ctrl_gpio_num = enc_b_pin,
-        .channel = PCNT_ENCODER_CHANNEL_A,
-        .unit = PCNT_ENCODER_UNIT,
-        .pos_mode = PCNT_COUNT_DIS,
-        .neg_mode = PCNT_COUNT_INC,
-        .lctrl_mode = PCNT_MODE_REVERSE,
-        .hctrl_mode = PCNT_MODE_KEEP,
-        .counter_h_lim = 100,
-        .counter_l_lim = -100,
+    // Configure GPIOs for encoder inputs (enable pull-ups)
+    gpio_config_t enc_io = {
+        .intr_type = GPIO_INTR_DISABLE,
+        .mode = GPIO_MODE_INPUT,
+        .pin_bit_mask = (1ULL << enc_a_pin) | (1ULL << enc_b_pin),
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
     };
-    pcnt_unit_config(&pcnt_config);
+    gpio_config(&enc_io);
+
+    // Create PCNT unit
+    pcnt_unit_config_t unit_config = {
+        .high_limit = 100,
+        .low_limit = -100,
+    };
+    if (pcnt_new_unit(&unit_config, &pcnt_unit) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create PCNT unit");
+        return;
+    }
+
+    // Create channels for quadrature decoding
+    pcnt_chan_config_t chan_a_config = {
+        .edge_gpio_num = enc_a_pin,
+        .level_gpio_num = enc_b_pin,
+    };
+    if (pcnt_new_channel(pcnt_unit, &chan_a_config, &pcnt_chan_a) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create PCNT channel A");
+        return;
+    }
+    pcnt_chan_config_t chan_b_config = {
+        .edge_gpio_num = enc_b_pin,
+        .level_gpio_num = enc_a_pin,
+    };
+    if (pcnt_new_channel(pcnt_unit, &chan_b_config, &pcnt_chan_b) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create PCNT channel B");
+        return;
+    }
+
+    // Set edge and level actions for quadrature
+    pcnt_channel_set_edge_action(pcnt_chan_a, PCNT_CHANNEL_EDGE_ACTION_INCREASE, PCNT_CHANNEL_EDGE_ACTION_DECREASE);
+    pcnt_channel_set_level_action(pcnt_chan_a, PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_REVERSE);
+
+    pcnt_channel_set_edge_action(pcnt_chan_b, PCNT_CHANNEL_EDGE_ACTION_DECREASE, PCNT_CHANNEL_EDGE_ACTION_INCREASE);
+    pcnt_channel_set_level_action(pcnt_chan_b, PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_REVERSE);
     
-    pcnt_config.pulse_gpio_num = enc_b_pin;
-    pcnt_config.ctrl_gpio_num = enc_a_pin;
-    pcnt_config.channel = PCNT_ENCODER_CHANNEL_B;
-    pcnt_unit_config(&pcnt_config);
+    // Glitch filter (disabled for now for отладка)
+    // pcnt_glitch_filter_config_t filter_cfg = { .max_glitch_ns = 1000 };
+    // pcnt_unit_set_glitch_filter(pcnt_unit, &filter_cfg);
     
-    // Filter out glitches
-    pcnt_set_filter_value(PCNT_ENCODER_UNIT, 100);
-    pcnt_filter_enable(PCNT_ENCODER_UNIT);
-    
-    // Enable PCNT
-    pcnt_counter_pause(PCNT_ENCODER_UNIT);
-    pcnt_counter_clear(PCNT_ENCODER_UNIT);
-    pcnt_counter_resume(PCNT_ENCODER_UNIT);
+    // Enable and start PCNT
+    pcnt_unit_enable(pcnt_unit);
+    pcnt_unit_clear_count(pcnt_unit);
+    pcnt_unit_start(pcnt_unit);
     
     // Configure GPIO for encoder button with interrupt
     // Only trigger on falling edge (button press) to reduce interrupt frequency
@@ -211,16 +239,20 @@ static void encoder_button_task(void *arg)
         }
         
         // Check for encoder rotation
-        int16_t count = 0;
-        pcnt_get_counter_value(PCNT_ENCODER_UNIT, &count);
-        if (count != 0) {
-            pcnt_counter_clear(PCNT_ENCODER_UNIT);
-            
-            // Send one event per step, not the accumulated count
-            int steps = abs(count);
+        int32_t count = 0;
+        pcnt_unit_get_count(pcnt_unit, &count);
+        // Используем текущий счет как дельту и сразу очищаем
+        int32_t delta = count;
+        if (delta != 0) {
+            pcnt_unit_clear_count(pcnt_unit);
+        }
+
+        // Генерировать события только при достаточной дельте
+        if (abs(delta) >= COUNT_FILTER) {
+            int steps = abs(delta) / COUNT_FILTER;
             for (int i = 0; i < steps; i++) {
                 encoder_event_t event = {
-                    .type = (count > 0) ? ENCODER_EVENT_ROTATE_CW : ENCODER_EVENT_ROTATE_CCW,
+                    .type = (delta > 0) ? ENCODER_EVENT_ROTATE_CW : ENCODER_EVENT_ROTATE_CCW,
                     .value = 1  // Always send 1 for each step
                 };
             
@@ -228,9 +260,15 @@ static void encoder_button_task(void *arg)
                     xQueueSend(encoder_event_queue, &event, 0);
                 }
             }
-            
-            ESP_LOGD(TAG, "Encoder rotated: %s (%d steps)", 
-                     (count > 0) ? "CW" : "CCW", steps);
+            ESP_LOGI(TAG, "PCNT delta=%d -> %s (%d steps)", (int)delta, (delta > 0) ? "CW" : "CCW", steps);
+        } else {
+            // Периодический отладочный лог входных уровней
+            static int tick = 0;
+            if ((++tick % 50) == 0) {
+                int a = gpio_get_level(enc_a_pin);
+                int b = gpio_get_level(enc_b_pin);
+                ESP_LOGI(TAG, "Levels A=%d B=%d, delta=%d", a, b, (int)delta);
+            }
         }
         
         // Small delay to prevent excessive CPU usage

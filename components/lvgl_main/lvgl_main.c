@@ -15,6 +15,7 @@ static const char *TAG = "LVGL_MAIN";
 
 // Элементы экрана и пользовательского интерфейса
 static lv_obj_t *screen_main;
+static lv_obj_t *screen_detail;
 static lv_obj_t *label_title;
 static lv_obj_t *cont_ph;
 static lv_obj_t *cont_ec;
@@ -30,6 +31,9 @@ static lv_obj_t *label_temp_value;
 static lv_obj_t *label_hum_value;
 static lv_obj_t *label_lux_value;
 static lv_obj_t *label_co2_value;
+
+// Глобальная группа фокуса для энкодера
+static lv_group_t *encoder_group = NULL;
 
 // Массив контейнеров для навигации
 static lv_obj_t *sensor_containers[6];
@@ -64,6 +68,7 @@ static void display_update_task(void *pvParameters);
 static void init_styles(void);
 static lv_obj_t* create_sensor_card(lv_obj_t *parent);
 static void update_sensor_display(sensor_data_t *data);
+static void create_detail_ui(int index);
 
 // Функция для получения дескриптора очереди данных датчиков
 void* lvgl_get_sensor_data_queue(void)
@@ -150,6 +155,11 @@ static lv_obj_t* create_sensor_card(lv_obj_t *parent)
     // Убираем внутренние отступы
     lv_obj_set_style_pad_all(card, 0, 0);
     
+    // Добавляем объект в группу фокуса
+    if (encoder_group != NULL) {
+        lv_group_add_obj(encoder_group, card);
+    }
+    
     // Возвращаем указатель на созданную карточку
     return card;
 }
@@ -172,6 +182,11 @@ void lvgl_set_focus(int index)
     current_focus_index = index;
     lv_obj_add_style(sensor_containers[current_focus_index], &style_focus, LV_PART_MAIN);
     
+    // Устанавливаем фокус в группе LVGL
+    if (encoder_group != NULL) {
+        lv_group_focus_obj(sensor_containers[current_focus_index]);
+    }
+    
     // Прокручиваем экран к элементу с фокусом (если необходимо)
     lv_obj_scroll_to_view_recursive(sensor_containers[current_focus_index], LV_ANIM_ON);
     
@@ -190,12 +205,32 @@ int lvgl_get_total_focus_items(void)
     return total_focus_items;
 }
 
+// Очистка группы фокуса
+void lvgl_clear_focus_group(void)
+{
+    if (encoder_group != NULL) {
+        lv_group_remove_all_objs(encoder_group);
+    }
+    
+    // Сбрасываем индекс фокуса
+    current_focus_index = 0;
+}
+
 // Создание основного пользовательского интерфейса
 static void create_main_ui(void)
 {
     // Получаем активный экран и очищаем его
     screen_main = lv_scr_act();
     lv_obj_clean(screen_main);
+    
+    // Создаем глобальную группу фокуса, если она еще не создана
+    if (encoder_group == NULL) {
+        encoder_group = lv_group_create();
+        lv_group_set_wrap(encoder_group, true);  // Цикличный фокус
+    }
+    
+    // Очищаем группу фокуса перед добавлением новых объектов
+    lvgl_clear_focus_group();
     
     // Установка фона (уже в init_styles)
     init_styles();
@@ -224,6 +259,7 @@ static void create_main_ui(void)
     lv_obj_add_style(label_ph_value, &style_value, 0);  // Применяем стиль значения
     lv_obj_align(label_ph_value, LV_ALIGN_CENTER, 0, -5);  // Центрируем с небольшим смещением
 
+    // === СТРОКА 1: EC ===
     // Создаем контейнер для отображения EC
     cont_ec = create_sensor_card(screen_main);
     lv_obj_align_to(cont_ec, cont_ph, LV_ALIGN_OUT_RIGHT_TOP, 10, 0);  // Позиционируем справа от pH
@@ -241,7 +277,7 @@ static void create_main_ui(void)
     lv_obj_add_style(label_ec_value, &style_value, 0);  // Применяем стиль значения
     lv_obj_align(label_ec_value, LV_ALIGN_CENTER, 0, -5);  // Центрируем с небольшим смещением
 
-    // === СТРОКА 2: Температура и Влажность ===
+    // === СТРОКА 2: Температура ===
     // Создаем контейнер для отображения температуры
     cont_climate = create_sensor_card(screen_main);
     lv_obj_align_to(cont_climate, cont_ph, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 10);  // Позиционируем под pH
@@ -265,6 +301,7 @@ static void create_main_ui(void)
     lv_obj_add_style(temp_unit, &style_unit, 0);  // Применяем стиль единицы измерения
     lv_obj_align_to(temp_unit, label_temp_value, LV_ALIGN_OUT_BOTTOM_MID, 0, 2);  // Позиционируем под значением
 
+    // === СТРОКА 2: Влажность ===
     // Создаем контейнер для отображения влажности (Новый контейнер для влажности)
     cont_hum = create_sensor_card(screen_main);
     lv_obj_align_to(cont_hum, cont_climate, LV_ALIGN_OUT_RIGHT_TOP, 10, 0);  // Позиционируем справа от температуры
@@ -288,7 +325,7 @@ static void create_main_ui(void)
     lv_obj_add_style(hum_unit, &style_unit, 0);  // Применяем стиль единицы измерения
     lv_obj_align_to(hum_unit, label_hum_value, LV_ALIGN_OUT_BOTTOM_MID, 0, 2);  // Позиционируем под значением
 
-    // === СТРОКА 3: Освещение и CO2 ===
+    // === СТРОКА 3: Освещение ===
     // Создаем контейнер для отображения освещенности
     cont_light = create_sensor_card(screen_main);
     lv_obj_align_to(cont_light, cont_climate, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 10);  // Позиционируем под температурой
@@ -312,6 +349,7 @@ static void create_main_ui(void)
     lv_obj_add_style(lux_unit, &style_unit, 0);  // Применяем стиль единицы измерения
     lv_obj_align_to(lux_unit, label_lux_value, LV_ALIGN_OUT_BOTTOM_MID, 0, 2);  // Позиционируем под значением
 
+    // === СТРОКА 3: CO2 ===
     // Создаем контейнер для отображения CO2
     cont_air = create_sensor_card(screen_main);
     lv_obj_align_to(cont_air, cont_light, LV_ALIGN_OUT_RIGHT_TOP, 10, 0);  // Позиционируем справа от освещенности
@@ -337,10 +375,67 @@ static void create_main_ui(void)
 
     // Создаем очередь для обновлений данных датчиков и задачу обработки
     sensor_data_queue = xQueueCreate(SENSOR_DATA_QUEUE_SIZE, sizeof(sensor_data_t));
-    xTaskCreate(display_update_task, "display_update", 4096, NULL, 5, NULL);
+    // Увеличиваем приоритет задачи до 6 для уменьшения задержек в обработке input
+    xTaskCreate(display_update_task, "display_update", 4096, NULL, 6, NULL);
     
     // Устанавливаем начальный фокус на первый элемент
     lvgl_set_focus(0);
+}
+
+// Создание экрана деталей
+static void create_detail_ui(int index)
+{
+    LV_UNUSED(index);
+    screen_detail = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen_detail, COLOR_BG, 0);
+    lv_obj_set_style_bg_opa(screen_detail, LV_OPA_COVER, 0);
+
+    lv_obj_t *title = lv_label_create(screen_detail);
+    lv_obj_add_style(title, &style_title, 0);
+    switch (index) {
+        case 0: lv_label_set_text(title, "Details: pH"); break;
+        case 1: lv_label_set_text(title, "Details: EC"); break;
+        case 2: lv_label_set_text(title, "Details: Temp"); break;
+        case 3: lv_label_set_text(title, "Details: Hum"); break;
+        case 4: lv_label_set_text(title, "Details: Light"); break;
+        case 5: lv_label_set_text(title, "Details: CO2"); break;
+        default: lv_label_set_text(title, "Details"); break;
+    }
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 8);
+
+    lv_obj_t *hint = lv_label_create(screen_detail);
+    lv_obj_add_style(hint, &style_label, 0);
+    lv_label_set_text(hint, "Нажмите для выхода");
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -10);
+}
+
+bool lvgl_is_detail_screen_open(void)
+{
+    return screen_detail != NULL && lv_scr_act() == screen_detail;
+}
+
+void lvgl_open_detail_screen(int index)
+{
+    if (!lv_is_initialized()) return;
+    if (lvgl_is_detail_screen_open()) {
+        lvgl_close_detail_screen();
+    }
+    if (!lvgl_lock(1000)) return;
+    create_detail_ui(index);
+    lv_scr_load_anim(screen_detail, LV_SCR_LOAD_ANIM_MOVE_LEFT, 200, 0, false);
+    lvgl_unlock();
+}
+
+void lvgl_close_detail_screen(void)
+{
+    if (!lv_is_initialized()) return;
+    if (!lvgl_lock(1000)) return;
+    if (screen_detail) {
+        lv_obj_del_async(screen_detail);
+        screen_detail = NULL;
+    }
+    create_main_ui();
+    lvgl_unlock();
 }
 
 // Обновление отображения датчиков с новыми значениями

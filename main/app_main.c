@@ -48,6 +48,64 @@
 // Тег для логирования
 static const char *TAG = "app_main";
 
+// Задача обработки событий энкодера для навигации по LVGL
+static void encoder_ui_task(void *pv)
+{
+    QueueHandle_t encoder_queue = encoder_get_event_queue();
+    if (encoder_queue == NULL) {
+        ESP_LOGE(TAG, "Encoder queue not available");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    encoder_event_t event;
+    while (1) {
+        if (xQueueReceive(encoder_queue, &event, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (!lv_is_initialized()) {
+                continue;
+            }
+            switch (event.type) {
+                case ENCODER_EVENT_ROTATE_CW:
+                case ENCODER_EVENT_ROTATE_CCW: {
+                    if (lvgl_is_detail_screen_open()) {
+                        // В деталях вращение игнорируем или используем для прокрутки в будущем
+                        break;
+                    }
+                    int idx = lvgl_get_focus_index();
+                    int total = lvgl_get_total_focus_items();
+                    if (event.type == ENCODER_EVENT_ROTATE_CW) {
+                        idx = (idx + 1) % total;
+                    } else {
+                        idx = (idx - 1 + total) % total;
+                    }
+                    ESP_LOGI(TAG, "Encoder rotate %s -> focus %d", event.type == ENCODER_EVENT_ROTATE_CW ? "CW" : "CCW", idx);
+                    if (lvgl_lock(100)) {
+                        lvgl_set_focus(idx);
+                        lvgl_unlock();
+                    }
+                    break;
+                }
+                case ENCODER_EVENT_BUTTON_PRESS:
+                    // Ничего, ждем release чтобы считать «клик»
+                    break;
+                case ENCODER_EVENT_BUTTON_RELEASE: {
+                    if (lvgl_is_detail_screen_open()) {
+                        lvgl_close_detail_screen();
+                    } else {
+                        int idx = lvgl_get_focus_index();
+                        lvgl_open_detail_screen(idx);
+                    }
+                    break;
+                }
+                case ENCODER_EVENT_BUTTON_LONG_PRESS:
+                    // Зарезервировано для будущих действий (например, меню)
+                    break;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+}
+
 /* =============================
  *  I2C ДРАЙВЕР С МЬЮТЕКСОМ
  * ============================= */
@@ -369,10 +427,13 @@ void app_main(void)
     // Более длинная задержка для обеспечения полной инициализации UI
     vTaskDelay(pdMS_TO_TICKS(300));  // Увеличенная задержка до 3 секунд
     
+    // Создаем задачу обработки энкодера (навигация)
+    xTaskCreate(encoder_ui_task, "encoder_ui", 3072, NULL, 6, NULL);
+
     // Создаем задачу датчиков с реальными показаниями датчиков
     xTaskCreate(sensor_task, "sensors", 4096, NULL, 3, NULL);
 
-    // Поддерживаем главную задачу активной
+    // Поддерживаем главную задачу активной с повышенным приоритетом для лучшей обработки input
     while (1) {
        // Периодически обновляем дисплей для обеспечения стабильного рендеринга
         if (lvgl_lock(-1)) {

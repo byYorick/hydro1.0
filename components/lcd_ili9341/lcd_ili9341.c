@@ -65,8 +65,8 @@
 #define LVGL_TASK_MAX_DELAY_MS 500
 // Минимальная задержка задачи LVGL в миллисекундах
 #define LVGL_TASK_MIN_DELAY_MS 1
-// Размер стека задачи LVGL (8 КБ)
-#define LVGL_TASK_STACK_SIZE   (8 * 1024)
+// Размер стека задачи LVGL (20 КБ)
+#define LVGL_TASK_STACK_SIZE   (20 * 1024)
 // Приоритет задачи LVGL
 #define LVGL_TASK_PRIORITY     2
 
@@ -217,6 +217,13 @@ static void encoder_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
         // Keep the key while button is pressed
         data->key = last_key;
     }
+    
+    // Нормализация enc_diff для плавной навигации
+    // LVGL ожидает ±1 на шаг для плавного фокуса
+    data->enc_diff = (data->enc_diff > 0) ? 1 : ((data->enc_diff < 0) ? -1 : 0);
+    
+    // Добавляем логи для отладки
+    ESP_LOGI("ENCODER", "Diff: %d", (int)data->enc_diff);
     
     // Обработка навигации с помощью энкодера
     if (data->enc_diff != 0) {
