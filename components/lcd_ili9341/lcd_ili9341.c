@@ -78,30 +78,63 @@ static TaskHandle_t lvgl_task_handle = NULL;
 // Предварительные объявления функций
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx);
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map);
-static void lvgl_port_update_callback(lv_disp_drv_t *drv, uint32_t timestamp, uint32_t duration);
+static void lvgl_port_update_callback(lv_disp_drv_t *drv);
 static void increase_lvgl_tick(void *arg);
-static void lvgl_task_handler(void *pvParameters);
+static void lvgl_port_update_callback(lv_disp_drv_t *drv)
+{
+    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t)drv->user_data;
 
-// Объявления функций для работы с фокусом
-int lvgl_get_focus_index(void);
-int lvgl_get_total_focus_items(void);
-
-// Блокировка мьютекса LVGL
-// Используется для обеспечения потокобезопасности при работе с API LVGL
+    switch (drv->rotated) {
+        case LV_DISP_ROT_NONE:
+            esp_lcd_panel_swap_xy(panel_handle, false);
+            esp_lcd_panel_mirror(panel_handle, true, false);
+            break;
+        case LV_DISP_ROT_90:
+            esp_lcd_panel_swap_xy(panel_handle, true);
+            esp_lcd_panel_mirror(panel_handle, true, true);
+            break;
+        case LV_DISP_ROT_180:
+            esp_lcd_panel_swap_xy(panel_handle, false);
+            esp_lcd_panel_mirror(panel_handle, false, true);
+            break;
+        case LV_DISP_ROT_270:
+            esp_lcd_panel_swap_xy(panel_handle, true);
+            esp_lcd_panel_mirror(panel_handle, false, false);
+            break;
+        default:
+            break;
+    }
+}
 bool lvgl_lock(int timeout_ms)
 {
-    // Преобразование таймаута из миллисекунд в тики FreeRTOS
-    // Если `timeout_ms` равен -1, программа будет блокироваться до выполнения условия
+    if (!lvgl_mux) {
+        return false;
+    }
     const TickType_t timeout_ticks = (timeout_ms == -1) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
     return xSemaphoreTakeRecursive(lvgl_mux, timeout_ticks) == pdTRUE;
 }
 
-// Разблокировка мьютекса LVGL
-// Освобождает мьютекс после завершения работы с API LVGL
 void lvgl_unlock(void)
 {
-    xSemaphoreGiveRecursive(lvgl_mux);
+    if (lvgl_mux) {
+        xSemaphoreGiveRecursive(lvgl_mux);
+    }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+// Разблокировка мьютекса LVGL
+// Освобождает мьютекс после завершения работы с API LVGL
+
 
 // Устаревшая функция для обновления значений датчиков
 // Пользовательский интерфейс теперь обрабатывается компонентом lvgl_main
@@ -287,7 +320,7 @@ lv_disp_t* lcd_ili9341_init(void)
         .miso_io_num = PIN_NUM_MISO,        // Пин данных SPI (MISO), -1 если не используется
         .quadwp_io_num = -1,                // Не используется в данном проекте
         .quadhd_io_num = -1,                // Не используется в данном проекте
-        .max_transfer_sz = LCD_H_RES * 20 * sizeof(uint16_t), // Максимальный размер передачи данных
+        .max_transfer_sz = LCD_H_RES * 80 * sizeof(uint16_t), // Максимальный размер передачи данных
     };
     // Выводим информацию о начале инициализации шины SPI
     ESP_LOGI("LCD", "Initializing SPI bus");
@@ -368,7 +401,7 @@ lv_disp_t* lcd_ili9341_init(void)
 
     // Выводим информацию о настройке ориентации панели
     ESP_LOGI("LCD", "Configuring panel orientation");
-    // Поворачиваем изображение на 180 градусов (по сути зеркалим по обеим осям)
+    // Базовая ориентация экрана (повернут по горизонтали под монтаж нашей платы)
     esp_lcd_panel_swap_xy(panel_handle, false);
     esp_lcd_panel_mirror(panel_handle, true, false);
 
@@ -394,7 +427,7 @@ lv_disp_t* lcd_ili9341_init(void)
     // Проверяем, выделена ли уже память для буферов
     if (disp_buf1 == NULL) {
         // Выделяем память для первого буфера (четверть экрана)
-        disp_buf1 = heap_caps_malloc(LCD_H_RES * LCD_V_RES / 4 * sizeof(lv_color_t), MALLOC_CAP_DMA);
+        disp_buf1 = heap_caps_malloc(LCD_H_RES * 40 * sizeof(lv_color_t), MALLOC_CAP_DMA);
         // Проверяем успешность выделения памяти
         if (disp_buf1 == NULL) {
             // Если не удалось выделить память для первого буфера, выводим ошибку и освобождаем ресурсы
@@ -408,7 +441,7 @@ lv_disp_t* lcd_ili9341_init(void)
     // Проверяем, выделена ли уже память для второго буфера
     if (disp_buf2 == NULL) {
         // Выделяем память для второго буфера (четверть экрана)
-        disp_buf2 = heap_caps_malloc(LCD_H_RES * LCD_V_RES / 4 * sizeof(lv_color_t), MALLOC_CAP_DMA);
+        disp_buf2 = heap_caps_malloc(LCD_H_RES * 40 * sizeof(lv_color_t), MALLOC_CAP_DMA);
         // Проверяем успешность выделения памяти
         if (disp_buf2 == NULL) {
             // Если не удалось выделить память для второго буфера, освобождаем первый буфер и ресурсы
@@ -422,7 +455,7 @@ lv_disp_t* lcd_ili9341_init(void)
         }
     }
     // Инициализируем буфер отображения LVGL с двумя буферами для двойной буферизации
-    lv_disp_draw_buf_init(&disp_buf, disp_buf1, disp_buf2, LCD_H_RES * LCD_V_RES / 4);
+    lv_disp_draw_buf_init(&disp_buf, disp_buf1, disp_buf2, LCD_H_RES * 40);
 
     // Выводим информацию о регистрации драйвера дисплея
     ESP_LOGI("LCD", "Register display driver to LVGL");
@@ -435,11 +468,11 @@ lv_disp_t* lcd_ili9341_init(void)
     disp_drv.flush_cb = lvgl_flush_cb;          // Функция обновления дисплея
     disp_drv.draw_buf = &disp_buf;              // Буфер отображения
     disp_drv.user_data = panel_handle;          // Пользовательские данные (дескриптор панели)
-    // Устанавливаем функцию обратного вызова для обновления дисплея
-    disp_drv.monitor_cb = lvgl_port_update_callback;
+    disp_drv.drv_update_cb = lvgl_port_update_callback;
 
     // Регистрируем драйвер дисплея в LVGL и получаем дескриптор дисплея
     lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
+    lv_disp_set_rotation(disp, LV_DISP_ROT_180);
     
     // Выводим информацию о создании таймера LVGL
     ESP_LOGI("LCD", "Install LVGL tick timer");
@@ -510,12 +543,7 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
 
 // Функция обратного вызова для обновления дисплея
 // Вызывается при каждом обновлении дисплея для синхронизации ориентации
-static void lvgl_port_update_callback(lv_disp_drv_t *drv, uint32_t timestamp, uint32_t duration)
-{
-    // Эта функция была предназначена для обработки поворота экрана,
-    // но была упрощена в соответствии с требованиями пользователя
-    // В текущей реализации она не выполняет никаких действий
-}
+
 
 // Функция обратного вызова таймера LVGL
 // Увеличивает внутренний таймер LVGL для обработки анимаций и других временных событий

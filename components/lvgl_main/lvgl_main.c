@@ -174,6 +174,7 @@ static sensor_data_t last_sensor_data = {0};
 static lv_coord_t sensor_history[SENSOR_COUNT][HISTORY_POINTS];
 static uint16_t sensor_history_pos[SENSOR_COUNT];
 static bool sensor_history_full[SENSOR_COUNT];
+static bool sensor_snapshot_valid = false;
 
 /* =============================
  *  FORWARD DECLARATIONS
@@ -213,7 +214,7 @@ static void init_styles(void)
     if (styles_initialized) {
         return;
     }
-
+    
     lv_style_init(&style_bg);
     lv_style_set_bg_color(&style_bg, COLOR_BG);
     lv_style_set_bg_opa(&style_bg, LV_OPA_COVER);
@@ -413,7 +414,7 @@ static void update_status_badge(int index, float value)
     if (!status_labels[index]) {
         return;
     }
-
+    
     const sensor_meta_t *meta = &SENSOR_META[index];
     lv_obj_t *label = status_labels[index];
     lv_color_t bg = COLOR_ACCENT_SOFT;
@@ -500,33 +501,25 @@ static lv_obj_t *create_sensor_card(lv_obj_t *parent, int index)
     lv_obj_remove_style_all(card);
     lv_obj_add_style(card, &style_card, 0);
     lv_obj_set_width(card, LV_PCT(48));
-    lv_obj_set_height(card, 72);
+    lv_obj_set_height(card, 90);
     lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(card,
                           LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(card, 10, 0);
+    lv_obj_set_style_pad_row(card, 6, 0);
 
     lv_obj_t *title_label = lv_label_create(card);
     lv_obj_add_style(title_label, &style_label, 0);
     lv_label_set_text(title_label, meta->title);
 
-    lv_obj_t *value_row = lv_obj_create(card);
-    lv_obj_remove_style_all(value_row);
-    lv_obj_set_width(value_row, LV_PCT(100));
-    lv_obj_set_flex_flow(value_row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(value_row,
-                          LV_FLEX_ALIGN_START,
-                          LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(value_row, 4, 0);
-
-    lv_obj_t *value = lv_label_create(value_row);
+    lv_obj_t *value = lv_label_create(card);
     lv_obj_add_style(value, &style_value, 0);
     lv_label_set_text(value, "--");
     value_labels[index] = value;
 
-    lv_obj_t *unit = lv_label_create(value_row);
+    lv_obj_t *unit = lv_label_create(card);
     lv_obj_add_style(unit, &style_unit, 0);
     lv_label_set_text(unit, meta->unit);
 
@@ -583,7 +576,7 @@ static void create_main_ui(void)
         lv_group_set_wrap(encoder_group, true);
     }
     lvgl_clear_focus_group();
-
+    
     for (int i = 0; i < SENSOR_COUNT; ++i) {
         sensor_containers[i] = create_sensor_card(content, i);
         if (encoder_group) {
@@ -592,6 +585,10 @@ static void create_main_ui(void)
     }
 
     lvgl_set_focus(focus_to_restore);
+
+    if (sensor_snapshot_valid) {
+        update_sensor_display(&last_sensor_data);
+    }
 
     if (sensor_data_queue == NULL) {
         sensor_data_queue = xQueueCreate(SENSOR_DATA_QUEUE_SIZE, sizeof(sensor_data_t));
@@ -659,11 +656,12 @@ static void create_detail_ui(int index)
 
     lv_obj_t *range_label = lv_label_create(body);
     lv_obj_add_style(range_label, &style_label, 0);
-    char range_format[48];
-    snprintf(range_format, sizeof(range_format), "Target: %%.%df - %%.%df %%s", meta->decimals, meta->decimals);
     float range_low = threshold_defined(meta->warn_low) ? meta->warn_low : meta->chart_min;
     float range_high = threshold_defined(meta->warn_high) ? meta->warn_high : meta->chart_max;
-    lv_label_set_text_fmt(range_label, range_format, range_low, range_high, meta->unit);
+    lv_label_set_text_fmt(range_label, "Target: %.*f - %.*f %s",
+                          meta->decimals, range_low,
+                          meta->decimals, range_high,
+                          meta->unit);
 
     lv_obj_t *desc_label = lv_label_create(body);
     lv_obj_add_style(desc_label, &style_label, 0);
@@ -718,7 +716,7 @@ void lvgl_close_detail_screen(void)
     if (!lvgl_lock(1000)) {
         return;
     }
-
+    
     if (screen_detail) {
         lv_obj_del_async(screen_detail);
         screen_detail = NULL;
@@ -742,7 +740,7 @@ void lvgl_set_focus(int index)
         ESP_LOGW(TAG, "Invalid focus index: %d", index);
         return;
     }
-
+    
     if (current_focus_index >= 0 && current_focus_index < SENSOR_COUNT) {
         if (sensor_containers[current_focus_index]) {
             lv_obj_remove_style(sensor_containers[current_focus_index], &style_focus, LV_PART_MAIN);
@@ -787,6 +785,7 @@ void lvgl_clear_focus_group(void)
 static void update_sensor_display(sensor_data_t *data)
 {
     last_sensor_data = *data;
+    sensor_snapshot_valid = true;
 
     for (int i = 0; i < SENSOR_COUNT; ++i) {
         if (!value_labels[i]) {
@@ -822,7 +821,7 @@ static void display_update_task(void *pvParameters)
                 ESP_LOGW(TAG, "Failed to acquire LVGL lock, skipping update");
                 continue;
             }
-
+            
             if (lv_is_initialized()) {
                 update_sensor_display(&sensor_data);
             }
@@ -851,7 +850,7 @@ void lvgl_update_sensor_values(float ph, float ec, float temp, float hum, float 
     if (sensor_data_queue == NULL) {
         return;
     }
-
+    
     sensor_data_t sensor_data = {
         .ph = ph,
         .ec = ec,
