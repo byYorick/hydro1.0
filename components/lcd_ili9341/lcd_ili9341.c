@@ -223,7 +223,7 @@ static void encoder_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     data->enc_diff = (data->enc_diff > 0) ? 1 : ((data->enc_diff < 0) ? -1 : 0);
     
     // Добавляем логи для отладки
-    ESP_LOGI("ENCODER", "Diff: %d", (int)data->enc_diff);
+   // ESP_LOGI("ENCODER", "Diff: %d", (int)data->enc_diff);
     
     // Обработка навигации с помощью энкодера
     if (data->enc_diff != 0) {
@@ -368,9 +368,9 @@ lv_disp_t* lcd_ili9341_init(void)
 
     // Выводим информацию о настройке ориентации панели
     ESP_LOGI("LCD", "Configuring panel orientation");
-    // Разворачиваем изображение на 180° для портретной ориентации
+    // Поворачиваем изображение на 180 градусов (по сути зеркалим по обеим осям)
     esp_lcd_panel_swap_xy(panel_handle, false);
-    esp_lcd_panel_mirror(panel_handle, true, true);
+    esp_lcd_panel_mirror(panel_handle, true, false);
 
     // Пользователь может вывести предопределенный шаблон на экран перед включением экрана или подсветки
     // Выводим информацию о включении дисплея

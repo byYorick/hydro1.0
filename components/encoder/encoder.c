@@ -10,7 +10,7 @@
 static const char *TAG = "encoder";
 
 // Количество импульсов PCNT на один реальный шаг энкодера (для типичного энкодера 2 импульса на щелчок)
-static const int32_t COUNT_FILTER = 4;
+static const int32_t COUNT_FILTER = 2;
 
 // Накопитель импульсов PCNT, чтобы не терять половинчатые шаги при очистке счетчика
 static int32_t accumulated_delta = 0;
