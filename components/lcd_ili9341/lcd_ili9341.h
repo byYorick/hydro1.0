@@ -45,6 +45,13 @@ bool lvgl_lock(int timeout_ms);
  */
 void lvgl_unlock(void);
 
+/**
+ * @brief Получить устройство ввода энкодера
+ * 
+ * @return lv_indev_t* Указатель на устройство ввода энкодера
+ */
+lv_indev_t* lcd_ili9341_get_encoder_indev(void);
+
 #ifdef __cplusplus
 }
 #endif

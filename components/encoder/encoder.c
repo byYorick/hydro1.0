@@ -5,15 +5,20 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "esp_timer.h"
 
 static const char *TAG = "encoder";
 
-// Количество импульсов PCNT на один реальный шаг энкодера (для типичного энкодера 2 импульса на щелчок)
-static const int32_t COUNT_FILTER = 2;
+// Количество импульсов PCNT на один реальный шаг энкодера (для типичного энкодера 4 импульса на щелчок для лучшей стабильности)
+static const int32_t COUNT_FILTER = 4;
 
 // Накопитель импульсов PCNT, чтобы не терять половинчатые шаги при очистке счетчика
 static int32_t accumulated_delta = 0;
+
+// Время последнего события поворота для дебаунсинга
+static int64_t last_rotation_time = 0;
+static const int64_t ROTATION_DEBOUNCE_MS = 50; // Минимальный интервал между событиями поворота
 
 // Encoder pin definitions (will be passed from main app)
 static int enc_a_pin = -1;
@@ -30,17 +35,22 @@ static pcnt_channel_handle_t pcnt_chan_b = NULL;
 
 // Event queue for encoder events
 static QueueHandle_t encoder_event_queue = NULL;
-#define ENCODER_QUEUE_SIZE 10
+#define ENCODER_QUEUE_SIZE 50
 
 // Button state tracking
 static bool button_pressed = false;
 static int64_t button_press_time = 0;
 static bool long_press_detected = false;
 
+// Semaphores for button handling
+static SemaphoreHandle_t button_press_sem = NULL;
+static SemaphoreHandle_t button_release_sem = NULL;
+
 // Forward declarations
 
 static void encoder_button_isr_handler(void *arg);
 static void encoder_button_task(void *arg);
+static void encoder_rotation_task(void *arg);
 
 void encoder_set_pins(int a_pin, int b_pin, int sw_pin)
 {
@@ -70,6 +80,14 @@ void encoder_init(void)
     encoder_event_queue = xQueueCreate(ENCODER_QUEUE_SIZE, sizeof(encoder_event_t));
     if (encoder_event_queue == NULL) {
         ESP_LOGE(TAG, "Failed to create encoder event queue");
+        return;
+    }
+    
+    // Create semaphores for button handling
+    button_press_sem = xSemaphoreCreateBinary();
+    button_release_sem = xSemaphoreCreateBinary();
+    if (button_press_sem == NULL || button_release_sem == NULL) {
+        ESP_LOGE(TAG, "Failed to create button semaphores");
         return;
     }
     
@@ -133,9 +151,9 @@ void encoder_init(void)
     pcnt_unit_start(pcnt_unit);
     
     // Configure GPIO for encoder button with interrupt
-    // Only trigger on falling edge (button press) to reduce interrupt frequency
+    // Trigger on any edge (both press and release) for proper button handling
     gpio_config_t io_conf = {
-        .intr_type = GPIO_INTR_NEGEDGE,
+        .intr_type = GPIO_INTR_ANYEDGE,
         .mode = GPIO_MODE_INPUT,
         .pin_bit_mask = (1ULL << enc_sw_pin),
         .pull_up_en = GPIO_PULLUP_ENABLE,
@@ -150,102 +168,106 @@ void encoder_init(void)
     gpio_isr_handler_add(enc_sw_pin, encoder_button_isr_handler, (void *)enc_sw_pin);
     
     // Create button handling task
-    xTaskCreate(encoder_button_task, "encoder_button", 2048, NULL, 5, NULL);
+    xTaskCreate(encoder_button_task, "encoder_button", 4096, NULL, 5, NULL);
+    
+    // Create rotation task
+    xTaskCreate(encoder_rotation_task, "encoder_rotation", 4096, NULL, 5, NULL);
     
     ESP_LOGI(TAG, "Encoder initialized with pins A:%d, B:%d, SW:%d", enc_a_pin, enc_b_pin, enc_sw_pin);
 }
 
 static void encoder_button_isr_handler(void *arg)
 {
-    // This is a simple ISR that just wakes up the button task
-    // The button task will handle the actual button logic
-    // We just need to make sure it runs when the button state changes
-    // The task will check the current button state
+    // Проверяем состояние кнопки
+    bool current_state = gpio_get_level(enc_sw_pin);
+    
+    // В ISR нельзя использовать ESP_LOGI - это вызывает блокировку!
+    // Убираем все логирование из ISR
+    
+    if (current_state == 0) { // Кнопка нажата (active low)
+        // Даем семафор нажатия
+        if (button_press_sem != NULL) {
+            BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+            xSemaphoreGiveFromISR(button_press_sem, &xHigherPriorityTaskWoken);
+            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        }
+    } else { // Кнопка отпущена
+        // Даем семафор отпускания
+        if (button_release_sem != NULL) {
+            BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+            xSemaphoreGiveFromISR(button_release_sem, &xHigherPriorityTaskWoken);
+            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        }
+    }
 }
 
 static void encoder_button_task(void *arg)
 {
-    // Add debouncing variables
-    static bool last_button_state = true; // Assume button is released initially (active low)
-    static int64_t last_button_change_time = 0;
-    const int64_t debounce_delay_ms = 50; // 50ms debounce time
+    ESP_LOGI(TAG, "Button task started");
     
     while (1) {
-        // Check button state
-        bool current_button_state = gpio_get_level(enc_sw_pin);
-        
-        // Get current time
-        int64_t current_time = esp_timer_get_time() / 1000; // Convert to milliseconds
-        
-        // Check if button state has changed and enough time has passed for debouncing
-        if (current_button_state != last_button_state && 
-            (current_time - last_button_change_time) > debounce_delay_ms) {
-            ESP_LOGD(TAG, "Button state changed: %s (debounced)", current_button_state ? "RELEASED" : "PRESSED");
+        // Ждем семафор нажатия или отпускания
+        if (xSemaphoreTake(button_press_sem, portMAX_DELAY) == pdTRUE) {
+            // Кнопка нажата
+            button_pressed = true;
+            button_press_time = esp_timer_get_time() / 1000; // Convert to milliseconds
+            long_press_detected = false;
             
-            // Update last button change time
-            last_button_change_time = current_time;
-            last_button_state = current_button_state;
-            ESP_LOGD(TAG, "Button state updated, waiting for stable state");
+            ESP_LOGI(TAG, "Button pressed");
             
-            // Button pressed (active low)
-            if (!current_button_state && !button_pressed) {
-                button_pressed = true;
-                button_press_time = current_time;
-                long_press_detected = false;
-                ESP_LOGD(TAG, "Button pressed at %lld ms", button_press_time);
-            }
-            // Button released
-            else if (current_button_state && button_pressed) {
-                int64_t press_duration = current_time - button_press_time;
-                button_pressed = false;
-                
-                // Check if long press was already detected
-                if (long_press_detected) {
-                    // Long press already reported, just send release event
-                    encoder_event_t event = {
-                        .type = ENCODER_EVENT_BUTTON_RELEASE,
-                        .value = 0
-                    };
-                    if (encoder_event_queue != NULL) {
-                        xQueueSend(encoder_event_queue, &event, 0);
-                    }
-                } else {
-                    // Short press - for LVGL encoder, we typically just send press and release
-                    encoder_event_t event = {
-                        .type = ENCODER_EVENT_BUTTON_PRESS,
-                        .value = press_duration
-                    };
-                    if (encoder_event_queue != NULL) {
-                        xQueueSend(encoder_event_queue, &event, 0);
-                    }
+            // Отправляем событие нажатия
+            encoder_event_t event = {
+                .type = ENCODER_EVENT_BUTTON_PRESS,
+                .value = 1
+            };
+            xQueueSend(encoder_event_queue, &event, 0);
+            
+            // Ждем отпускания или длинного нажатия
+            while (button_pressed) {
+                // Проверяем на длинное нажатие
+                if (!long_press_detected) {
+                    int64_t current_time = esp_timer_get_time() / 1000;
+                    int64_t press_duration = current_time - button_press_time;
                     
-                    // Also send release event
-                    event.type = ENCODER_EVENT_BUTTON_RELEASE;
-                    event.value = 0;
-                    xQueueSend(encoder_event_queue, &event, 0);
+                    if (press_duration >= long_press_duration_ms) {
+                        long_press_detected = true;
+                        
+                        ESP_LOGI(TAG, "Button long press detected");
+                        
+                        // Отправляем событие длинного нажатия
+                        encoder_event_t long_event = {
+                            .type = ENCODER_EVENT_BUTTON_LONG_PRESS,
+                            .value = 1
+                        };
+                        xQueueSend(encoder_event_queue, &long_event, 0);
+                    }
                 }
                 
-                long_press_detected = false;
-                ESP_LOGD(TAG, "Button released after %lld ms", press_duration);
-            }
-        }
-        // Button still pressed - check for long press
-        else if (button_pressed && !long_press_detected) {
-            int64_t press_duration = current_time - button_press_time;
-            
-            if (press_duration >= long_press_duration_ms) {
-                long_press_detected = true;
-                encoder_event_t event = {
-                    .type = ENCODER_EVENT_BUTTON_LONG_PRESS,
-                    .value = press_duration
-                };
-                if (encoder_event_queue != NULL) {
-                    xQueueSend(encoder_event_queue, &event, 0);
+                // Проверяем семафор отпускания с коротким таймаутом
+                if (xSemaphoreTake(button_release_sem, pdMS_TO_TICKS(50)) == pdTRUE) {
+                    // Кнопка отпущена
+                    button_pressed = false;
+                    
+                    ESP_LOGI(TAG, "Button released");
+                    
+                    // Отправляем событие отпускания
+                    encoder_event_t release_event = {
+                        .type = ENCODER_EVENT_BUTTON_RELEASE,
+                        .value = 1
+                    };
+                    xQueueSend(encoder_event_queue, &release_event, 0);
+                    break;
                 }
-                ESP_LOGD(TAG, "Long press detected after %lld ms", press_duration);
             }
         }
-        
+    }
+}
+
+static void encoder_rotation_task(void *arg)
+{
+    ESP_LOGI(TAG, "Rotation task started");
+    
+    while (1) {
         // Check for encoder rotation
         int count = 0;
         if (pcnt_unit_get_count(pcnt_unit, &count) == ESP_OK && count != 0) {
@@ -255,16 +277,24 @@ static void encoder_button_task(void *arg)
 
         // Генерируем события только тогда, когда накопилось достаточно импульсов для одного шага
         while (abs(accumulated_delta) >= COUNT_FILTER) {
-            encoder_event_t event = {
-                .type = (accumulated_delta > 0) ? ENCODER_EVENT_ROTATE_CW : ENCODER_EVENT_ROTATE_CCW,
-                .value = 1
-            };
+            int64_t current_time = esp_timer_get_time() / 1000; // Convert to milliseconds
+            
+            // Проверяем дебаунсинг - отправляем событие только если прошло достаточно времени
+            if (current_time - last_rotation_time >= ROTATION_DEBOUNCE_MS) {
+                encoder_event_t event = {
+                    .type = (accumulated_delta > 0) ? ENCODER_EVENT_ROTATE_CW : ENCODER_EVENT_ROTATE_CCW,
+                    .value = 1
+                };
 
-            if (encoder_event_queue != NULL) {
-                if (xQueueSend(encoder_event_queue, &event, 0) != pdTRUE) {
-                    ESP_LOGW(TAG, "Encoder queue full, dropping rotation event");
-                    break;
+                if (encoder_event_queue != NULL) {
+                    if (xQueueSend(encoder_event_queue, &event, 0) != pdTRUE) {
+                        ESP_LOGW(TAG, "Encoder queue full, dropping rotation event");
+                        break;
+                    }
                 }
+                
+                last_rotation_time = current_time;
+                ESP_LOGD(TAG, "PCNT step sent, accumulated=%ld", (long)accumulated_delta);
             }
 
             if (accumulated_delta > 0) {
@@ -272,20 +302,11 @@ static void encoder_button_task(void *arg)
             } else {
                 accumulated_delta += COUNT_FILTER;
             }
-            ESP_LOGD(TAG, "PCNT step sent, accumulated=%ld", (long)accumulated_delta);
         }
 
-        if (count == 0) {
-            // Периодически логируем уровни для отладки состояния пинов
-            static int tick = 0;
-            if ((++tick % 50) == 0) {
-                int a = gpio_get_level(enc_a_pin);
-                int b = gpio_get_level(enc_b_pin);
-                ESP_LOGD(TAG, "Levels A=%d B=%d, accumulated=%ld", a, b, (long)accumulated_delta);
-            }
-        }
+        // Убираем избыточное логирование для предотвращения переполнения стека
         
-        // Small delay to prevent excessive CPU usage
-        vTaskDelay(pdMS_TO_TICKS(10));
+        // Small delay to prevent excessive CPU usage and add debouncing
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 /**
  * @brief Инициализация пользовательского интерфейса LVGL
@@ -26,6 +27,9 @@ void lvgl_main_init(void);
  * @param co2 Значение CO2 в ppm (например, 450.0)
  */
 void lvgl_update_sensor_values(float ph, float ec, float temp, float hum, float lux, float co2);
+
+// Глобальная переменная для отслеживания вращения энкодера
+extern int32_t last_encoder_diff;
 
 // Структура данных датчиков
 typedef struct {

@@ -206,37 +206,40 @@ static void encoder_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     
     // Читаем события из очереди (неблокирующее чтение)
     encoder_event_t event;
-    bool event_received = false;
     while (xQueueReceive(encoder_queue, &event, 0) == pdTRUE) {
-        event_received = true;
         switch (event.type) {
-            case ENCODER_EVENT_ROTATE_CW:
-                // For encoder, we accumulate the difference
-                data->enc_diff += event.value;
-                ESP_LOGD("ENCODER", "Received CW rotation event, diff: %d", (int)data->enc_diff);
-                break;
-            case ENCODER_EVENT_ROTATE_CCW:
-                // For counter-clockwise rotation, we use negative values
-                data->enc_diff -= event.value;
-                ESP_LOGD("ENCODER", "Received CCW rotation event, diff: %d", (int)data->enc_diff);
-                break;
             case ENCODER_EVENT_BUTTON_PRESS:
+                ESP_LOGI("ENCODER", "Button press detected");
                 button_pressed = true;
                 data->state = LV_INDEV_STATE_PRESSED;
                 last_key = LV_KEY_ENTER;
                 data->key = last_key;
                 break;
             case ENCODER_EVENT_BUTTON_LONG_PRESS:
-                // For long press, we can use a different key or the same
+                ESP_LOGI("ENCODER", "Button long press detected");
                 button_pressed = true;
                 data->state = LV_INDEV_STATE_PRESSED;
-                last_key = LV_KEY_ENTER;
+                last_key = LV_KEY_ESC;  // Используем ESC для длинного нажатия
                 data->key = last_key;
                 break;
             case ENCODER_EVENT_BUTTON_RELEASE:
+                ESP_LOGI("ENCODER", "Button release detected");
                 button_pressed = false;
                 data->state = LV_INDEV_STATE_RELEASED;
-                // Don't reset the key here, let it persist for one cycle
+                break;
+            case ENCODER_EVENT_ROTATE_CW:
+                ESP_LOGI("ENCODER", "CW rotation detected");
+                data->enc_diff += event.value;
+                // Обновляем глобальную переменную для LVGL
+                extern int32_t last_encoder_diff;
+                last_encoder_diff += event.value;
+                break;
+            case ENCODER_EVENT_ROTATE_CCW:
+                ESP_LOGI("ENCODER", "CCW rotation detected");
+                data->enc_diff -= event.value;
+                // Обновляем глобальную переменную для LVGL
+                extern int32_t last_encoder_diff;
+                last_encoder_diff -= event.value;
                 break;
         }
     }
@@ -251,38 +254,6 @@ static void encoder_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
         data->key = last_key;
     }
     
-    // Нормализация enc_diff для плавной навигации
-    // LVGL ожидает ±1 на шаг для плавного фокуса
-    data->enc_diff = (data->enc_diff > 0) ? 1 : ((data->enc_diff < 0) ? -1 : 0);
-    
-    // Добавляем логи для отладки
-   // ESP_LOGI("ENCODER", "Diff: %d", (int)data->enc_diff);
-    
-    // Обработка навигации с помощью энкодера
-    if (data->enc_diff != 0) {
-        ESP_LOGD("ENCODER", "Processing encoder diff: %d", (int)data->enc_diff);
-        // Получаем текущий индекс фокуса и общее количество элементов
-        int current_index = lvgl_get_focus_index();
-        int total_items = lvgl_get_total_focus_items();
-        
-        // Обновляем индекс фокуса в зависимости от направления вращения
-        if (data->enc_diff > 0) {
-            // Вращение по часовой стрелке - переходим к следующему элементу
-            current_index = (current_index + 1) % total_items;
-            ESP_LOGD("ENCODER", "CW rotation, new index: %d", current_index);
-        } else {
-            // Вращение против часовой стрелки - переходим к предыдущему элементу
-            current_index = (current_index - 1 + total_items) % total_items;
-            ESP_LOGD("ENCODER", "CCW rotation, new index: %d", current_index);
-        }
-        
-        // Устанавливаем новый фокус
-        lvgl_set_focus(current_index);
-        
-        ESP_LOGD("ENCODER", "Focus changed to index: %d", current_index);
-    } else if (event_received) {
-        ESP_LOGD("ENCODER", "Events received but no encoder diff");
-    }
 }
 
 // Инициализация дисплея LCD ILI9341
@@ -501,9 +472,11 @@ lv_disp_t* lcd_ili9341_init(void)
     // Инициализация энкодера как устройства ввода LVGL
     ESP_LOGI("LCD", "Initialize encoder as LVGL input device");
     lv_indev_drv_init(&encoder_indev_drv);
-    encoder_indev_drv.type = LV_INDEV_TYPE_ENCODER;
+    encoder_indev_drv.type = LV_INDEV_TYPE_ENCODER;  // Возвращаем тип ENCODER
     encoder_indev_drv.read_cb = encoder_read;
     encoder_indev = lv_indev_drv_register(&encoder_indev_drv);
+    
+    // Примечание: группа будет установлена для энкодера в lvgl_main_init
     
     // Дополнительные настройки для улучшения качества отображения
     ESP_LOGI("LCD", "Applying display quality optimizations");
@@ -579,4 +552,10 @@ void lcd_ili9341_set_brightness(uint8_t brightness)
     gpio_set_level(PIN_NUM_BK_LIGHT, (pwm_value > 127) ? LCD_BK_LIGHT_ON_LEVEL : LCD_BK_LIGHT_OFF_LEVEL);
     
     ESP_LOGI("LCD", "Display brightness set to %d%%", brightness);
+}
+
+// Функция получения устройства ввода энкодера
+lv_indev_t* lcd_ili9341_get_encoder_indev(void)
+{
+    return encoder_indev;
 }
