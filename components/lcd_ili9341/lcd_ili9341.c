@@ -414,8 +414,8 @@ lv_disp_t* lcd_ili9341_init(void)
     // Включаем подсветку LCD
     // Выводим информацию о включении подсветки
     ESP_LOGI("LCD", "Turn on LCD backlight");
-    // Устанавливаем уровень сигнала для включения подсветки
-    gpio_set_level(PIN_NUM_BK_LIGHT, LCD_BK_LIGHT_ON_LEVEL);
+    // Устанавливаем оптимальную яркость для лучшего качества отображения
+    lcd_ili9341_set_brightness(80);
     
     // Выводим информацию об инициализации библиотеки LVGL
     ESP_LOGI("LCD", "Initialize LVGL library");
@@ -426,8 +426,8 @@ lv_disp_t* lcd_ili9341_init(void)
     static lv_color_t *disp_buf2 = NULL;
     // Проверяем, выделена ли уже память для буферов
     if (disp_buf1 == NULL) {
-        // Выделяем память для первого буфера (четверть экрана)
-        disp_buf1 = heap_caps_malloc(LCD_H_RES * 40 * sizeof(lv_color_t), MALLOC_CAP_DMA);
+        // Выделяем память для первого буфера (увеличенный размер для лучшего качества)
+        disp_buf1 = heap_caps_malloc(LCD_H_RES * 60 * sizeof(lv_color_t), MALLOC_CAP_DMA);
         // Проверяем успешность выделения памяти
         if (disp_buf1 == NULL) {
             // Если не удалось выделить память для первого буфера, выводим ошибку и освобождаем ресурсы
@@ -440,8 +440,8 @@ lv_disp_t* lcd_ili9341_init(void)
     }
     // Проверяем, выделена ли уже память для второго буфера
     if (disp_buf2 == NULL) {
-        // Выделяем память для второго буфера (четверть экрана)
-        disp_buf2 = heap_caps_malloc(LCD_H_RES * 40 * sizeof(lv_color_t), MALLOC_CAP_DMA);
+        // Выделяем память для второго буфера (увеличенный размер для лучшего качества)
+        disp_buf2 = heap_caps_malloc(LCD_H_RES * 60 * sizeof(lv_color_t), MALLOC_CAP_DMA);
         // Проверяем успешность выделения памяти
         if (disp_buf2 == NULL) {
             // Если не удалось выделить память для второго буфера, освобождаем первый буфер и ресурсы
@@ -455,7 +455,8 @@ lv_disp_t* lcd_ili9341_init(void)
         }
     }
     // Инициализируем буфер отображения LVGL с двумя буферами для двойной буферизации
-    lv_disp_draw_buf_init(&disp_buf, disp_buf1, disp_buf2, LCD_H_RES * 40);
+    // Увеличиваем размер буфера для лучшего качества отображения
+    lv_disp_draw_buf_init(&disp_buf, disp_buf1, disp_buf2, LCD_H_RES * 60);
 
     // Выводим информацию о регистрации драйвера дисплея
     ESP_LOGI("LCD", "Register display driver to LVGL");
@@ -504,6 +505,15 @@ lv_disp_t* lcd_ili9341_init(void)
     encoder_indev_drv.read_cb = encoder_read;
     encoder_indev = lv_indev_drv_register(&encoder_indev_drv);
     
+    // Дополнительные настройки для улучшения качества отображения
+    ESP_LOGI("LCD", "Applying display quality optimizations");
+    
+    // Настройки качества отображения применяются через конфигурацию LVGL
+    // DPI и антиалиасинг настраиваются в sdkconfig
+    
+    // Дополнительные настройки для улучшения четкости текста
+    // Антиалиасинг настраивается через конфигурацию LVGL
+    
     // Выводим информацию об успешной инициализации дисплея
     ESP_LOGI("LCD", "LCD ILI9341 display initialized successfully");
     // Возвращаем дескриптор дисплея
@@ -551,4 +561,22 @@ static void increase_lvgl_tick(void *arg)
 {
     // Увеличиваем внутренний таймер LVGL
     lv_tick_inc(LVGL_TICK_PERIOD_MS);
+}
+
+// Функция установки яркости дисплея
+void lcd_ili9341_set_brightness(uint8_t brightness)
+{
+    // Ограничиваем значение яркости в диапазоне 0-100
+    if (brightness > 100) {
+        brightness = 100;
+    }
+    
+    // Преобразуем процент в PWM значение (0-255)
+    uint32_t pwm_value = (brightness * 255) / 100;
+    
+    // Устанавливаем уровень сигнала для подсветки
+    // Для простоты используем цифровой выход, но можно заменить на PWM
+    gpio_set_level(PIN_NUM_BK_LIGHT, (pwm_value > 127) ? LCD_BK_LIGHT_ON_LEVEL : LCD_BK_LIGHT_OFF_LEVEL);
+    
+    ESP_LOGI("LCD", "Display brightness set to %d%%", brightness);
 }

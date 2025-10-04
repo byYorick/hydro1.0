@@ -2,6 +2,7 @@
 #include "lvgl.h"
 #include "lcd_ili9341.h"
 LV_FONT_DECLARE(lv_font_montserrat_14)
+LV_FONT_DECLARE(lv_font_montserrat_16)
 LV_FONT_DECLARE(lv_font_montserrat_18)
 LV_FONT_DECLARE(lv_font_montserrat_20)
 
@@ -222,22 +223,27 @@ static void init_styles(void)
     lv_style_init(&style_title);
     lv_style_set_text_color(&style_title, COLOR_TEXT);
     lv_style_set_text_font(&style_title, &lv_font_montserrat_14);
+    lv_style_set_text_opa(&style_title, LV_OPA_COVER);
 
     lv_style_init(&style_label);
     lv_style_set_text_color(&style_label, COLOR_TEXT_MUTED);
     lv_style_set_text_font(&style_label, &lv_font_montserrat_14);
+    lv_style_set_text_opa(&style_label, LV_OPA_COVER);
 
     lv_style_init(&style_value);
     lv_style_set_text_color(&style_value, COLOR_TEXT);
     lv_style_set_text_font(&style_value, &lv_font_montserrat_20);
+    lv_style_set_text_opa(&style_value, LV_OPA_COVER);
 
     lv_style_init(&style_value_large);
     lv_style_set_text_color(&style_value_large, COLOR_TEXT);
     lv_style_set_text_font(&style_value_large, &lv_font_montserrat_20);
+    lv_style_set_text_opa(&style_value_large, LV_OPA_COVER);
 
     lv_style_init(&style_unit);
     lv_style_set_text_color(&style_unit, COLOR_TEXT_MUTED);
     lv_style_set_text_font(&style_unit, &lv_font_montserrat_14);
+    lv_style_set_text_opa(&style_unit, LV_OPA_COVER);
 
     lv_style_init(&style_card);
     lv_style_set_bg_color(&style_card, COLOR_CARD);
@@ -263,6 +269,7 @@ static void init_styles(void)
     lv_style_set_pad_all(&style_badge, 4);
     lv_style_set_text_color(&style_badge, COLOR_TEXT);
     lv_style_set_text_font(&style_badge, &lv_font_montserrat_14);
+    lv_style_set_text_opa(&style_badge, LV_OPA_COVER);
 
     lv_style_init(&style_focus);
     lv_style_set_outline_width(&style_focus, 2);
