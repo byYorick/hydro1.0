@@ -23,8 +23,8 @@
 #define I2C_SDA_PIN         18  // Пин данных I2C
 
 // Пины для энкодера
-#define ENC_A_PIN           1   // CLK - Пин энкодера (сигнал тактирования)
-#define ENC_B_PIN           2   // DT - Пин энкодера (данные)
+#define ENC_A_PIN           38  // CLK - Пин энкодера (сигнал тактирования)
+#define ENC_B_PIN           39   // DT - Пин энкодера (данные)
 #define ENC_SW_PIN          3   // Пин кнопки энкодера
 
 // Добавляем определение HIGH для реле
@@ -440,6 +440,6 @@ void app_main(void)
             lv_timer_handler();
             lvgl_unlock();
         }
-        vTaskDelay(pdMS_TO_TICKS(2000)); // Спим для уменьшения использования CPU
+        vTaskDelay(pdMS_TO_TICKS(40));   // Keep LVGL updates at 25 Hz from the main loop
     }
 }

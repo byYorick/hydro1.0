@@ -62,7 +62,7 @@
 // Период таймера LVGL в миллисекундах (2 мс)
 #define LVGL_TICK_PERIOD_MS    2
 // Максимальная задержка задачи LVGL в миллисекундах
-#define LVGL_TASK_MAX_DELAY_MS 500
+#define LVGL_TASK_MAX_DELAY_MS 40  // ensure LVGL handler runs at least 25 times per second
 // Минимальная задержка задачи LVGL в миллисекундах
 #define LVGL_TASK_MIN_DELAY_MS 1
 // Размер стека задачи LVGL (20 КБ)
@@ -368,11 +368,9 @@ lv_disp_t* lcd_ili9341_init(void)
 
     // Выводим информацию о настройке ориентации панели
     ESP_LOGI("LCD", "Configuring panel orientation");
-    // Настройка ориентации панели:
-    // Отключаем обмен координат X и Y
+    // Разворачиваем изображение на 180° для портретной ориентации
     esp_lcd_panel_swap_xy(panel_handle, false);
-    // Отражаем панель по вертикали (стандарт для портретного режима 240x320)
-    esp_lcd_panel_mirror(panel_handle, false, true);
+    esp_lcd_panel_mirror(panel_handle, true, true);
 
     // Пользователь может вывести предопределенный шаблон на экран перед включением экрана или подсветки
     // Выводим информацию о включении дисплея

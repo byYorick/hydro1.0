@@ -9,8 +9,11 @@
 
 static const char *TAG = "encoder";
 
-// Для фильтрации - генерировать события только каждые N отсчетов
-const int32_t COUNT_FILTER = 2;  // Снижен порог для лучшей чувствительности
+// Количество импульсов PCNT на один реальный шаг энкодера (для типичного энкодера 2 импульса на щелчок)
+static const int32_t COUNT_FILTER = 4;
+
+// Накопитель импульсов PCNT, чтобы не терять половинчатые шаги при очистке счетчика
+static int32_t accumulated_delta = 0;
 
 // Encoder pin definitions (will be passed from main app)
 static int enc_a_pin = -1;
@@ -110,14 +113,19 @@ void encoder_init(void)
 
     // Set edge and level actions for quadrature
     pcnt_channel_set_edge_action(pcnt_chan_a, PCNT_CHANNEL_EDGE_ACTION_INCREASE, PCNT_CHANNEL_EDGE_ACTION_DECREASE);
-    pcnt_channel_set_level_action(pcnt_chan_a, PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_REVERSE);
+    pcnt_channel_set_level_action(pcnt_chan_a, PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_INVERSE);
 
     pcnt_channel_set_edge_action(pcnt_chan_b, PCNT_CHANNEL_EDGE_ACTION_DECREASE, PCNT_CHANNEL_EDGE_ACTION_INCREASE);
-    pcnt_channel_set_level_action(pcnt_chan_b, PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_REVERSE);
+    pcnt_channel_set_level_action(pcnt_chan_b, PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_INVERSE);
     
-    // Glitch filter (disabled for now for отладка)
-    // pcnt_glitch_filter_config_t filter_cfg = { .max_glitch_ns = 1000 };
-    // pcnt_unit_set_glitch_filter(pcnt_unit, &filter_cfg);
+    // Включаем фильтр дребезга, чтобы отсеять шумовые импульсы от механического энкодера
+    pcnt_glitch_filter_config_t filter_cfg = {
+        .max_glitch_ns = 1000,  // ~1 мкс достаточно для подавления дребезга
+    };
+    esp_err_t filter_ret = pcnt_unit_set_glitch_filter(pcnt_unit, &filter_cfg);
+    if (filter_ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to set PCNT glitch filter: %s", esp_err_to_name(filter_ret));
+    }
     
     // Enable and start PCNT
     pcnt_unit_enable(pcnt_unit);
@@ -239,35 +247,41 @@ static void encoder_button_task(void *arg)
         }
         
         // Check for encoder rotation
-        int32_t count = 0;
-        pcnt_unit_get_count(pcnt_unit, &count);
-        // Используем текущий счет как дельту и сразу очищаем
-        int32_t delta = count;
-        if (delta != 0) {
+        int count = 0;
+        if (pcnt_unit_get_count(pcnt_unit, &count) == ESP_OK && count != 0) {
+            accumulated_delta += count;
             pcnt_unit_clear_count(pcnt_unit);
         }
 
-        // Генерировать события только при достаточной дельте
-        if (abs(delta) >= COUNT_FILTER) {
-            int steps = abs(delta) / COUNT_FILTER;
-            for (int i = 0; i < steps; i++) {
-                encoder_event_t event = {
-                    .type = (delta > 0) ? ENCODER_EVENT_ROTATE_CW : ENCODER_EVENT_ROTATE_CCW,
-                    .value = 1  // Always send 1 for each step
-                };
-            
-                if (encoder_event_queue != NULL) {
-                    xQueueSend(encoder_event_queue, &event, 0);
+        // Генерируем события только тогда, когда накопилось достаточно импульсов для одного шага
+        while (abs(accumulated_delta) >= COUNT_FILTER) {
+            encoder_event_t event = {
+                .type = (accumulated_delta > 0) ? ENCODER_EVENT_ROTATE_CW : ENCODER_EVENT_ROTATE_CCW,
+                .value = 1
+            };
+
+            if (encoder_event_queue != NULL) {
+                if (xQueueSend(encoder_event_queue, &event, 0) != pdTRUE) {
+                    ESP_LOGW(TAG, "Encoder queue full, dropping rotation event");
+                    break;
                 }
             }
-            ESP_LOGI(TAG, "PCNT delta=%d -> %s (%d steps)", (int)delta, (delta > 0) ? "CW" : "CCW", steps);
-        } else {
-            // Периодический отладочный лог входных уровней
+
+            if (accumulated_delta > 0) {
+                accumulated_delta -= COUNT_FILTER;
+            } else {
+                accumulated_delta += COUNT_FILTER;
+            }
+            ESP_LOGD(TAG, "PCNT step sent, accumulated=%ld", (long)accumulated_delta);
+        }
+
+        if (count == 0) {
+            // Периодически логируем уровни для отладки состояния пинов
             static int tick = 0;
             if ((++tick % 50) == 0) {
                 int a = gpio_get_level(enc_a_pin);
                 int b = gpio_get_level(enc_b_pin);
-                ESP_LOGI(TAG, "Levels A=%d B=%d, delta=%d", a, b, (int)delta);
+                ESP_LOGD(TAG, "Levels A=%d B=%d, accumulated=%ld", a, b, (long)accumulated_delta);
             }
         }
         
