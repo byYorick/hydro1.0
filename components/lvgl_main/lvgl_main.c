@@ -244,7 +244,7 @@ static void create_status_bar(lv_obj_t *parent, const char *title);
 static void status_timer_cb(lv_timer_t *timer);
 static float get_sensor_value_by_index(const sensor_data_t *data, int index);
 static void record_sensor_value(int index, float value);
-static void configure_chart_axes(lv_obj_t *chart, int index);
+// static void configure_chart_axes(lv_obj_t *chart, int index); // Удалено - не используется
 // Удалено: populate_chart_with_history (графики удалены)
 static void update_detail_view(int index);
 static void update_sensor_display(sensor_data_t *data);
@@ -712,12 +712,12 @@ static void create_detail_ui(int index)
     lv_obj_remove_style_all(info_container);
     lv_obj_add_style(info_container, &style_card, 0);
     lv_obj_set_width(info_container, LV_PCT(100));
-    lv_obj_set_height(info_container, 100);
+    lv_obj_set_height(info_container, 80);  // Уменьшили с 100 до 80
     lv_obj_set_flex_flow(info_container, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(info_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
-    lv_obj_set_style_pad_all(info_container, 16, 0);
+    lv_obj_set_style_pad_all(info_container, 12, 0);  // Уменьшили отступы с 16 до 12
 
-    lv_obj_t *range_label = lv_label_create(body);
+    lv_obj_t *range_label = lv_label_create(info_container);
     lv_obj_add_style(range_label, &style_label, 0);
     float range_low = threshold_defined(meta->warn_low) ? meta->warn_low : meta->chart_min;
     float range_high = threshold_defined(meta->warn_high) ? meta->warn_high : meta->chart_max;
@@ -730,15 +730,35 @@ static void create_detail_ui(int index)
              meta->unit ? meta->unit : "");
     lv_label_set_text(range_label, range_text);
 
-    lv_obj_t *desc_label = lv_label_create(body);
+    lv_obj_t *desc_label = lv_label_create(info_container);
     lv_obj_add_style(desc_label, &style_label, 0);
     lv_label_set_text(desc_label, meta->description ? meta->description : "");
     lv_label_set_long_mode(desc_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(desc_label, LV_PCT(100));
 
+    // Добавляем кнопку Settings
+    lv_obj_t *settings_btn = lv_btn_create(body);
+    lv_obj_set_width(settings_btn, LV_PCT(90));
+    lv_obj_set_height(settings_btn, 35);  // Уменьшили с 40 до 35
+    lv_obj_set_style_bg_color(settings_btn, COLOR_ACCENT, 0);
+    lv_obj_set_style_bg_opa(settings_btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(settings_btn, 8, 0);
+    
+    lv_obj_t *settings_label = lv_label_create(settings_btn);
+    lv_obj_set_style_text_color(settings_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(settings_label, &lv_font_montserrat_12, 0);  // Уменьшили шрифт с 14 до 12
+    lv_label_set_text(settings_label, "Settings");
+    lv_obj_center(settings_label);
+    
+    // Добавляем обработчик нажатия на кнопку Settings
+    lv_obj_add_event_cb(settings_btn, settings_button_event_cb, LV_EVENT_CLICKED, (void*)(intptr_t)index);
+    lv_obj_add_flag(settings_btn, LV_OBJ_FLAG_CLICKABLE);
+
+    // Компактная подсказка
     lv_obj_t *hint = lv_label_create(body);
     lv_obj_add_style(hint, &style_label, 0);
-    lv_label_set_text(hint, "Press the encoder button to go back");
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);  // Уменьшили шрифт
+    lv_label_set_text(hint, "Press: back | Long: home");
 
     detail_current_index = index;
     update_detail_view(index);
@@ -1513,27 +1533,9 @@ static void handle_encoder_event(encoder_event_t *event)
             break;
             
         case ENCODER_EVENT_BUTTON_LONG_PRESS:
-            ESP_LOGI(TAG, "Encoder button long press - opening settings");
-            // Длинное нажатие - переход к настройкам
-            if (current_screen == SCREEN_MAIN) {
-                // На главном - переход к настройкам выбранного датчика
-                if (settings_screens[selected_card_index].screen == NULL) {
-                    create_settings_screen(selected_card_index);
-                }
-                screen_type_t settings_screen = SCREEN_SETTINGS_PH + selected_card_index;
-                show_screen(settings_screen);
-            } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
-                // На экране детализации - переход к настройкам
-                uint8_t sensor_index = current_screen - SCREEN_DETAIL_PH;
-                if (settings_screens[sensor_index].screen == NULL) {
-                    create_settings_screen(sensor_index);
-                }
-                screen_type_t settings_screen = SCREEN_SETTINGS_PH + sensor_index;
-                show_screen(settings_screen);
-            } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
-                // На экране настроек - возврат на главный
-                show_screen(SCREEN_MAIN);
-            }
+            ESP_LOGI(TAG, "Encoder button long press - going back to main");
+            // Длинное нажатие - всегда возврат на главный экран
+            show_screen(SCREEN_MAIN);
             break;
             
         case ENCODER_EVENT_BUTTON_RELEASE:

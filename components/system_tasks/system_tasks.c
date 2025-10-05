@@ -312,8 +312,8 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
 
     // Чтение температуры и влажности (SHT3x)
     float temp, hum;
-    ret = sht3x_read(&temp, &hum);
-    if (ret == ESP_OK) {
+    bool sht3x_ok = sht3x_read(&temp, &hum);
+    if (sht3x_ok) {
         data->temperature = temp;
         data->humidity = hum;
         data->temp = temp;
@@ -321,9 +321,11 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
         data->valid[SENSOR_INDEX_TEMPERATURE] = true;
         data->valid[SENSOR_INDEX_HUMIDITY] = true;
         successful_reads++;
+        ESP_LOGI(TAG, "SHT3x read: temp=%.1f°C, hum=%.1f%%", temp, hum);
     } else {
         data->temperature = TEMP_TARGET_DEFAULT;
         data->humidity = HUMIDITY_TARGET_DEFAULT;
+        ESP_LOGW(TAG, "SHT3x read failed, using defaults");
     }
 
     // Чтение pH
@@ -333,8 +335,10 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
         data->ph = ph;
         data->valid[SENSOR_INDEX_PH] = true;
         successful_reads++;
+        ESP_LOGI(TAG, "pH read: %.2f", ph);
     } else {
         data->ph = PH_TARGET_DEFAULT;
+        ESP_LOGW(TAG, "pH read failed (ret=%s), using default %.2f", esp_err_to_name(ret), PH_TARGET_DEFAULT);
     }
 
     // Чтение EC
@@ -344,28 +348,36 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
         data->ec = ec;
         data->valid[SENSOR_INDEX_EC] = true;
         successful_reads++;
+        ESP_LOGI(TAG, "EC read: %.2f mS/cm", ec);
     } else {
         data->ec = EC_TARGET_DEFAULT;
+        ESP_LOGW(TAG, "EC read failed (ret=%s), using default %.2f", esp_err_to_name(ret), EC_TARGET_DEFAULT);
     }
 
     // Чтение освещенности
     uint16_t lux_raw;
-    if (trema_lux_read(&lux_raw)) {
+    bool lux_ok = trema_lux_read(&lux_raw);
+    if (lux_ok) {
         data->lux = (float)lux_raw;
         data->valid[SENSOR_INDEX_LUX] = true;
         successful_reads++;
+        ESP_LOGI(TAG, "LUX read: %d lux", lux_raw);
     } else {
         data->lux = LUX_TARGET_DEFAULT;
+        ESP_LOGW(TAG, "LUX read failed, using default %.0f", LUX_TARGET_DEFAULT);
     }
 
     // Чтение CO2
     float co2, tvoc;
-    if (ccs811_read_data(&co2, &tvoc)) {
+    bool co2_ok = ccs811_read_data(&co2, &tvoc);
+    if (co2_ok) {
         data->co2 = co2;
         data->valid[SENSOR_INDEX_CO2] = true;
         successful_reads++;
+        ESP_LOGI(TAG, "CO2 read: %.0f ppm (TVOC: %.0f)", co2, tvoc);
     } else {
         data->co2 = CO2_TARGET_DEFAULT;
+        ESP_LOGW(TAG, "CO2 read failed, using default %.0f", CO2_TARGET_DEFAULT);
     }
 
     ESP_LOGD(TAG, "Sensors read: %d/%d successful (pH=%.2f, EC=%.2f, T=%.1f, H=%.1f)", 
