@@ -64,7 +64,7 @@ extern "C" {
 #define ENCODER_PIN_B           2           // DT (B) пин энкодера
 #define ENCODER_PIN_SW          3           // SW (кнопка) пин энкодера
 
-#define ENCODER_LONG_PRESS_MS   1000        // Длительность длинного нажатия (мс)
+#define ENCODER_LONG_PRESS_MS   2000        // Длительность длинного нажатия (2 сек)
 #define ENCODER_DEBOUNCE_MS     50          // Время дебаунса (мс)
 
 /*******************************************************************************

@@ -1029,7 +1029,13 @@ void lvgl_main_init(void)
     
     // Создаем задачу обработки энкодера
     // Используем собственную обработку вместо стандартной LVGL для кастомной навигации
-    xTaskCreate(encoder_task, "encoder_task", 4096, NULL, 5, NULL);
+    TaskHandle_t encoder_task_handle = NULL;
+    BaseType_t task_created = xTaskCreate(encoder_task, "lvgl_encoder", 4096, NULL, 5, &encoder_task_handle);
+    if (task_created == pdPASS && encoder_task_handle != NULL) {
+        ESP_LOGI(TAG, "✓ Encoder task created successfully");
+    } else {
+        ESP_LOGE(TAG, "❌ FAILED to create encoder task!");
+    }
     
     // Добавляем обработчик событий энкодера
     lv_obj_add_event_cb(main_screen, encoder_event_cb, LV_EVENT_ALL, NULL);
@@ -1424,14 +1430,18 @@ static void encoder_task(void *pvParameters)
 {
     LV_UNUSED(pvParameters);
     
-    QueueHandle_t encoder_queue = encoder_get_event_queue();
-    if (encoder_queue == NULL) {
-        ESP_LOGE(TAG, "Encoder queue not available");
-        vTaskDelete(NULL);
-        return;
+    // Ждем, пока энкодер не будет инициализирован и очередь не станет доступной
+    QueueHandle_t encoder_queue = NULL;
+    ESP_LOGI(TAG, "Encoder task started, waiting for encoder initialization...");
+    
+    while (encoder_queue == NULL) {
+        encoder_queue = encoder_get_event_queue();
+        if (encoder_queue == NULL) {
+            vTaskDelay(pdMS_TO_TICKS(100)); // Ждем 100мс
+        }
     }
     
-    ESP_LOGI(TAG, "Encoder task started, waiting for events...");
+    ESP_LOGI(TAG, "✓ Encoder queue ready, starting event processing...");
     
     encoder_event_t event;
     while (1) {
@@ -1485,34 +1495,44 @@ static void handle_encoder_event(encoder_event_t *event)
         case ENCODER_EVENT_BUTTON_PRESS:
             ESP_LOGI(TAG, "Encoder button press");
             if (current_screen == SCREEN_MAIN) {
-                // Переходим к экрану детализации выбранной карточки
+                // С главного экрана → переходим к экрану детализации выбранной карточки
                 if (detail_screens[selected_card_index].screen == NULL) {
                     create_detail_screen(selected_card_index);
                 }
                 screen_type_t detail_screen = SCREEN_DETAIL_PH + selected_card_index;
                 show_screen(detail_screen);
             } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
-                // На экране детализации - переходим к настройкам
+                // С экрана детализации → возврат на главный экран
+                show_screen(SCREEN_MAIN);
+            } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
+                // С экрана настроек → возврат к детализации
+                uint8_t sensor_index = current_screen - SCREEN_SETTINGS_PH;
+                screen_type_t detail_screen = SCREEN_DETAIL_PH + sensor_index;
+                show_screen(detail_screen);
+            }
+            break;
+            
+        case ENCODER_EVENT_BUTTON_LONG_PRESS:
+            ESP_LOGI(TAG, "Encoder button long press - opening settings");
+            // Длинное нажатие - переход к настройкам
+            if (current_screen == SCREEN_MAIN) {
+                // На главном - переход к настройкам выбранного датчика
+                if (settings_screens[selected_card_index].screen == NULL) {
+                    create_settings_screen(selected_card_index);
+                }
+                screen_type_t settings_screen = SCREEN_SETTINGS_PH + selected_card_index;
+                show_screen(settings_screen);
+            } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
+                // На экране детализации - переход к настройкам
                 uint8_t sensor_index = current_screen - SCREEN_DETAIL_PH;
                 if (settings_screens[sensor_index].screen == NULL) {
                     create_settings_screen(sensor_index);
                 }
                 screen_type_t settings_screen = SCREEN_SETTINGS_PH + sensor_index;
                 show_screen(settings_screen);
-            }
-            break;
-            
-        case ENCODER_EVENT_BUTTON_LONG_PRESS:
-            ESP_LOGI(TAG, "Encoder button long press - going back");
-            // Длинное нажатие - возврат назад
-            if (current_screen == SCREEN_MAIN) {
-                // Уже на главном экране
-            } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
-                show_screen(SCREEN_MAIN);
             } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
-                uint8_t sensor_index = current_screen - SCREEN_SETTINGS_PH;
-                screen_type_t detail_screen = SCREEN_DETAIL_PH + sensor_index;
-                show_screen(detail_screen);
+                // На экране настроек - возврат на главный
+                show_screen(SCREEN_MAIN);
             }
             break;
             
@@ -1603,8 +1623,6 @@ static void encoder_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     uint32_t key = lv_event_get_key(e);
-    
-    ESP_LOGI(TAG, "Encoder event: code=%d, key=%"PRIu32, code, key);
     
     // Обрабатываем события кнопки энкодера
     if (code == LV_EVENT_KEY) {
