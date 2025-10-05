@@ -69,7 +69,7 @@ void lux_detail_screen_init(void)
     // Заголовок
     lv_obj_t *title_label = lv_label_create(header);
     lv_obj_set_style_text_color(title_label, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_14, 0);
     lv_label_set_text(title_label, "Light Level");
     lv_obj_align(title_label, LV_ALIGN_CENTER, 0, 0);
 
@@ -96,7 +96,7 @@ void lux_detail_screen_init(void)
 
     screen->current_value_label = lv_label_create(current_container);
     lv_obj_set_style_text_color(screen->current_value_label, lv_color_hex(0x00ff88), 0);
-    lv_obj_set_style_text_font(screen->current_value_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(screen->current_value_label, &lv_font_montserrat_14, 0);
     lv_label_set_text(screen->current_value_label, "450 lux");
     lv_obj_align(screen->current_value_label, LV_ALIGN_TOP_LEFT, 0, 25);
 
@@ -109,7 +109,7 @@ void lux_detail_screen_init(void)
 
     screen->target_value_label = lv_label_create(current_container);
     lv_obj_set_style_text_color(screen->target_value_label, lv_color_hex(0x00ff88), 0);
-    lv_obj_set_style_text_font(screen->target_value_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(screen->target_value_label, &lv_font_montserrat_14, 0);
     lv_label_set_text(screen->target_value_label, "500 lux");
     lv_obj_align(screen->target_value_label, LV_ALIGN_TOP_RIGHT, 0, 25);
 
@@ -128,7 +128,8 @@ void lux_detail_screen_init(void)
 
     // Серия данных
     lv_chart_series_t *series = lv_chart_add_series(screen->chart, lv_color_hex(0x00ff88), LV_CHART_AXIS_PRIMARY_Y);
-    lv_chart_set_zoom_x(screen->chart, 256);
+    // lv_chart_set_zoom_x удалена в LVGL 9.x
+    // lv_chart_set_zoom_x(screen->chart, 256);
 
     // Кнопка настроек
     screen->settings_button = lv_btn_create(content);
@@ -184,7 +185,7 @@ void lux_settings_screen_init(void)
     // Заголовок
     lv_obj_t *title_label = lv_label_create(header);
     lv_obj_set_style_text_color(title_label, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_14, 0);
     lv_label_set_text(title_label, "Light Settings");
     lv_obj_align(title_label, LV_ALIGN_CENTER, 0, 0);
 
@@ -256,7 +257,7 @@ static void lux_settings_button_event_cb(lv_event_t *e)
         if (!lux_settings_screen.is_initialized) {
             lux_settings_screen_init();
         }
-        lv_scr_load(lux_settings_screen.screen);
+        lv_screen_load(lux_settings_screen.screen);
     }
 }
 

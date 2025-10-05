@@ -9,4 +9,6 @@ idf_component_register(
         lvgl_main
         encoder
         esp_timer
+        main
+        ph_ec_controller
 )

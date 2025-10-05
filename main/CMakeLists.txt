@@ -1,11 +1,13 @@
 idf_component_register(
     SRCS "app_main.c"
-    INCLUDE_DIRS ""
+    INCLUDE_DIRS "."
     PRIV_REQUIRES
         driver
         freertos
         nvs_flash
+        spi_flash
         lvgl
+        system_tasks
         i2c_bus
         sht3x
         ccs811
@@ -18,4 +20,10 @@ idf_component_register(
         lcd_ili9341
         trema_relay
         sensor_screens
+        ui_manager
+        config_manager
+        notification_system
+        data_logger
+        task_scheduler
+        ph_ec_controller
 )

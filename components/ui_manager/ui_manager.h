@@ -1,8 +1,10 @@
 #pragma once
 
 #include "lvgl.h"
+#include "esp_err.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include "system_config.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,23 +26,18 @@ typedef enum {
     SENSOR_HUMIDITY,
     SENSOR_LUX,
     SENSOR_CO2,
-    SENSOR_COUNT
+    SENSOR_TYPE_COUNT
 } sensor_type_t;
 
-// Структура данных датчика
-typedef struct {
-    float current_value;
-    float target_value;
-    float min_value;
-    float max_value;
-    bool alarm_enabled;
-    float alarm_low;
-    float alarm_high;
-    const char *unit;
-    const char *name;
-    const char *description;
-    uint8_t decimals;
-} sensor_data_t;
+// Индексы датчиков для массива valid
+#define SENSOR_INDEX_PH           0
+#define SENSOR_INDEX_EC           1
+#define SENSOR_INDEX_TEMPERATURE  2
+#define SENSOR_INDEX_HUMIDITY     3
+#define SENSOR_INDEX_LUX          4
+#define SENSOR_INDEX_CO2          5
+
+// Структура данных датчика определена в system_config.h
 
 // Структура экрана
 typedef struct {

@@ -77,33 +77,17 @@ static TaskHandle_t lvgl_task_handle = NULL;
 
 // Предварительные объявления функций
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx);
-static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map);
-static void lvgl_port_update_callback(lv_disp_drv_t *drv);
+static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *color_map);
+static void lvgl_port_update_callback(lv_display_t *disp);
 static void increase_lvgl_tick(void *arg);
-static void lvgl_port_update_callback(lv_disp_drv_t *drv)
+static void lvgl_port_update_callback(lv_display_t *disp)
 {
-    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t)drv->user_data;
+    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t)lv_display_get_user_data(disp);
 
-    switch (drv->rotated) {
-        case LV_DISP_ROT_NONE:
-            esp_lcd_panel_swap_xy(panel_handle, false);
-            esp_lcd_panel_mirror(panel_handle, true, false);
-            break;
-        case LV_DISP_ROT_90:
-            esp_lcd_panel_swap_xy(panel_handle, true);
-            esp_lcd_panel_mirror(panel_handle, true, true);
-            break;
-        case LV_DISP_ROT_180:
-            esp_lcd_panel_swap_xy(panel_handle, false);
-            esp_lcd_panel_mirror(panel_handle, false, true);
-            break;
-        case LV_DISP_ROT_270:
-            esp_lcd_panel_swap_xy(panel_handle, true);
-            esp_lcd_panel_mirror(panel_handle, false, false);
-            break;
-        default:
-            break;
-    }
+    // В LVGL 9.x ротация обрабатывается по-другому
+    // Пока оставляем базовую настройку
+    esp_lcd_panel_swap_xy(panel_handle, false);
+    esp_lcd_panel_mirror(panel_handle, true, false);
 }
 bool lvgl_lock(int timeout_ms)
 {
@@ -183,87 +167,31 @@ static void lvgl_task_handler(void *pvParameters)
     }
 }
 
-// Добавляем глобальную переменную для драйвера энкодера
-static lv_indev_drv_t encoder_indev_drv;
+// Добавляем глобальную переменную для энкодера LVGL 9.x
 static lv_indev_t *encoder_indev = NULL;
 
-// Добавляем функцию обратного вызова для чтения энкодера
-static void encoder_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
+// Заглушка для регистрации encoder input device в LVGL
+// ВАЖНО: Фактическая обработка энкодера выполняется в encoder_task (lvgl_main.c)
+// для реализации кастомной навигации по UI
+static void encoder_read(lv_indev_t *indev, lv_indev_data_t *data)
 {
-    static int32_t last_key = 0;
-    static bool button_pressed = false;
-    
     // Initialize the data structure
     data->state = LV_INDEV_STATE_RELEASED;
     data->key = 0;
     data->enc_diff = 0;
     
-    // Получаем очередь событий энкодера
-    QueueHandle_t encoder_queue = encoder_get_event_queue();
-    if (encoder_queue == NULL) {
-        return;
-    }
-    
-    // Читаем события из очереди (неблокирующее чтение)
-    encoder_event_t event;
-    while (xQueueReceive(encoder_queue, &event, 0) == pdTRUE) {
-        switch (event.type) {
-            case ENCODER_EVENT_BUTTON_PRESS:
-                ESP_LOGI("ENCODER", "Button press detected");
-                button_pressed = true;
-                data->state = LV_INDEV_STATE_PRESSED;
-                last_key = LV_KEY_ENTER;
-                data->key = last_key;
-                break;
-            case ENCODER_EVENT_BUTTON_LONG_PRESS:
-                ESP_LOGI("ENCODER", "Button long press detected");
-                button_pressed = true;
-                data->state = LV_INDEV_STATE_PRESSED;
-                last_key = LV_KEY_ESC;  // Используем ESC для длинного нажатия
-                data->key = last_key;
-                break;
-            case ENCODER_EVENT_BUTTON_RELEASE:
-                ESP_LOGI("ENCODER", "Button release detected");
-                button_pressed = false;
-                data->state = LV_INDEV_STATE_RELEASED;
-                break;
-            case ENCODER_EVENT_ROTATE_CW:
-                ESP_LOGI("ENCODER", "CW rotation detected");
-                data->enc_diff += event.value;
-                // Обновляем глобальную переменную для LVGL
-                extern int32_t last_encoder_diff;
-                last_encoder_diff += event.value;
-                break;
-            case ENCODER_EVENT_ROTATE_CCW:
-                ESP_LOGI("ENCODER", "CCW rotation detected");
-                data->enc_diff -= event.value;
-                // Обновляем глобальную переменную для LVGL
-                extern int32_t last_encoder_diff;
-                last_encoder_diff -= event.value;
-                break;
-        }
-    }
-    
-    // If no new events, maintain the last state for one cycle after button release
-    if (!button_pressed && last_key != 0) {
-        // Keep the key for one more cycle after release for LVGL to process
-        data->key = last_key;
-        last_key = 0; // Reset for next cycle
-    } else if (button_pressed) {
-        // Keep the key while button is pressed
-        data->key = last_key;
-    }
-    
+    // Обработка событий энкодера выполняется в encoder_task (lvgl_main.c)
+    // который читает из encoder_get_event_queue() и вызывает handle_encoder_event()
 }
 
 // Инициализация дисплея LCD ILI9341
 // Настраивает SPI, инициализирует панель и регистрирует драйвер дисплея для LVGL
-lv_disp_t* lcd_ili9341_init(void)
+lv_display_t* lcd_ili9341_init(void)
 {
-    // Статические буферы для графики LVGL
-    static lv_disp_draw_buf_t disp_buf;
-    // Структура драйвера дисплея LVGL
-    static lv_disp_drv_t disp_drv;
+    // Статические буферы для графики LVGL 9.x
+    static lv_display_t *disp;
+    static lv_color_t disp_buf1[LCD_H_RES * 60];
+    static lv_color_t disp_buf2[LCD_H_RES * 60];
     
     // Выводим информацию о начале инициализации дисплея
     ESP_LOGI("LCD", "Initializing LCD ILI9341 display");
@@ -306,8 +234,8 @@ lv_disp_t* lcd_ili9341_init(void)
         return NULL;
     }
 
-    // Дескриптор ввода-вывода панели дисплея
-    esp_lcd_panel_io_handle_t io_handle = NULL;
+    // Дескриптор ввода-вывода панели дисплея (статический чтобы использовать позже)
+    static esp_lcd_panel_io_handle_t io_handle = NULL;
     // Конфигурация ввода-вывода панели через SPI
     esp_lcd_panel_io_spi_config_t io_config = {
         .dc_gpio_num = PIN_NUM_LCD_DC,      // Пин выбора команды/данных
@@ -317,8 +245,7 @@ lv_disp_t* lcd_ili9341_init(void)
         .lcd_param_bits = 8,                // Количество бит для параметра
         .spi_mode = 0,                      // Режим SPI (0 или 3)
         .trans_queue_depth = 10,            // Глубина очереди передач
-        .on_color_trans_done = notify_lvgl_flush_ready, // Callback по завершению передачи
-        .user_ctx = &disp_drv,              // Пользовательский контекст
+        // Callback будет зарегистрирован ПОСЛЕ создания LVGL дисплея
     };
     // Выводим информацию о создании дескриптора ввода-вывода
     ESP_LOGI("LCD", "Creating panel IO handle");
@@ -392,59 +319,24 @@ lv_disp_t* lcd_ili9341_init(void)
     ESP_LOGI("LCD", "Initialize LVGL library");
     // Инициализируем библиотеку LVGL с размером буфера, достаточным для четверти экрана
     lv_init();
-    // Выделяем память для буфера отображения (четверть экрана)
-    static lv_color_t *disp_buf1 = NULL;
-    static lv_color_t *disp_buf2 = NULL;
-    // Проверяем, выделена ли уже память для буферов
-    if (disp_buf1 == NULL) {
-        // Выделяем память для первого буфера (увеличенный размер для лучшего качества)
-        disp_buf1 = heap_caps_malloc(LCD_H_RES * 60 * sizeof(lv_color_t), MALLOC_CAP_DMA);
-        // Проверяем успешность выделения памяти
-        if (disp_buf1 == NULL) {
-            // Если не удалось выделить память для первого буфера, выводим ошибку и освобождаем ресурсы
-            ESP_LOGE("LCD", "Failed to allocate memory for display buffer 1");
-            spi_bus_free(LCD_HOST);
-            vSemaphoreDelete(lvgl_mux);
-            lvgl_mux = NULL;
-            return NULL;
-        }
-    }
-    // Проверяем, выделена ли уже память для второго буфера
-    if (disp_buf2 == NULL) {
-        // Выделяем память для второго буфера (увеличенный размер для лучшего качества)
-        disp_buf2 = heap_caps_malloc(LCD_H_RES * 60 * sizeof(lv_color_t), MALLOC_CAP_DMA);
-        // Проверяем успешность выделения памяти
-        if (disp_buf2 == NULL) {
-            // Если не удалось выделить память для второго буфера, освобождаем первый буфер и ресурсы
-            ESP_LOGE("LCD", "Failed to allocate memory for display buffer 2");
-            free(disp_buf1);
-            disp_buf1 = NULL;
-            spi_bus_free(LCD_HOST);
-            vSemaphoreDelete(lvgl_mux);
-            lvgl_mux = NULL;
-            return NULL;
-        }
-    }
-    // Инициализируем буфер отображения LVGL с двумя буферами для двойной буферизации
-    // Увеличиваем размер буфера для лучшего качества отображения
-    lv_disp_draw_buf_init(&disp_buf, disp_buf1, disp_buf2, LCD_H_RES * 60);
-
-    // Выводим информацию о регистрации драйвера дисплея
-    ESP_LOGI("LCD", "Register display driver to LVGL");
-    // Инициализируем драйвер дисплея LVGL
-    lv_disp_drv_init(&disp_drv);
-    // Устанавливаем горизонтальное и вертикальное разрешение дисплея
-    disp_drv.hor_res = LCD_H_RES;
-    disp_drv.ver_res = LCD_V_RES;
-    // Устанавливаем функции обратного вызова для драйвера дисплея
-    disp_drv.flush_cb = lvgl_flush_cb;          // Функция обновления дисплея
-    disp_drv.draw_buf = &disp_buf;              // Буфер отображения
-    disp_drv.user_data = panel_handle;          // Пользовательские данные (дескриптор панели)
-    disp_drv.drv_update_cb = lvgl_port_update_callback;
-
-    // Регистрируем драйвер дисплея в LVGL и получаем дескриптор дисплея
-    lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
-    lv_disp_set_rotation(disp, LV_DISP_ROT_180);
+    // Буферы уже объявлены выше как статические массивы
+    // Создаем дисплей в LVGL 9.x
+    ESP_LOGI("LCD", "Creating LVGL display");
+    disp = lv_display_create(LCD_H_RES, LCD_V_RES);
+    lv_display_set_flush_cb(disp, lvgl_flush_cb);
+    
+    // Создаем буферы для LVGL 9.x
+    static lv_draw_buf_t draw_buf1;
+    static lv_draw_buf_t draw_buf2;
+    lv_draw_buf_init(&draw_buf1, LCD_H_RES, 60, LV_COLOR_FORMAT_RGB565, LCD_H_RES * sizeof(lv_color_t), disp_buf1, LCD_H_RES * 60 * sizeof(lv_color_t));
+    lv_draw_buf_init(&draw_buf2, LCD_H_RES, 60, LV_COLOR_FORMAT_RGB565, LCD_H_RES * sizeof(lv_color_t), disp_buf2, LCD_H_RES * 60 * sizeof(lv_color_t));
+    lv_display_set_draw_buffers(disp, &draw_buf1, &draw_buf2);
+    
+    lv_display_set_user_data(disp, panel_handle);
+    lv_display_set_driver_data(disp, panel_handle);
+    
+    // Устанавливаем ротацию
+    lv_display_set_rotation(disp, LV_DISPLAY_ROTATION_180);
     
     // Выводим информацию о создании таймера LVGL
     ESP_LOGI("LCD", "Install LVGL tick timer");
@@ -459,6 +351,13 @@ lv_disp_t* lcd_ili9341_init(void)
     // Запускаем таймер в режиме повторения с периодом LVGL_TICK_PERIOD_MS миллисекунд
     ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000));
 
+    // Регистрируем callback для уведомления LVGL о завершении передачи
+    ESP_LOGI("LCD", "Register io panel event callback for LVGL flush ready notification");
+    const esp_lcd_panel_io_callbacks_t cbs = {
+        .on_color_trans_done = notify_lvgl_flush_ready,
+    };
+    ESP_ERROR_CHECK(esp_lcd_panel_io_register_event_callbacks(io_handle, &cbs, disp));
+
     // Выводим информацию о создании задачи обработчика LVGL
     ESP_LOGI("LCD", "Create LVGL task");
     // Создаем задачу обработчика LVGL с параметрами:
@@ -469,12 +368,11 @@ lv_disp_t* lcd_ili9341_init(void)
     // - Дескриптор задачи: &lvgl_task_handle
     xTaskCreate(lvgl_task_handler, "LVGL", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, &lvgl_task_handle);
     
-    // Инициализация энкодера как устройства ввода LVGL
+    // Инициализация энкодера как устройства ввода LVGL 9.x
     ESP_LOGI("LCD", "Initialize encoder as LVGL input device");
-    lv_indev_drv_init(&encoder_indev_drv);
-    encoder_indev_drv.type = LV_INDEV_TYPE_ENCODER;  // Возвращаем тип ENCODER
-    encoder_indev_drv.read_cb = encoder_read;
-    encoder_indev = lv_indev_drv_register(&encoder_indev_drv);
+    lv_indev_t *encoder_indev = lv_indev_create();
+    lv_indev_set_type(encoder_indev, LV_INDEV_TYPE_ENCODER);
+    lv_indev_set_read_cb(encoder_indev, encoder_read);
     
     // Примечание: группа будет установлена для энкодера в lvgl_main_init
     
@@ -498,25 +396,28 @@ lv_disp_t* lcd_ili9341_init(void)
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
     // Получаем драйвер дисплея из пользовательского контекста
-    lv_disp_drv_t *disp_driver = (lv_disp_drv_t *)user_ctx;
+    lv_display_t *disp = (lv_display_t *)user_ctx;
     // Уведомляем LVGL о завершении передачи данных
-    lv_disp_flush_ready(disp_driver);
+    lv_display_flush_ready(disp);
     // Возвращаем true для подтверждения обработки события
     return true;
 }
 
 // Функция обратного вызова для обновления дисплея LVGL
 // Отправляет данные пикселей на дисплей через SPI
-static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
+static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *color_map)
 {
-    // Получаем дескриптур панели из пользовательских данных драйвера
-    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t) drv->user_data;
+    // Получаем дескриптур панели из пользовательских данных дисплея
+    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t) lv_display_get_user_data(disp);
 
     // Преобразуем координаты области в формат, понятный драйверу дисплея
     int offsetx1 = area->x1;
     int offsetx2 = area->x2;
     int offsety1 = area->y1;
     int offsety2 = area->y2;
+    
+    // SPI LCD использует big-endian, поэтому меняем порядок байтов RGB
+    lv_draw_sw_rgb565_swap(color_map, (offsetx2 + 1 - offsetx1) * (offsety2 + 1 - offsety1));
     
     // Отправляем команду установки окна отображения на дисплее
     esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);

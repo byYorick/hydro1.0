@@ -47,7 +47,7 @@ def kill_process(pid):
         print(f"Процесс {pid} успешно завершен")
         return True
         
-    except psutil.TimeoutExpired:
+    except psutil.TimeoutExpired: 
         # Если мягкое завершение не сработало, принудительно
         try:
             process.kill()

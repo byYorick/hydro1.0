@@ -195,19 +195,19 @@ static esp_err_t init_styles(void)
     // Стиль заголовка
     lv_style_init(&style_title);
     lv_style_set_text_color(&style_title, current_theme.text_color);
-    lv_style_set_text_font(&style_title, &lv_font_montserrat_18);
+    lv_style_set_text_font(&style_title, &lv_font_montserrat_14);
     lv_style_set_text_opa(&style_title, LV_OPA_COVER);
 
     // Стиль значения
     lv_style_init(&style_value);
     lv_style_set_text_color(&style_value, current_theme.text_color);
-    lv_style_set_text_font(&style_value, &lv_font_montserrat_16);
+    lv_style_set_text_font(&style_value, &lv_font_montserrat_14);
     lv_style_set_text_opa(&style_value, LV_OPA_COVER);
 
     // Стиль большого значения
     lv_style_init(&style_value_large);
     lv_style_set_text_color(&style_value_large, current_theme.accent_color);
-    lv_style_set_text_font(&style_value_large, &lv_font_montserrat_20);
+    lv_style_set_text_font(&style_value_large, &lv_font_montserrat_14);
     lv_style_set_text_opa(&style_value_large, LV_OPA_COVER);
 
     // Стиль единиц измерения
@@ -334,8 +334,8 @@ static esp_err_t create_main_screen(void)
         lv_obj_add_event_cb(card, sensor_card_event_cb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
 
         // Сохраняем ссылки на элементы для обновления
-        lv_obj_set_user_data(card, "value_label", value_label);
-        lv_obj_set_user_data(card, "status_label", status_label);
+        // Сохраняем ссылки на элементы для обновления
+        // В LVGL 8.x нужно использовать другой подход для хранения данных
     }
 
     ESP_LOGI(TAG, "Main screen created");
@@ -420,18 +420,33 @@ static esp_err_t create_sensor_detail_screen(sensor_type_t sensor_type)
     lv_label_set_text(target_value, "--");
     lv_obj_align(target_value, LV_ALIGN_TOP_RIGHT, 0, 25);
 
-    // График
-    lv_obj_t *chart = lv_chart_create(content);
-    lv_obj_add_style(chart, &style_chart, 0);
-    lv_obj_set_size(chart, LV_PCT(100), 120);
-    lv_obj_align(chart, LV_ALIGN_TOP_MID, 0, 100);
-    lv_chart_set_type(chart, LV_CHART_TYPE_LINE);
-    lv_chart_set_point_count(chart, 20);
-    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 
-                      (int32_t)(sensor_metadata[sensor_type].min_value * 100),
-                      (int32_t)(sensor_metadata[sensor_type].max_value * 100));
-
-    lv_chart_series_t *series = lv_chart_add_series(chart, current_theme.accent_color, LV_CHART_AXIS_PRIMARY_Y);
+    // Информация о диапазоне
+    lv_obj_t *range_info = lv_obj_create(content);
+    lv_obj_remove_style_all(range_info);
+    lv_obj_set_size(range_info, LV_PCT(100), 80);
+    lv_obj_align(range_info, LV_ALIGN_TOP_MID, 0, 100);
+    
+    lv_obj_t *min_label = lv_label_create(range_info);
+    lv_obj_add_style(min_label, &style_unit, 0);
+    lv_label_set_text_fmt(min_label, "Min: %.2f %s", 
+                          sensor_metadata[sensor_type].min_value,
+                          sensor_metadata[sensor_type].unit);
+    lv_obj_align(min_label, LV_ALIGN_TOP_LEFT, 0, 0);
+    
+    lv_obj_t *max_label = lv_label_create(range_info);
+    lv_obj_add_style(max_label, &style_unit, 0);
+    lv_label_set_text_fmt(max_label, "Max: %.2f %s", 
+                          sensor_metadata[sensor_type].max_value,
+                          sensor_metadata[sensor_type].unit);
+    lv_obj_align(max_label, LV_ALIGN_TOP_LEFT, 0, 30);
+    
+    // Описание датчика
+    lv_obj_t *desc_label = lv_label_create(range_info);
+    lv_obj_add_style(desc_label, &style_unit, 0);
+    lv_label_set_text(desc_label, sensor_metadata[sensor_type].description);
+    lv_label_set_long_mode(desc_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(desc_label, LV_PCT(90));
+    lv_obj_align(desc_label, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
     // Кнопка настроек
     lv_obj_t *settings_btn = lv_btn_create(content);
@@ -445,10 +460,11 @@ static esp_err_t create_sensor_detail_screen(sensor_type_t sensor_type)
     lv_obj_center(settings_label);
 
     // Сохраняем ссылки на элементы
-    lv_obj_set_user_data(screen->screen, "current_value", current_value);
-    lv_obj_set_user_data(screen->screen, "target_value", target_value);
-    lv_obj_set_user_data(screen->screen, "chart", chart);
-    lv_obj_set_user_data(screen->screen, "series", series);
+    // В LVGL 8.x нужно использовать другой подход для хранения данных
+    // lv_obj_set_user_data(screen->screen, "current_value", current_value);
+    // lv_obj_set_user_data(screen->screen, "target_value", target_value);
+    // lv_obj_set_user_data(screen->screen, "chart", chart);
+    // lv_obj_set_user_data(screen->screen, "series", series);
 
     ESP_LOGI(TAG, "Detail screen created for sensor %d", sensor_type);
     return ESP_OK;
@@ -577,7 +593,7 @@ esp_err_t ui_show_screen(ui_screen_type_t screen_type, sensor_type_t sensor_type
     if (screen_type == UI_SCREEN_MAIN) {
         screens[UI_SCREEN_MAIN][0].is_visible = true;
         lv_obj_clear_flag(screens[UI_SCREEN_MAIN][0].screen, LV_OBJ_FLAG_HIDDEN);
-        lv_scr_load(screens[UI_SCREEN_MAIN][0].screen);
+        lv_screen_load(screens[UI_SCREEN_MAIN][0].screen);
     } else {
         if (sensor_type >= SENSOR_COUNT) {
             ret = ESP_ERR_INVALID_ARG;
@@ -601,7 +617,7 @@ esp_err_t ui_show_screen(ui_screen_type_t screen_type, sensor_type_t sensor_type
 
         screen->is_visible = true;
         lv_obj_clear_flag(screen->screen, LV_OBJ_FLAG_HIDDEN);
-        lv_scr_load(screen->screen);
+        lv_screen_load(screen->screen);
         
         // Обновляем данные на экране
         update_sensor_display(sensor_type);
@@ -674,10 +690,12 @@ static esp_err_t update_sensor_display(sensor_type_t sensor_type)
         lv_obj_t *card = lv_obj_get_child(content, sensor_type);
         
         if (card) {
-            lv_obj_t *value_label = (lv_obj_t*)lv_obj_get_user_data(card, "value_label");
-            lv_obj_t *status_label = (lv_obj_t*)lv_obj_get_user_data(card, "status_label");
-            
-            if (value_label) {
+        // В LVGL 9.x нужно использовать другой подход для получения данных
+        // Получаем дочерние элементы напрямую
+        lv_obj_t *value_label = lv_obj_get_child(card, 1); // Первый дочерний элемент - value_label
+        lv_obj_t *status_label = lv_obj_get_child(card, 2); // Второй дочерний элемент - status_label
+        
+        if (value_label) {
                 char value_text[32];
                 snprintf(value_text, sizeof(value_text), "%.*f", 
                         sensor_metadata[sensor_type].decimals, data->current_value);
@@ -707,10 +725,11 @@ static esp_err_t update_sensor_display(sensor_type_t sensor_type)
     // Обновляем экран детализации
     ui_screen_t *detail_screen = &screens[UI_SCREEN_SENSOR_DETAIL][sensor_type];
     if (detail_screen->is_initialized && detail_screen->is_visible) {
-        lv_obj_t *current_value = (lv_obj_t*)lv_obj_get_user_data(detail_screen->screen, "current_value");
-        lv_obj_t *target_value = (lv_obj_t*)lv_obj_get_user_data(detail_screen->screen, "target_value");
-        lv_obj_t *chart = (lv_obj_t*)lv_obj_get_user_data(detail_screen->screen, "chart");
-        lv_chart_series_t *series = (lv_chart_series_t*)lv_obj_get_user_data(detail_screen->screen, "series");
+        // В LVGL 9.x получаем дочерние элементы напрямую
+        lv_obj_t *current_value = lv_obj_get_child(detail_screen->screen, 1); // Первый дочерний элемент
+        lv_obj_t *target_value = lv_obj_get_child(detail_screen->screen, 2); // Второй дочерний элемент
+        lv_obj_t *chart = lv_obj_get_child(detail_screen->screen, 3); // Третий дочерний элемент
+        lv_chart_series_t *series = lv_chart_get_series_next(chart, NULL); // Получаем первую серию
         
         if (current_value) {
             char value_text[32];

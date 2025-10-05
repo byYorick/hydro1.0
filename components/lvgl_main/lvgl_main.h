@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "system_config.h"
 
 /**
  * @brief Инициализация пользовательского интерфейса LVGL
@@ -31,15 +32,7 @@ void lvgl_update_sensor_values(float ph, float ec, float temp, float hum, float 
 // Глобальная переменная для отслеживания вращения энкодера
 extern int32_t last_encoder_diff;
 
-// Структура данных датчиков
-typedef struct {
-    float ph;
-    float ec;
-    float temp;
-    float hum;
-    float lux;
-    float co2;
-} sensor_data_t;
+// Структура данных датчиков определена в system_config.h
 
 /**
  * @brief Обновление значений датчиков на дисплее из структуры данных

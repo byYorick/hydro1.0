@@ -3,10 +3,22 @@
 #include "freertos/semphr.h"
 #include <driver/i2c_master.h>
 
+// Используем определения из system_config.h, если они есть
+#ifndef I2C_MASTER_NUM
 #define I2C_MASTER_NUM I2C_NUM_0
+#endif
+
+#ifndef I2C_MASTER_SCL_IO
 #define I2C_MASTER_SCL_IO 17
+#endif
+
+#ifndef I2C_MASTER_SDA_IO
 #define I2C_MASTER_SDA_IO 18
+#endif
+
+#ifndef I2C_MASTER_FREQ_HZ
 #define I2C_MASTER_FREQ_HZ 100000
+#endif
 
 // Handle for the I2C master bus
 extern i2c_master_bus_handle_t i2c_bus_handle;

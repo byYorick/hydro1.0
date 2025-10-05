@@ -57,13 +57,13 @@ void init_styles(void)
     // Стиль заголовка
     lv_style_init(&style_title);
     lv_style_set_text_color(&style_title, lv_color_hex(0xffffff));
-    lv_style_set_text_font(&style_title, &lv_font_montserrat_18);
+    lv_style_set_text_font(&style_title, &lv_font_montserrat_14);
     lv_style_set_text_opa(&style_title, LV_OPA_COVER);
 
     // Стиль больших значений
     lv_style_init(&style_value_large);
     lv_style_set_text_color(&style_value_large, lv_color_hex(0x00ff88));
-    lv_style_set_text_font(&style_value_large, &lv_font_montserrat_20);
+    lv_style_set_text_font(&style_value_large, &lv_font_montserrat_14);
     lv_style_set_text_opa(&style_value_large, LV_OPA_COVER);
 
     // Стиль малых значений
@@ -157,18 +157,30 @@ void create_detail_screen_ui(sensor_screen_t *screen, const char *title, const c
     lv_label_set_text(screen->target_value_label, "0.00");
     lv_obj_align(screen->target_value_label, LV_ALIGN_TOP_RIGHT, 0, 25);
 
-    // Мини-график
-    screen->chart = lv_chart_create(content);
-    lv_obj_add_style(screen->chart, &style_chart, 0);
-    lv_obj_set_size(screen->chart, LV_PCT(100), 120);
-    lv_obj_align(screen->chart, LV_ALIGN_TOP_MID, 0, 100);
-    lv_chart_set_type(screen->chart, LV_CHART_TYPE_LINE);
-    lv_chart_set_point_count(screen->chart, 20);
-    lv_chart_set_range(screen->chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
-
-    // Серия данных
-    lv_chart_series_t *series = lv_chart_add_series(screen->chart, lv_color_hex(0x00ff88), LV_CHART_AXIS_PRIMARY_Y);
-    lv_chart_set_zoom_x(screen->chart, 256);
+    // Дополнительная информация
+    lv_obj_t *info_label = lv_label_create(content);
+    lv_obj_add_style(info_label, &style_value_small, 0);
+    lv_label_set_text(info_label, description);
+    lv_label_set_long_mode(info_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(info_label, LV_PCT(90));
+    lv_obj_align(info_label, LV_ALIGN_TOP_MID, 0, 100);
+    
+    // Диапазон значений
+    lv_obj_t *range_container = lv_obj_create(content);
+    lv_obj_set_size(range_container, LV_PCT(100), 60);
+    lv_obj_align(range_container, LV_ALIGN_TOP_MID, 0, 160);
+    lv_obj_set_style_bg_opa(range_container, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_opa(range_container, LV_OPA_TRANSP, 0);
+    
+    lv_obj_t *min_label = lv_label_create(range_container);
+    lv_obj_add_style(min_label, &style_value_small, 0);
+    lv_label_set_text(min_label, "Min: 0.0");
+    lv_obj_align(min_label, LV_ALIGN_TOP_LEFT, 0, 0);
+    
+    lv_obj_t *max_label = lv_label_create(range_container);
+    lv_obj_add_style(max_label, &style_value_small, 0);
+    lv_label_set_text(max_label, "Max: 100.0");
+    lv_obj_align(max_label, LV_ALIGN_TOP_LEFT, 0, 25);
 
     // Кнопка настроек
     screen->settings_button = lv_btn_create(content);
@@ -293,7 +305,7 @@ void show_sensor_screen(sensor_screen_type_t screen_type)
 {
     sensor_screen_t *screen = get_screen_by_type(screen_type);
     if (screen && screen->is_initialized) {
-        lv_scr_load(screen->screen);
+        lv_screen_load(screen->screen);
         ESP_LOGI(TAG, "Showing screen type: %d", screen_type);
     }
 }

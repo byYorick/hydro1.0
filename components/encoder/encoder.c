@@ -206,7 +206,7 @@ static void encoder_button_task(void *arg)
     ESP_LOGI(TAG, "Button task started");
     
     while (1) {
-        // Ждем семафор нажатия или отпускания
+        // Ждем семафор нажатия
         if (xSemaphoreTake(button_press_sem, portMAX_DELAY) == pdTRUE) {
             // Кнопка нажата
             button_pressed = true;
@@ -215,12 +215,7 @@ static void encoder_button_task(void *arg)
             
             ESP_LOGI(TAG, "Button pressed");
             
-            // Отправляем событие нажатия
-            encoder_event_t event = {
-                .type = ENCODER_EVENT_BUTTON_PRESS,
-                .value = 1
-            };
-            xQueueSend(encoder_event_queue, &event, 0);
+            // НЕ отправляем событие нажатия сразу - ждем отпускания!
             
             // Ждем отпускания или длинного нажатия
             while (button_pressed) {
@@ -249,6 +244,16 @@ static void encoder_button_task(void *arg)
                     button_pressed = false;
                     
                     ESP_LOGI(TAG, "Button released");
+                    
+                    // Отправляем событие PRESS только при отпускании, если не было длинного нажатия
+                    if (!long_press_detected) {
+                        encoder_event_t press_event = {
+                            .type = ENCODER_EVENT_BUTTON_PRESS,
+                            .value = 1
+                        };
+                        xQueueSend(encoder_event_queue, &press_event, 0);
+                        ESP_LOGI(TAG, "Short press event sent on release");
+                    }
                     
                     // Отправляем событие отпускания
                     encoder_event_t release_event = {

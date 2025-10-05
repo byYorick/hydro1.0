@@ -5,9 +5,6 @@
 #include "sensor_screens.h"
 #include <inttypes.h>
 LV_FONT_DECLARE(lv_font_montserrat_14)
-LV_FONT_DECLARE(lv_font_montserrat_16)
-LV_FONT_DECLARE(lv_font_montserrat_18)
-LV_FONT_DECLARE(lv_font_montserrat_20)
 
 #include <math.h>
 #include <stdio.h>
@@ -216,6 +213,7 @@ static lv_style_t style_title;
 static lv_style_t style_label;
 static lv_style_t style_value;
 static lv_style_t style_value_large;
+static lv_style_t style_value_small;
 static lv_style_t style_unit;
 static lv_style_t style_focus;
 static lv_style_t style_card;
@@ -247,7 +245,7 @@ static void status_timer_cb(lv_timer_t *timer);
 static float get_sensor_value_by_index(const sensor_data_t *data, int index);
 static void record_sensor_value(int index, float value);
 static void configure_chart_axes(lv_obj_t *chart, int index);
-static lv_chart_series_t *populate_chart_with_history(lv_obj_t *chart, lv_chart_series_t *series, int index);
+// Удалено: populate_chart_with_history (графики удалены)
 static void update_detail_view(int index);
 static void update_sensor_display(sensor_data_t *data);
 static void display_update_task(void *pvParameters);
@@ -302,13 +300,18 @@ static void init_styles(void)
 
     lv_style_init(&style_value);
     lv_style_set_text_color(&style_value, COLOR_TEXT);
-    lv_style_set_text_font(&style_value, &lv_font_montserrat_20);
+    lv_style_set_text_font(&style_value, &lv_font_montserrat_14);
     lv_style_set_text_opa(&style_value, LV_OPA_COVER);
 
     lv_style_init(&style_value_large);
     lv_style_set_text_color(&style_value_large, COLOR_TEXT);
-    lv_style_set_text_font(&style_value_large, &lv_font_montserrat_20);
+    lv_style_set_text_font(&style_value_large, &lv_font_montserrat_14);
     lv_style_set_text_opa(&style_value_large, LV_OPA_COVER);
+
+    lv_style_init(&style_value_small);
+    lv_style_set_text_color(&style_value_small, COLOR_TEXT_MUTED);
+    lv_style_set_text_font(&style_value_small, &lv_font_montserrat_14);
+    lv_style_set_text_opa(&style_value_small, LV_OPA_COVER);
 
     lv_style_init(&style_unit);
     lv_style_set_text_color(&style_unit, COLOR_TEXT_MUTED);
@@ -421,55 +424,15 @@ static float get_sensor_value_by_index(const sensor_data_t *data, int index)
     switch (index) {
         case 0: return data->ph;
         case 1: return data->ec;
-        case 2: return data->temp;
-        case 3: return data->hum;
+        case 2: return data->temperature;  // Используем основное поле
+        case 3: return data->humidity;     // Используем основное поле
         case 4: return data->lux;
         case 5: return data->co2;
         default: return 0.0f;
     }
 }
 
-static void configure_chart_axes(lv_obj_t *chart, int index)
-{
-    const sensor_meta_t *meta = &SENSOR_META[index];
-    lv_coord_t min = (lv_coord_t)(meta->chart_min * meta->chart_scale);
-    lv_coord_t max = (lv_coord_t)(meta->chart_max * meta->chart_scale);
-    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, min, max);
-    lv_chart_set_div_line_count(chart, 4, 5);
-    lv_obj_set_style_bg_opa(chart, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_opa(chart, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_all(chart, 0, 0);
-}
-
-static lv_chart_series_t *populate_chart_with_history(lv_obj_t *chart, lv_chart_series_t *series, int index)
-{
-    if (!chart) {
-        return series;
-    }
-
-    configure_chart_axes(chart, index);
-    lv_chart_set_point_count(chart, HISTORY_POINTS);
-    lv_chart_set_update_mode(chart, LV_CHART_UPDATE_MODE_SHIFT);
-
-    lv_color_t color = COLOR_ACCENT;
-    if (series) {
-        color = series->color;
-        lv_chart_remove_series(chart, series);
-    }
-    series = lv_chart_add_series(chart, color, LV_CHART_AXIS_PRIMARY_Y);
-
-    uint16_t count = sensor_history_full[index] ? HISTORY_POINTS : sensor_history_pos[index];
-    if (count == 0) {
-        return series;
-    }
-
-    uint16_t start = sensor_history_full[index] ? sensor_history_pos[index] : 0;
-    for (uint16_t i = 0; i < count; ++i) {
-        uint16_t pos = (start + i) % HISTORY_POINTS;
-        lv_chart_set_next_value(chart, series, sensor_history[index][pos]);
-    }
-    return series;
-}
+// Удалено: configure_chart_axes (графики удалены)
 
 static void record_sensor_value(int index, float value)
 {
@@ -744,14 +707,15 @@ static void create_detail_ui(int index)
     lv_obj_add_style(detail_status_label, &style_badge, 0);
     lv_label_set_text(detail_status_label, "Normal");
 
-    detail_chart = lv_chart_create(body);
-    lv_obj_set_height(detail_chart, 150);
-    lv_obj_add_style(detail_chart, &style_card, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(detail_chart, 16, LV_PART_MAIN);
-    lv_chart_set_type(detail_chart, LV_CHART_TYPE_LINE);
-    lv_obj_set_flex_grow(detail_chart, 1);
-    lv_obj_set_style_line_width(detail_chart, 3, LV_PART_INDICATOR);
-    detail_series = lv_chart_add_series(detail_chart, COLOR_ACCENT, LV_CHART_AXIS_PRIMARY_Y);
+    // Информация о диапазонах
+    lv_obj_t *info_container = lv_obj_create(body);
+    lv_obj_remove_style_all(info_container);
+    lv_obj_add_style(info_container, &style_card, 0);
+    lv_obj_set_width(info_container, LV_PCT(100));
+    lv_obj_set_height(info_container, 100);
+    lv_obj_set_flex_flow(info_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(info_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(info_container, 16, 0);
 
     lv_obj_t *range_label = lv_label_create(body);
     lv_obj_add_style(range_label, &style_label, 0);
@@ -805,7 +769,7 @@ void lvgl_open_detail_screen(int index)
     }
 
     create_detail_ui(index);
-    lv_scr_load_anim(screen_detail, LV_SCR_LOAD_ANIM_MOVE_LEFT, 200, 0, false);
+    lv_screen_load_anim(screen_detail, LV_SCR_LOAD_ANIM_MOVE_LEFT, 200, 0, false);
     lvgl_unlock();
 
     current_focus_index = focus_before;
@@ -832,7 +796,7 @@ void lvgl_close_detail_screen(void)
 
     // Просто загружаем существующий главный экран, не пересоздавая его
     if (main_screen) {
-        lv_scr_load_anim(main_screen, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 200, 0, false);
+        lv_screen_load_anim(main_screen, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 200, 0, false);
     }
     
     lvgl_unlock();
@@ -940,7 +904,7 @@ static void switch_to_screen(lv_obj_t *screen, screen_type_t screen_type, lv_gro
             }
         }
         
-        lv_scr_load(screen);
+        lv_screen_load(screen);
         current_screen = screen_type;
         if (group) {
             set_encoder_group(group);
@@ -953,11 +917,16 @@ static void switch_to_screen(lv_obj_t *screen, screen_type_t screen_type, lv_gro
  * ============================= */
 static void update_sensor_display(sensor_data_t *data)
 {
+    ESP_LOGI(TAG, "=== UPDATE_SENSOR_DISPLAY CALLED ===");
+    ESP_LOGI(TAG, "Data: pH=%.2f, EC=%.2f, Temp=%.1f, Hum=%.1f, Lux=%.0f, CO2=%.0f",
+             data->ph, data->ec, data->temperature, data->humidity, data->lux, data->co2);
+    
     last_sensor_data = *data;
     sensor_snapshot_valid = true;
 
     for (int i = 0; i < SENSOR_COUNT; ++i) {
         if (!value_labels[i]) {
+            ESP_LOGW(TAG, "value_labels[%d] is NULL!", i);
             continue;
         }
 
@@ -968,6 +937,7 @@ static void update_sensor_display(sensor_data_t *data)
         char format[8];
         snprintf(format, sizeof(format), "%%.%df", meta->decimals);
         snprintf(buffer, sizeof(buffer), format, value);
+        ESP_LOGI(TAG, "Updating label %d (%s): %s", i, meta->title, buffer);
         lv_label_set_text(value_labels[i], buffer);
 
         update_status_badge(i, value);
@@ -991,16 +961,7 @@ static void update_sensor_display(sensor_data_t *data)
             snprintf(buffer, sizeof(buffer), format, value);
             lv_label_set_text(detail_screens[i].current_value_label, buffer);
             
-            // Обновляем график
-            if (detail_screens[i].chart) {
-                lv_chart_series_t *series = lv_chart_get_series_next(detail_screens[i].chart, NULL);
-                if (series == NULL) {
-                    series = lv_chart_add_series(detail_screens[i].chart, lv_palette_main(LV_PALETTE_BLUE), LV_CHART_AXIS_PRIMARY_Y);
-                }
-                
-                // Добавляем новую точку в график
-                lv_chart_set_next_value(detail_screens[i].chart, series, (int32_t)(value * meta->chart_scale));
-            }
+            // Графики удалены для оптимизации памяти
         }
     }
 }
@@ -1009,9 +970,15 @@ static void display_update_task(void *pvParameters)
 {
     LV_UNUSED(pvParameters);
 
+    ESP_LOGI(TAG, "=== DISPLAY_UPDATE_TASK STARTED ===");
+    
     sensor_data_t sensor_data;
+    uint32_t receive_count = 0;
     while (1) {
         if (xQueueReceive(sensor_data_queue, &sensor_data, pdMS_TO_TICKS(1000)) == pdTRUE) {
+            receive_count++;
+            ESP_LOGI(TAG, "Received data from queue (count: %lu)", (unsigned long)receive_count);
+            
             if (!lvgl_lock(100)) {
                 ESP_LOGW(TAG, "Failed to acquire LVGL lock, skipping update");
                 continue;
@@ -1019,8 +986,12 @@ static void display_update_task(void *pvParameters)
             
             if (lv_is_initialized()) {
                 update_sensor_display(&sensor_data);
+            } else {
+                ESP_LOGW(TAG, "LVGL not initialized yet!");
             }
             lvgl_unlock();
+        } else {
+            ESP_LOGD(TAG, "No data in queue (timeout)");
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
@@ -1057,6 +1028,7 @@ void lvgl_main_init(void)
     ESP_LOGI(TAG, "Sensor screen groups created");
     
     // Создаем задачу обработки энкодера
+    // Используем собственную обработку вместо стандартной LVGL для кастомной навигации
     xTaskCreate(encoder_task, "encoder_task", 4096, NULL, 5, NULL);
     
     // Добавляем обработчик событий энкодера
@@ -1066,23 +1038,33 @@ void lvgl_main_init(void)
 
 void lvgl_update_sensor_values(float ph, float ec, float temp, float hum, float lux, float co2)
 {
+    ESP_LOGI(TAG, "=== LVGL_UPDATE_SENSOR_VALUES ===");
+    ESP_LOGI(TAG, "Values: pH=%.2f, EC=%.2f, Temp=%.1f, Hum=%.1f, Lux=%.0f, CO2=%.0f",
+             ph, ec, temp, hum, lux, co2);
+    
     if (sensor_data_queue == NULL) {
+        ESP_LOGE(TAG, "sensor_data_queue is NULL!");
         return;
     }
     
     sensor_data_t sensor_data = {
         .ph = ph,
         .ec = ec,
-        .temp = temp,
-        .hum = hum,
+        .temperature = temp,  // Заполняем основное поле
+        .humidity = hum,      // Заполняем основное поле
+        .temp = temp,         // Заполняем алиас
+        .hum = hum,           // Заполняем алиас
         .lux = lux,
         .co2 = co2,
     };
 
     if (xQueueSend(sensor_data_queue, &sensor_data, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "Queue full, replacing oldest data");
         sensor_data_t oldest;
         xQueueReceive(sensor_data_queue, &oldest, 0);
         xQueueSend(sensor_data_queue, &sensor_data, 0);
+    } else {
+        ESP_LOGI(TAG, "Data sent to queue successfully");
     }
     
     // Обновляем данные в экранах датчиков
@@ -1164,18 +1146,18 @@ static void create_detail_screen(uint8_t sensor_index)
     lv_label_set_text(back_label, "←");
     lv_obj_center(back_label);
     
-    // Мини-график
-    detail->chart = lv_chart_create(detail->screen);
-    lv_obj_set_size(detail->chart, 280, 120);
-    lv_obj_align(detail->chart, LV_ALIGN_TOP_MID, 0, 40);
-    lv_chart_set_type(detail->chart, LV_CHART_TYPE_LINE);
-    lv_chart_set_point_count(detail->chart, 20);
-    lv_chart_set_range(detail->chart, LV_CHART_AXIS_PRIMARY_Y, 
-                      (int32_t)(meta->chart_min * meta->chart_scale), 
-                      (int32_t)(meta->chart_max * meta->chart_scale));
+    // Информационная панель (график удален для оптимизации памяти)
+    lv_obj_t *info_panel = lv_obj_create(detail->screen);
+    lv_obj_add_style(info_panel, &style_card, 0);
+    lv_obj_set_size(info_panel, 280, 120);
+    lv_obj_align(info_panel, LV_ALIGN_TOP_MID, 0, 40);
     
-    // Настройка осей графика
-    configure_chart_axes(detail->chart, sensor_index);
+    lv_obj_t *info_text = lv_label_create(info_panel);
+    lv_obj_add_style(info_text, &style_value_small, 0);
+    lv_label_set_text(info_text, meta->description);
+    lv_label_set_long_mode(info_text, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(info_text, 250);
+    lv_obj_center(info_text);
     
     // Текущее значение
     lv_obj_t *current_label = lv_label_create(detail->screen);
@@ -1328,7 +1310,7 @@ static void show_screen(screen_type_t screen)
         case SCREEN_MAIN:
             ESP_LOGI(TAG, "Showing main screen");
             lv_obj_clear_flag(main_screen, LV_OBJ_FLAG_HIDDEN);
-            lv_scr_load(main_screen);
+            lv_screen_load(main_screen);
             break;
             
         case SCREEN_DETAIL_PH:
@@ -1341,7 +1323,7 @@ static void show_screen(screen_type_t screen)
             ESP_LOGI(TAG, "Showing detail screen for sensor %d", sensor_index);
             if (detail_screens[sensor_index].screen) {
                 lv_obj_clear_flag(detail_screens[sensor_index].screen, LV_OBJ_FLAG_HIDDEN);
-                lv_scr_load(detail_screens[sensor_index].screen);
+                lv_screen_load(detail_screens[sensor_index].screen);
                 ESP_LOGI(TAG, "Detail screen %d loaded successfully", sensor_index);
             } else {
                 ESP_LOGE(TAG, "Detail screen %d is NULL!", sensor_index);
@@ -1358,7 +1340,7 @@ static void show_screen(screen_type_t screen)
             uint8_t sensor_index = screen - SCREEN_SETTINGS_PH;
             if (settings_screens[sensor_index].screen) {
                 lv_obj_clear_flag(settings_screens[sensor_index].screen, LV_OBJ_FLAG_HIDDEN);
-                lv_scr_load(settings_screens[sensor_index].screen);
+                lv_screen_load(settings_screens[sensor_index].screen);
             }
             break;
         }
@@ -1449,15 +1431,20 @@ static void encoder_task(void *pvParameters)
         return;
     }
     
+    ESP_LOGI(TAG, "Encoder task started, waiting for events...");
+    
     encoder_event_t event;
     while (1) {
         if (xQueueReceive(encoder_queue, &event, pdMS_TO_TICKS(100)) == pdTRUE) {
+            ESP_LOGI(TAG, "⚡ Encoder event received: type=%d, value=%d", event.type, event.value);
+            
             if (!lvgl_lock(100)) {
                 ESP_LOGW(TAG, "Failed to acquire LVGL lock for encoder event");
                 continue;
             }
             
             if (lv_is_initialized()) {
+                ESP_LOGI(TAG, "📍 Current screen: %d, nav_enabled: %d", current_screen, encoder_navigation_enabled);
                 handle_encoder_event(&event);
             }
             lvgl_unlock();
@@ -1541,7 +1528,10 @@ static void handle_encoder_event(encoder_event_t *event)
 // Обновление выделения карточек на главном экране
 static void update_card_selection(void)
 {
+    ESP_LOGI(TAG, "🎯 update_card_selection called: selected=%d, current_screen=%d", selected_card_index, current_screen);
+    
     if (current_screen != SCREEN_MAIN) {
+        ESP_LOGW(TAG, "Not on main screen, skipping card selection update");
         return;
     }
     
@@ -1552,6 +1542,9 @@ static void update_card_selection(void)
             lv_obj_set_style_bg_color(sensor_cards[i], COLOR_CARD, 0);
             lv_obj_set_style_border_color(sensor_cards[i], COLOR_SHADOW, 0);
             lv_obj_set_style_border_width(sensor_cards[i], 1, 0);
+            ESP_LOGI(TAG, "  Card %d: focus cleared", i);
+        } else {
+            ESP_LOGW(TAG, "  Card %d: NULL pointer!", i);
         }
     }
     
@@ -1561,9 +1554,10 @@ static void update_card_selection(void)
         lv_obj_set_style_bg_color(sensor_cards[selected_card_index], COLOR_ACCENT_SOFT, 0);
         lv_obj_set_style_border_color(sensor_cards[selected_card_index], COLOR_ACCENT, 0);
         lv_obj_set_style_border_width(sensor_cards[selected_card_index], 2, 0);
+        ESP_LOGI(TAG, "✅ Card %d: FOCUSED and highlighted", selected_card_index);
+    } else {
+        ESP_LOGE(TAG, "❌ Selected card %d is NULL!", selected_card_index);
     }
-    
-    ESP_LOGI(TAG, "Selected card: %d", selected_card_index);
 }
 
 // Обновление выделения пунктов настроек

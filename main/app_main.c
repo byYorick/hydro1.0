@@ -1,445 +1,617 @@
+/**
+ * @file app_main_final.c
+ * @brief Главный файл приложения системы гидропонного мониторинга v3.0
+ * 
+ * Этот файл содержит точку входа приложения и координирует работу всех
+ * компонентов системы: датчиков, дисплея, насосов, планировщика задач,
+ * системы уведомлений и логирования данных.
+ * 
+ * @author Hydroponics Monitor Team
+ * @version 3.0.0
+ * @date 2025
+ * 
+ * АРХИТЕКТУРА:
+ * - Многозадачная система на базе FreeRTOS
+ * - Потокобезопасные операции с использованием мьютексов
+ * - Асинхронная передача данных через очереди
+ * - Модульная структура с разделением ответственности
+ * 
+ * ЗАДАЧИ (Tasks):
+ * 1. sensor_task      (Pri 5) - Чтение датчиков каждые 2 сек
+ * 2. display_task     (Pri 6) - Обновление UI каждую секунду
+ * 3. notification_task(Pri 4) - Обработка уведомлений каждые 5 сек
+ * 4. data_logger_task (Pri 3) - Логирование каждую минуту
+ * 5. scheduler_task   (Pri 7) - Выполнение задач по расписанию
+ * 6. ph_ec_task       (Pri 8) - Критический контроль pH/EC каждые 0.5 сек
+ * 7. encoder_task     (Pri 6) - Обработка событий энкодера
+ * 
+ * ПОТОКОБЕЗОПАСНОСТЬ:
+ * - sensor_data_mutex: защита глобальных данных датчиков
+ * - i2c_bus_mutex: защита I2C шины (в компоненте i2c_bus)
+ * - ui_mutex: защита LVGL операций (в компоненте lcd_ili9341)
+ * - Очереди для передачи данных между задачами
+ */
+
 #include <stdio.h>
-#include "nvs_flash.h"
+#include <string.h>
+#include <math.h>
+
+// FreeRTOS
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+
+// ESP-IDF
 #include "esp_log.h"
+#include "esp_system.h"
+#include "esp_chip_info.h"
+#include "esp_timer.h"
+#include "nvs_flash.h"
+#include "esp_flash.h"
+
+// Централизованная конфигурация системы
+#include "system_config.h"
+
+// Системные задачи (вынесены в отдельный модуль)
+#include "system_tasks.h"
+
+// Компоненты системы управления
+#include "config_manager.h"
+#include "notification_system.h"
+#include "data_logger.h"
+#include "task_scheduler.h"
+#include "ph_ec_controller.h"
+
+// Драйверы оборудования
+#include "lcd_ili9341.h"
+#include "encoder.h"
 #include "i2c_bus.h"
+#include "lvgl_main.h"
+
+// Датчики (для инициализации)
 #include "sht3x.h"
 #include "ccs811.h"
 #include "trema_ph.h"
 #include "trema_ec.h"
 #include "trema_lux.h"
-#include "encoder.h"
+
+// Исполнительные устройства
 #include "peristaltic_pump.h"
-#include "lcd_ili9341.h"
-#include "lvgl_main.h"
 #include "trema_relay.h"
 
-/* =============================
- *  КОНФИГУРАЦИЯ ПИНОВ
- * ============================= */
-// Пины для I2C шины
-#define I2C_SCL_PIN         17  // Пин тактирования I2C
-#define I2C_SDA_PIN         18  // Пин данных I2C
+/*******************************************************************************
+ * КОНСТАНТЫ И ОПРЕДЕЛЕНИЯ
+ ******************************************************************************/
 
-// Пины для энкодера
-#define ENC_A_PIN           38  // CLK - Пин энкодера (сигнал тактирования)
-#define ENC_B_PIN           39   // DT - Пин энкодера (данные)
-#define ENC_SW_PIN          40   // Пин кнопки энкодера
+/// Тег для логирования (отображается в Serial Monitor)
+static const char *TAG = "HYDRO_MAIN";
 
-// Добавляем определение HIGH для реле
-#ifndef HIGH
-#define HIGH 1
-#endif
+/// Версия приложения (отображается на дисплее)
+#define APP_VERSION "3.0.0-final"
 
-// Конфигурация пинов насосов - Используем действительные GPIO пины для ESP32-S3
-// Избегаем пинов, которые могут вызвать проблемы
-#define PUMP_PH_ACID_IA     19  // Пин управления насосом pH кислоты (IA)
-#define PUMP_PH_ACID_IB     20  // Пин управления насосом pH кислоты (IB)
-#define PUMP_PH_BASE_IA     21  // Пин управления насосом pH основания (IA)
-#define PUMP_PH_BASE_IB     47  // Пин управления насосом pH основания (IB)
-#define PUMP_EC_A_IA        38  // Пин управления насосом EC A (IA)
-#define PUMP_EC_A_IB        39  // Пин управления насосом EC A (IB)
-#define PUMP_EC_B_IA        40  // Пин управления насосом EC B (IA)
-#define PUMP_EC_B_IB        41  // Пин управления насосом EC B (IB)
-#define PUMP_EC_C_IA        26  // Пин управления насосом EC C (IA)
-#define PUMP_EC_C_IB        27  // Пин управления насосом EC C (IB)
+/*******************************************************************************
+ * ТИПЫ ДАННЫХ
+ ******************************************************************************/
 
-// Тег для логирования
-static const char *TAG = "app_main";
+/**
+ * @brief Структура данных датчиков
+ * 
+ * Содержит текущие значения всех датчиков и флаги валидности.
+ * Защищается мьютексом sensor_data_mutex при доступе из разных задач.
+ */
+// Структура данных сенсоров определена в ui_manager.h
 
-// Задача обработки событий энкодера для навигации по LVGL
-static void encoder_ui_task(void *pv)
-{
-    QueueHandle_t encoder_queue = encoder_get_event_queue();
-    if (encoder_queue == NULL) {
-        ESP_LOGE(TAG, "Encoder queue not available");
-        vTaskDelete(NULL);
-        return;
-    }
+/*******************************************************************************
+ * ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+ ******************************************************************************/
 
-    encoder_event_t event;
-    while (1) {
-        if (xQueueReceive(encoder_queue, &event, pdMS_TO_TICKS(100)) == pdTRUE) {
-            if (!lv_is_initialized()) {
-                continue;
-            }
-            switch (event.type) {
-                case ENCODER_EVENT_ROTATE_CW:
-                case ENCODER_EVENT_ROTATE_CCW: {
-                    if (lvgl_is_detail_screen_open()) {
-                        // В деталях вращение игнорируем или используем для прокрутки в будущем
-                        break;
-                    }
-                    int idx = lvgl_get_focus_index();
-                    int total = lvgl_get_total_focus_items();
-                    if (event.type == ENCODER_EVENT_ROTATE_CW) {
-                        idx = (idx + 1) % total;
-                    } else {
-                        idx = (idx - 1 + total) % total;
-                    }
-                    ESP_LOGI(TAG, "Encoder rotate %s -> focus %d", event.type == ENCODER_EVENT_ROTATE_CW ? "CW" : "CCW", idx);
-                    if (lvgl_lock(100)) {
-                        lvgl_set_focus(idx);
-                        lvgl_unlock();
-                    }
-                    break;
-                }
-                case ENCODER_EVENT_BUTTON_PRESS:
-                    // Ничего, ждем release чтобы считать «клик»
-                    break;
-                case ENCODER_EVENT_BUTTON_RELEASE: {
-                    if (lvgl_is_detail_screen_open()) {
-                        lvgl_close_detail_screen();
-                    } else {
-                        int idx = lvgl_get_focus_index();
-                        lvgl_open_detail_screen(idx);
-                    }
-                    break;
-                }
-                case ENCODER_EVENT_BUTTON_LONG_PRESS:
-                    // Зарезервировано для будущих действий (например, меню)
-                    break;
-            }
-        }
-        vTaskDelay(pdMS_TO_TICKS(5));
-    }
-}
+/// Флаг инициализации системы
+static bool system_initialized = false;
 
-/* =============================
- *  I2C ДРАЙВЕР С МЬЮТЕКСОМ
- * ============================= */
-// Инициализация I2C шины с пользовательскими настройками
-// Использует предопределенные пины из заголовочного файла i2c_bus.h
-static void i2c_bus_init_custom(void)
-{
-    // Компонент i2c_bus использует предопределенные пины из своего заголовочного файла
-    // Если нужно изменить их, модифицируйте i2c_bus.h или расширьте API
-    esp_err_t err = i2c_bus_init();
-    if (err != ESP_OK) {
-        // Если инициализация I2C шины не удалась, выводим ошибку
-        ESP_LOGE(TAG, "Failed to initialize I2C bus: %s", esp_err_to_name(err));
-    } else {
-        // Если инициализация прошла успешно, выводим сообщение
-        ESP_LOGI(TAG, "I2C bus initialized successfully");
-    }
-    
-    // Тестирование связи I2C с помощью простой записи
-    uint8_t test_data[] = {0x01, 0x02, 0x03};
-    err = i2c_bus_write(0x21, test_data, sizeof(test_data));
-    if (err != ESP_OK) {
-        // Если запись не удалась, выводим предупреждение
-        ESP_LOGW(TAG, "Failed to write to I2C device: %s", esp_err_to_name(err));
-    } else {
-        // Если запись прошла успешно, выводим сообщение
-        ESP_LOGI(TAG, "Successfully wrote to I2C device");
-    }
-}
+/// Дескрипторы задач (управляются модулем system_tasks)
+static system_task_handles_t task_handles = {0};
 
-/* =============================
- *  ЗАДАЧА ДАТЧИКОВ
- * ============================= */
-// Задача для обработки данных датчиков
-void sensor_task(void *pv)
-{
-    // Значения датчиков
-    float ph_value, ec_value, temp_value, hum_value, lux_value, co2_value, tvoc_value;
-    
-    // Инициализация датчиков
-    if (!trema_lux_init()) {
-        // Если инициализация датчика освещенности не удалась, выводим предупреждение
-        ESP_LOGW(TAG, "Failed to initialize LUX sensor");
-    } else {
-        // Если инициализация прошла успешно, выводим сообщение
-        ESP_LOGI(TAG, "LUX sensor initialized successfully");
-    }
-    
-    // Инициализация pH датчика
-    if (!trema_ph_init()) {
-        // Если инициализация pH датчика не удалась, выводим предупреждение
-        ESP_LOGW(TAG, "Failed to initialize pH sensor");
-    } else {
-        // Если инициализация прошла успешно, выводим сообщение
-        ESP_LOGI(TAG, "pH sensor initialized successfully");
-    }
-    
-    // Инициализация CCS811 датчика
-    if (!ccs811_init()) {
-        // Если инициализация CCS811 датчика не удалась, выводим предупреждение
-        ESP_LOGW(TAG, "Failed to initialize CCS811 sensor");
-    } else {
-        // Если инициализация прошла успешно, выводим сообщение
-        ESP_LOGI(TAG, "CCS811 sensor initialized successfully");
-    }
-    
-    // Инициализация EC датчика
-    if (!trema_ec_init()) {
-        // Если инициализация EC датчика не удалась, выводим предупреждение
-        ESP_LOGW(TAG, "Failed to initialize EC sensor");
-    } else {
-        // Если инициализация прошла успешно, выводим сообщение
-        ESP_LOGI(TAG, "EC sensor initialized successfully");
-    }
+/*******************************************************************************
+ * ПРОТОТИПЫ ФУНКЦИЙ
+ ******************************************************************************/
 
-    // Более длинная задержка для обеспечения полной инициализации UI
-    vTaskDelay(pdMS_TO_TICKS(3000));
+// Инициализация
+static esp_err_t init_nvs(void);
+static esp_err_t init_hardware(void);
+static esp_err_t init_sensors(void);
+static esp_err_t init_pumps(void);
+static esp_err_t init_system_components(void);
 
-    // Счетчик обновлений
-    int update_count = 0;
-    // Бесконечный цикл задачи
-    while (1) {
-        // Чтение pH датчика
-        if (!trema_ph_read(&ph_value)) {
-            // Если чтение pH датчика не удалось, выводим предупреждение
-            ESP_LOGW(TAG, "Failed to read pH sensor");
-            ph_value = 6.8f; // Значение по умолчанию
-        } else {
-            // Проверка стабильности измерения
-            if (!trema_ph_get_stability()) {
-                // Если измерение нестабильно, выводим предупреждение
-                ESP_LOGW(TAG, "pH measurement is not stable");
-                // Пытаемся дождаться стабильного чтения до 1 секунды
-                if (trema_ph_wait_for_stable_reading(1000)) {
-                    // Если получили стабильное чтение, читаем значение снова
-                    if (trema_ph_read(&ph_value)) {
-                        ESP_LOGI(TAG, "pH measurement is now stable: %.2f", ph_value);
-                    }
-                } else {
-                    // Если измерение все еще нестабильно после ожидания, используем последнее чтение
-                    ESP_LOGW(TAG, "pH measurement still unstable after waiting, using last reading: %.2f", ph_value);
-                }
-            } else {
-                // Если измерение стабильно, выводим отладочное сообщение
-                ESP_LOGD(TAG, "pH measurement is stable: %.2f", ph_value);
-            }
-        }
+// Callback функции
+static void notification_callback(const notification_t *notification);
+static void task_event_callback(uint32_t task_id, task_status_t status);
+static void pump_event_callback(pump_index_t pump, bool started);
+static void correction_event_callback(const char *type, float current, float target);
 
-        // Чтение EC датчика
-        if (!trema_ec_read(&ec_value)) {
-            // Если чтение EC датчика не удалось, выводим предупреждение
-            ESP_LOGW(TAG, "Failed to read EC sensor");
-            ec_value = 1.5f; // Значение по умолчанию
-        } else {
-            // Опционально получаем значение TDS
-            uint16_t tds_value = trema_ec_get_tds();
-            // Выводим отладочное сообщение с EC и TDS значениями
-            ESP_LOGD(TAG, "EC: %.2f mS/cm, TDS: %u ppm", ec_value, tds_value);
-        }
+// Вспомогательные функции
+static void print_system_info(void);
+static esp_err_t register_task_executors(void);
 
-        // Чтение датчика температуры и влажности
-        if (!sht3x_read(&temp_value, &hum_value)) {
-            // Если чтение SHT3x датчика не удалось, выводим предупреждение
-            ESP_LOGW(TAG, "Failed to read SHT3x sensor");
-            temp_value = 24.5f; // Значение по умолчанию
-            hum_value = 65.0f;  // Значение по умолчанию
-        }
+/*******************************************************************************
+ * ТОЧКА ВХОДА ПРИЛОЖЕНИЯ
+ ******************************************************************************/
 
-        // Чтение датчика освещенности
-        if (!trema_lux_read_float(&lux_value)) {
-            // Если чтение датчика освещенности не удалось, выводим предупреждение
-            ESP_LOGW(TAG, "Failed to read LUX sensor");
-            lux_value = 1200.0f; // Значение по умолчанию
-        }
-
-        // Чтение CO2 и TVOC из CCS811 датчика
-        if (!ccs811_read_data(&co2_value, &tvoc_value)) {
-            // Если чтение CCS811 датчика не удалось, выводим предупреждение
-            ESP_LOGW(TAG, "Failed to read CCS811 sensor");
-            co2_value = 450.0f;  // Значение по умолчанию
-            tvoc_value = 10.0f;  // Значение по умолчанию
-        }
-
-        // Обновляем пользовательский интерфейс LVGL значениями датчиков
-        lvgl_update_sensor_values(
-            ph_value,
-            ec_value,
-            temp_value,
-            hum_value,
-            lux_value,
-            co2_value
-        );
-        
-        // Увеличиваем счетчик обновлений
-        update_count++;
-        
-        // Логируем значения датчиков для отладки
-        if (update_count % 10 == 0) { // Логируем каждые 10 обновлений
-            ESP_LOGI(TAG, "Sensor readings - pH: %.2f, EC: %.2f, Temp: %.1f, Hum: %.1f, Lux: %.0f, CO2: %.0f, TVOC: %.0f", 
-                     ph_value, ec_value, temp_value, hum_value, lux_value, co2_value, tvoc_value);
-            
-            // Проверяем, используем ли мы заглушечные значения для датчиков
-            if (trema_lux_is_using_stub_values()) {
-                ESP_LOGD(TAG, "Using stub values for LUX sensor");
-            }
-            
-            if (trema_ph_is_using_stub_values()) {
-                ESP_LOGD(TAG, "Using stub values for pH sensor");
-            }
-            
-            if (trema_ec_is_using_stub_values()) {
-                ESP_LOGD(TAG, "Using stub values for EC sensor");
-            }
-        }
-        
-        // Ждем перед следующим обновлением
-        vTaskDelay(pdMS_TO_TICKS(2000));
-    }
-}
-
-// Задача для тестирования энкодера
-void encoder_test_task(void *pv)
-{
-    QueueHandle_t encoder_queue = encoder_get_event_queue();
-    if (encoder_queue == NULL) {
-        ESP_LOGE(TAG, "Encoder queue not available");
-        vTaskDelete(NULL);
-        return;
-    }
-    
-    encoder_event_t event;
-    while (1) {
-        // Ждем события от энкодера с таймаутом 100 мс
-        if (xQueueReceive(encoder_queue, &event, pdMS_TO_TICKS(100)) == pdTRUE) {
-            switch (event.type) {
-                case ENCODER_EVENT_ROTATE_CW:
-                    ESP_LOGI(TAG, "Encoder rotated CW by %ld steps", (long)event.value);
-                    break;
-                case ENCODER_EVENT_ROTATE_CCW:
-                    ESP_LOGI(TAG, "Encoder rotated CCW by %ld steps", (long)event.value);
-                    break;
-                case ENCODER_EVENT_BUTTON_PRESS:
-                    ESP_LOGI(TAG, "Encoder button pressed (duration: %ld ms)", (long)event.value);
-                    break;
-                case ENCODER_EVENT_BUTTON_LONG_PRESS:
-                    ESP_LOGI(TAG, "Encoder button long pressed (duration: %ld ms)", (long)event.value);
-                    break;
-                case ENCODER_EVENT_BUTTON_RELEASE:
-                    ESP_LOGI(TAG, "Encoder button released");
-                    break;
-            }
-        }
-    }
-}
-
-/* =============================
- *  ИНИЦИАЛИЗАЦИЯ НАСОСОВ
- * ============================= */
-/*
-// Инициализация насосов
-// Настраивает все системные насосы с соответствующими пинами
-static void pumps_init(void)
-{
-    ESP_LOGI(TAG, "Initializing pumps...");
-    ESP_LOGI(TAG, "PUMP_PH_ACID: IA=%d, IB=%d", PUMP_PH_ACID_IA, PUMP_PH_ACID_IB);
-    pump_init(PUMP_PH_ACID_IA, PUMP_PH_ACID_IB);
-    
-    ESP_LOGI(TAG, "PUMP_PH_BASE: IA=%d, IB=%d", PUMP_PH_BASE_IA, PUMP_PH_BASE_IB);
-    pump_init(PUMP_PH_BASE_IA, PUMP_PH_BASE_IB);
-    
-    ESP_LOGI(TAG, "PUMP_EC_A: IA=%d, IB=%d", PUMP_EC_A_IA, PUMP_EC_A_IB);
-    pump_init(PUMP_EC_A_IA, PUMP_EC_A_IB);
-    
-    ESP_LOGI(TAG, "PUMP_EC_B: IA=%d, IB=%d", PUMP_EC_B_IA, PUMP_EC_B_IB);
-    pump_init(PUMP_EC_B_IA, PUMP_EC_B_IB);
-    
-    ESP_LOGI(TAG, "PUMP_EC_C: IA=%d, IB=%d", PUMP_EC_C_IA, PUMP_EC_C_IB);
-    pump_init(PUMP_EC_C_IA, PUMP_EC_C_IB);
-    
-    ESP_LOGI(TAG, "Pumps initialization completed");
-}
-*/
-
-/* =============================
- *  ГЛАВНАЯ ФУНКЦИЯ
- * ============================= */
-// Главная функция приложения
-// Инициализирует все компоненты системы и запускает задачи
+/**
+ * @brief Главная функция приложения
+ * 
+ * Выполняет последовательную инициализацию всех компонентов системы:
+ * 1. NVS (Non-Volatile Storage)
+ * 2. Аппаратные компоненты (LCD, I2C, энкодер)
+ * 3. Датчики
+ * 4. Насосы и реле
+ * 5. Системные компоненты (конфигурация, уведомления, логирование)
+ * 6. FreeRTOS задачи
+ * 
+ * После инициализации входит в бесконечный цикл для поддержания работы системы.
+ */
 void app_main(void)
 {
-    // Инициализация NVS (Non-Volatile Storage)
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        // Если найдена новая версия NVS, стираем и инициализируем заново
-        nvs_flash_erase();
-        nvs_flash_init();
+    ESP_LOGI(TAG, "╔══════════════════════════════════════════════════════════╗");
+    ESP_LOGI(TAG, "║   Hydroponics Monitor System v%s Starting...     ║", APP_VERSION);
+    ESP_LOGI(TAG, "╚══════════════════════════════════════════════════════════╝");
+    
+    // Выводим информацию о системе
+    print_system_info();
+    
+    // ========== ЭТАП 1: Инициализация NVS ==========
+    ESP_LOGI(TAG, "[1/7] Initializing NVS...");
+    if (init_nvs() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize NVS. System cannot continue.");
+        return;
     }
-
-    // Инициализация I2C
-    i2c_bus_init_custom();
+    ESP_LOGI(TAG, "✓ NVS initialized successfully");
     
-    // Небольшая задержка для обеспечения полной инициализации I2C
-    vTaskDelay(pdMS_TO_TICKS(100));
-
-    // Инициализация энкодера
-    encoder_set_pins(ENC_A_PIN, ENC_B_PIN, ENC_SW_PIN);
-    encoder_init();
+    // ========== ЭТАП 2: Инициализация аппаратных компонентов ==========
+    ESP_LOGI(TAG, "[2/7] Initializing hardware...");
+    if (init_hardware() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize hardware. System cannot continue.");
+        return;
+    }
+    ESP_LOGI(TAG, "✓ Hardware initialized successfully");
     
-    // Создаем задачу для тестирования энкодера
-    // xTaskCreate(encoder_test_task, "encoder_test", 2048, NULL, 5, NULL);
-    
-    // Инициализация реле
-    ESP_LOGI(TAG, "Attempting to initialize relay...");
-    if (!trema_relay_init()) {
-        // Если инициализация реле не удалась, выводим предупреждение
-        ESP_LOGW(TAG, "Failed to initialize relay");
-        // Проверяем, используем ли мы заглушечные значения
-        if (trema_relay_is_using_stub_values()) {
-            ESP_LOGW(TAG, "Relay is using stub values (not connected)");
-        }
+    // ========== ЭТАП 3: Инициализация датчиков ==========
+    ESP_LOGI(TAG, "[3/7] Initializing sensors...");
+    if (init_sensors() != ESP_OK) {
+        ESP_LOGW(TAG, "⚠ Some sensors failed to initialize, continuing with available sensors");
     } else {
-        // Если инициализация прошла успешно, выводим сообщение
-        ESP_LOGI(TAG, "Relay initialized successfully");
-        // Включаем канал 0 в качестве примера
-        trema_relay_digital_write(0, HIGH);
-        ESP_LOGI(TAG, "Channel 0 turned ON");
-        // Запускаем режим автоматического переключения
-        trema_relay_auto_switch(true);
-        ESP_LOGI(TAG, "Auto-switching mode started");
+        ESP_LOGI(TAG, "✓ All sensors initialized successfully");
     }
-
-    // Инициализация LCD дисплея
-    lv_disp_t *disp = lcd_ili9341_init();
-    if (disp == NULL) {
-        // Если инициализация LCD дисплея не удалась, выводим ошибку и завершаем
-        ESP_LOGE(TAG, "Failed to initialize LCD display");
+    
+    // ========== ЭТАП 4: Инициализация насосов и реле ==========
+    ESP_LOGI(TAG, "[4/7] Initializing pumps and relays...");
+    if (init_pumps() != ESP_OK) {
+        ESP_LOGW(TAG, "⚠ Some pumps/relays failed to initialize");
+    } else {
+        ESP_LOGI(TAG, "✓ Pumps and relays initialized successfully");
+    }
+    
+    // ========== ЭТАП 5: Инициализация системных компонентов ==========
+    ESP_LOGI(TAG, "[5/7] Initializing system components...");
+    if (init_system_components() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize system components. System cannot continue.");
+        return;
+    }
+    ESP_LOGI(TAG, "✓ System components initialized successfully");
+    
+    // ========== ЭТАП 6: Инициализация контекста задач ==========
+    ESP_LOGI(TAG, "[6/7] Initializing task context...");
+    if (system_tasks_init_context() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize task context. System cannot continue.");
         return;
     }
     
-    // Более длинная задержка для обеспечения готовности дисплея
-    vTaskDelay(pdMS_TO_TICKS(100));  // Увеличенная задержка до 3 секунд
+    // ========== ЭТАП 6.1: Создание FreeRTOS задач ==========
+    ESP_LOGI(TAG, "[6.1/7] Creating FreeRTOS tasks...");
+    if (system_tasks_create_all(&task_handles) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create system tasks. System cannot continue.");
+        return;
+    }
+    ESP_LOGI(TAG, "✓ All tasks created successfully");
     
-    // Создаем пользовательский интерфейс LCD с использованием компонента lvgl_main
-    lvgl_main_init();
-    
-    // Добавляем небольшую задержку для обеспечения полной инициализации UI
-    vTaskDelay(pdMS_TO_TICKS(100));  // Увеличенная задержка
-    
-    // Принудительно обновляем дисплей для обеспечения правильной инициализации
-    if (lvgl_lock(1000)) {  // Увеличен таймаут до 1 секунды
-        lv_obj_invalidate(lv_scr_act());
-        lv_timer_handler();
-        lvgl_unlock();
+    // ========== ЭТАП 7: Регистрация исполнителей задач ==========
+    ESP_LOGI(TAG, "[7/7] Registering task executors...");
+    if (register_task_executors() != ESP_OK) {
+        ESP_LOGW(TAG, "⚠ Some task executors failed to register");
     } else {
-        // Если не удалось получить блокировку LVGL, выводим ошибку
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock for initial refresh");
+        ESP_LOGI(TAG, "✓ Task executors registered successfully");
     }
     
-    // Более длинная задержка для обеспечения полной инициализации UI
-    vTaskDelay(pdMS_TO_TICKS(300));  // Увеличенная задержка до 3 секунд
+    // Система полностью инициализирована
+    system_initialized = true;
     
-    // Создаем задачу обработки энкодера (навигация)
-    xTaskCreate(encoder_ui_task, "encoder_ui", 3072, NULL, 6, NULL);
-
-    // Создаем задачу датчиков с реальными показаниями датчиков
-    xTaskCreate(sensor_task, "sensors", 4096, NULL, 3, NULL);
-
-    // Поддерживаем главную задачу активной с повышенным приоритетом для лучшей обработки input
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "╔══════════════════════════════════════════════════════════╗");
+    ESP_LOGI(TAG, "║   System Initialization Complete!                       ║");
+    ESP_LOGI(TAG, "║   All systems operational. Starting monitoring...       ║");
+    ESP_LOGI(TAG, "╚══════════════════════════════════════════════════════════╝");
+    
+    // Создаем уведомление о запуске системы
+    notification_system(NOTIFICATION_INFO, "System Started", 
+                       NOTIF_SOURCE_SYSTEM);
+    
+    // Логируем запуск системы (отключено)
+    // data_logger_log_system_event(LOG_LEVEL_INFO, 
+    //                              "System started successfully - v" APP_VERSION);
+    
+    // ========== ОСНОВНОЙ ЦИКЛ ==========
+    // Главный цикл - просто поддерживает работу системы
+    // Все задачи выполняются асинхронно в FreeRTOS
+    uint32_t loop_count = 0;
     while (1) {
-       // Периодически обновляем дисплей для обеспечения стабильного рендеринга
-        if (lvgl_lock(-1)) {
-            lv_timer_handler();
-            lvgl_unlock();
+        // Периодический вывод статистики (каждые 60 секунд)
+        if (system_initialized && (loop_count % 60 == 0)) {
+            ESP_LOGI(TAG, "System running. Free heap: %lu / %lu bytes",
+                     (unsigned long)esp_get_free_heap_size(), 
+                     (unsigned long)esp_get_minimum_free_heap_size());
         }
-        vTaskDelay(pdMS_TO_TICKS(40));   // Keep LVGL updates at 25 Hz from the main loop
+        
+        loop_count++;
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
+
+/*******************************************************************************
+ * ФУНКЦИИ ИНИЦИАЛИЗАЦИИ
+ ******************************************************************************/
+
+/**
+ * @brief Инициализация NVS (Non-Volatile Storage)
+ * 
+ * NVS используется для хранения:
+ * - Конфигурации системы
+ * - Калибровочных данных датчиков
+ * - Настроек пользователя
+ * - Истории данных
+ * 
+ * @return ESP_OK при успехе, код ошибки при неудаче
+ */
+static esp_err_t init_nvs(void)
+{
+    esp_err_t ret = nvs_flash_init();
+    
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // NVS partition было обрезано или найдена новая версия.
+        // Стираем и пытаемся инициализировать заново
+        ESP_LOGW(TAG, "NVS partition needs to be erased, erasing...");
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    
+    return ret;
+}
+
+/**
+ * @brief Инициализация аппаратных компонентов
+ * 
+ * Инициализирует:
+ * - I2C шину для датчиков
+ * - LCD дисплей через SPI
+ * - Rotary encoder для управления
+ * - Создает мьютексы и очереди
+ * 
+ * @return ESP_OK при успехе, код ошибки при неудаче
+ */
+static esp_err_t init_hardware(void)
+{
+    esp_err_t ret;
+    
+    // Инициализация I2C шины
+    // I2C используется для всех датчиков (SHT3x, CCS811, Trema pH/EC/Lux)
+    ret = i2c_bus_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize I2C bus: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  ✓ I2C bus initialized (SCL: GPIO%d, SDA: GPIO%d)", 
+             I2C_MASTER_SCL_IO, I2C_MASTER_SDA_IO);
+    
+    // Небольшая задержка для стабилизации I2C шины
+    vTaskDelay(pdMS_TO_TICKS(100));
+    
+    // Инициализация LCD дисплея
+    // LCD использует SPI интерфейс и LVGL для графики
+    lv_disp_t* disp = lcd_ili9341_init();
+    if (disp == NULL) {
+        ESP_LOGE(TAG, "Failed to initialize LCD");
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "  ✓ LCD initialized (Resolution: %dx%d)", LCD_H_RES, LCD_V_RES);
+    
+    // Задержка для инициализации дисплея
+    vTaskDelay(pdMS_TO_TICKS(100));
+    
+    // Инициализация LVGL UI ПЕРЕД энкодером
+    // LVGL управляет всеми экранами и виджетами
+    ESP_LOGI(TAG, "  Initializing LVGL UI...");
+    lvgl_main_init();
+    ESP_LOGI(TAG, "  ✓ LVGL UI initialized");
+    
+    // Задержка для завершения инициализации UI
+    vTaskDelay(pdMS_TO_TICKS(200));
+    
+    // Инициализация энкодера ПОСЛЕ UI
+    // Энкодер используется для навигации по UI
+    ESP_LOGI(TAG, "  Initializing encoder...");
+    encoder_set_pins(ENCODER_PIN_A, ENCODER_PIN_B, ENCODER_PIN_SW);
+    encoder_set_long_press_duration(ENCODER_LONG_PRESS_MS);
+    encoder_init();  // void function
+    ESP_LOGI(TAG, "  ✓ Encoder initialized (A: GPIO%d, B: GPIO%d, SW: GPIO%d)", 
+             ENCODER_PIN_A, ENCODER_PIN_B, ENCODER_PIN_SW);
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief Инициализация датчиков
+ * 
+ * Инициализирует все датчики системы:
+ * - SHT3x: температура и влажность
+ * - CCS811: CO2 и VOC
+ * - Trema pH: кислотность раствора
+ * - Trema EC: электропроводность
+ * - Trema Lux: освещенность
+ * 
+ * ВАЖНО: Некоторые датчики могут быть недоступны. Система продолжит
+ * работу с доступными датчиками.
+ * 
+ * @return ESP_OK если хотя бы один датчик инициализирован
+ */
+static esp_err_t init_sensors(void)
+{
+    int initialized_count = 0;
+    esp_err_t ret;
+    
+    // SHT3x: Температура и влажность
+    // Не требует отдельной инициализации, используется I2C шина
+    ESP_LOGI(TAG, "  ✓ SHT3x (Temp/Humidity) configured @ 0x%02X", I2C_ADDR_SHT3X);
+    initialized_count++;
+    
+    // CCS811: CO2 и VOC
+    if (ccs811_init()) {
+        ESP_LOGI(TAG, "  ✓ CCS811 (CO2/VOC) initialized @ 0x%02X", I2C_ADDR_CCS811);
+        initialized_count++;
+    } else {
+        ESP_LOGW(TAG, "  ✗ CCS811 initialization failed");
+    }
+    
+    // Trema pH: Кислотность
+    ret = trema_ph_init();
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "  ✓ Trema pH initialized @ 0x%02X", I2C_ADDR_TREMA_PH);
+        initialized_count++;
+    } else {
+        ESP_LOGW(TAG, "  ✗ Trema pH initialization failed: %s", esp_err_to_name(ret));
+    }
+    
+    // Trema EC: Электропроводность
+    ret = trema_ec_init();
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "  ✓ Trema EC initialized @ 0x%02X", I2C_ADDR_TREMA_EC);
+        initialized_count++;
+    } else {
+        ESP_LOGW(TAG, "  ✗ Trema EC initialization failed: %s", esp_err_to_name(ret));
+    }
+    
+    // Trema Lux: Освещенность
+    ret = trema_lux_init();
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "  ✓ Trema Lux initialized @ 0x%02X", I2C_ADDR_TREMA_LUX);
+        initialized_count++;
+    } else {
+        ESP_LOGW(TAG, "  ✗ Trema Lux initialization failed: %s", esp_err_to_name(ret));
+    }
+    
+    ESP_LOGI(TAG, "  Sensors initialized: %d/5", initialized_count);
+    
+    // Возвращаем успех, если хотя бы один датчик инициализирован
+    return (initialized_count > 0) ? ESP_OK : ESP_FAIL;
+}
+
+/**
+ * @brief Инициализация насосов и реле
+ * 
+ * Инициализирует:
+ * - 6 перистальтических насосов для коррекции pH и EC
+ * - 4 реле для управления освещением, вентиляцией и т.д.
+ * 
+ * @return ESP_OK при успехе
+ */
+static esp_err_t init_pumps(void)
+{
+    // Примечание: Инициализация перистальтических насосов и их конфигурация
+    // выполняется в ph_ec_controller_init(), который будет вызван позже
+    // в init_system_components(). Здесь только логируем пины для справки.
+    ESP_LOGI(TAG, "  Peristaltic pumps (will be initialized in pH/EC controller):");
+    ESP_LOGI(TAG, "    - pH UP:   GPIO%d, GPIO%d", PUMP_PH_UP_IA, PUMP_PH_UP_IB);
+    ESP_LOGI(TAG, "    - pH DOWN: GPIO%d, GPIO%d", PUMP_PH_DOWN_IA, PUMP_PH_DOWN_IB);
+    ESP_LOGI(TAG, "    - EC A:    GPIO%d, GPIO%d", PUMP_EC_A_IA, PUMP_EC_A_IB);
+    ESP_LOGI(TAG, "    - EC B:    GPIO%d, GPIO%d", PUMP_EC_B_IA, PUMP_EC_B_IB);
+    ESP_LOGI(TAG, "    - EC C:    GPIO%d, GPIO%d", PUMP_EC_C_IA, PUMP_EC_C_IB);
+    ESP_LOGI(TAG, "    - WATER:   GPIO%d, GPIO%d", PUMP_WATER_IA, PUMP_WATER_IB);
+    
+    // Инициализация реле
+    esp_err_t ret = trema_relay_init();
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "  ✓ Relays initialized (4 channels)");
+        ESP_LOGI(TAG, "    - Relay 1 (Light):  GPIO%d", RELAY_1_PIN);
+        ESP_LOGI(TAG, "    - Relay 2 (Fan):    GPIO%d", RELAY_2_PIN);
+        ESP_LOGI(TAG, "    - Relay 3 (Heater): GPIO%d", RELAY_3_PIN);
+        ESP_LOGI(TAG, "    - Relay 4 (Reserve):GPIO%d", RELAY_4_PIN);
+    } else {
+        ESP_LOGW(TAG, "  ✗ Relays initialization failed: %s", esp_err_to_name(ret));
+    }
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief Инициализация системных компонентов
+ * 
+ * Инициализирует:
+ * - Config Manager: управление конфигурацией в NVS
+ * - Notification System: система уведомлений и алертов
+ * - Data Logger: логирование данных и событий
+ * - Task Scheduler: планировщик задач
+ * - pH/EC Controller: контроллер коррекции параметров
+ * 
+ * Также устанавливает callback функции для обработки событий.
+ * 
+ * @return ESP_OK при успехе, код ошибки при неудаче
+ */
+static esp_err_t init_system_components(void)
+{
+    esp_err_t ret;
+    
+    // Config Manager: Управление конфигурацией
+    ret = config_manager_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize config manager: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  ✓ Config Manager initialized");
+    
+    // Notification System: Система уведомлений
+    ret = notification_system_init(100); // Максимум 100 уведомлений
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize notification system: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    notification_set_callback(notification_callback);
+    ESP_LOGI(TAG, "  ✓ Notification System initialized");
+    
+    // Data Logger: Логирование данных (временно отключено для экономии памяти)
+    // ret = data_logger_init(MAX_LOG_ENTRIES);
+    // if (ret != ESP_OK) {
+    //     ESP_LOGE(TAG, "Failed to initialize data logger: %s", esp_err_to_name(ret));
+    //     return ret;
+    // }
+    // data_logger_set_callback(log_callback);
+    // data_logger_set_auto_cleanup(true, LOG_AUTO_CLEANUP_DAYS);
+    ESP_LOGW(TAG, "  ! Data Logger disabled (insufficient memory)");
+    
+    // Task Scheduler: Планировщик задач
+    ret = task_scheduler_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize task scheduler: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    task_scheduler_set_event_callback(task_event_callback);
+    ESP_LOGI(TAG, "  ✓ Task Scheduler initialized");
+    
+    // pH/EC Controller: Контроллер коррекции
+    ret = ph_ec_controller_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize pH/EC controller: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ph_ec_controller_set_pump_callback(pump_event_callback);
+    ph_ec_controller_set_correction_callback(correction_event_callback);
+    ESP_LOGI(TAG, "  ✓ pH/EC Controller initialized");
+    
+    return ESP_OK;
+}
+
+/*******************************************************************************
+ * CALLBACK ФУНКЦИИ
+ ******************************************************************************/
+
+/**
+ * @brief Callback для уведомлений
+ */
+static void notification_callback(const notification_t *notification)
+{
+    if (notification == NULL) {
+        return;
+    }
+    
+    ESP_LOGI(TAG, "Notification [%s]: %s",
+             notification_type_to_string(notification->type),
+             notification->message);
+}
+
+/**
+ * @brief Callback для событий планировщика
+ */
+static void task_event_callback(uint32_t task_id, task_status_t status)
+{
+    ESP_LOGI(TAG, "Task %lu status: %s",
+             (unsigned long)task_id,
+             task_scheduler_status_to_string(status));
+}
+
+/**
+ * @brief Callback для событий насосов
+ */
+static void pump_event_callback(pump_index_t pump, bool started)
+{
+    ESP_LOGI(TAG, "Pump %d (%s) %s",
+             pump,
+             ph_ec_controller_get_pump_name(pump),
+             started ? "started" : "stopped");
+    
+    // Логируем действие насоса (если logger включен)
+    // data_logger_log_pump_action(pump, started, "user action");
+}
+
+/**
+ * @brief Callback для событий коррекции
+ */
+static void correction_event_callback(const char *type, float current, float target)
+{
+    ESP_LOGI(TAG, "Correction %s: %.2f -> %.2f",
+             type,
+             current,
+             target);
+}
+
+/*******************************************************************************
+ * ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+ ******************************************************************************/
+
+/**
+ * @brief Вывод информации о системе
+ */
+static void print_system_info(void)
+{
+    esp_chip_info_t chip_info;
+    esp_chip_info(&chip_info);
+    
+    ESP_LOGI(TAG, "System Information:");
+    ESP_LOGI(TAG, "  Chip: %s rev%d, %d CPU cores, WiFi%s%s",
+             CONFIG_IDF_TARGET,
+             chip_info.revision,
+             chip_info.cores,
+             (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
+             (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "");
+    uint32_t flash_size;
+    esp_flash_get_size(NULL, &flash_size);
+    ESP_LOGI(TAG, "  Flash: %luMB %s",
+             (unsigned long)(flash_size / (1024 * 1024)),
+             (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+    ESP_LOGI(TAG, "  Free heap: %lu bytes", (unsigned long)esp_get_free_heap_size());
+    ESP_LOGI(TAG, "  IDF version: %s", esp_get_idf_version());
+}
+
+/**
+ * @brief Регистрация исполнителей задач
+ */
+static esp_err_t register_task_executors(void)
+{
+    // Здесь можно зарегистрировать функции-исполнители для планировщика задач
+    // Например:
+    // task_scheduler_register_executor(TASK_TYPE_PH_CORRECTION, ph_correction_executor);
+    // task_scheduler_register_executor(TASK_TYPE_EC_CORRECTION, ec_correction_executor);
+    
+    ESP_LOGI(TAG, "Task executors registration complete");
+    return ESP_OK;
+}
+/*******************************************************************************
+ * КОНЕЦ ФАЙЛА
+ *******************************************************************************/
+

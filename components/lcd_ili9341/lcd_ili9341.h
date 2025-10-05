@@ -11,7 +11,7 @@ extern "C" {
  * 
  * @return lv_disp_t* Указатель на драйвер дисплея LVGL
  */
-lv_disp_t* lcd_ili9341_init(void);
+lv_display_t* lcd_ili9341_init(void);
 
 /**
  * @brief Установка яркости дисплея
