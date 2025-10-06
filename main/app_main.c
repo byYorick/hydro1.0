@@ -16,15 +16,8 @@
 #include "trema_relay.h"
 #include "xpt2046.h"
 #include "lvgl.h"
-
-// Forward declarations for trema_relay functions (IDE workaround)
-bool trema_relay_init(void);
-void trema_relay_digital_write(uint8_t channel, uint8_t value);
-void trema_relay_auto_switch(bool enable);
-
-// Forward declarations for xpt2046 functions (IDE workaround)
-bool xpt2046_init(void);
-bool xpt2046_read_touch(uint16_t *x, uint16_t *y);
+#include "hydro_settings.h"
+#include "automation_controller.h"
 
 // Touch input device callback is now declared in lvgl_main.h
 
@@ -194,7 +187,13 @@ void sensor_task(void *pv)
             lux_value,
             co2_value
         );
-        
+
+        automation_sensor_data_t automation_data = {
+            .ph = ph_value,
+            .ec = ec_value
+        };
+        automation_controller_update(&automation_data);
+
         update_count++;
         
         // Log sensor values for debugging
@@ -317,18 +316,34 @@ void app_main(void)
     ESP_LOGI(TAG, "Attempting to initialize relay...");
     if (!trema_relay_init()) {
         ESP_LOGW(TAG, "Failed to initialize relay");
-        // Let's check if we're using stub values
         if (trema_relay_is_using_stub_values()) {
             ESP_LOGW(TAG, "Relay is using stub values (not connected)");
         }
     } else {
         ESP_LOGI(TAG, "Relay initialized successfully");
-        // Turn on channel 0 as an example
-        trema_relay_digital_write(0, HIGH);
-        ESP_LOGI(TAG, "Channel 0 turned ON");
-        // Start auto-switching mode
-        trema_relay_auto_switch(true);
-        ESP_LOGI(TAG, "Auto-switching mode started");
+    }
+
+    // Load persisted settings
+    hydro_settings_init();
+    const hydro_settings_t *settings = hydro_settings_get();
+
+    // Initialize automation controller with current settings
+    automation_pump_pins_t pump_pins = {
+        .ph_acid_ia = PUMP_PH_ACID_IA,
+        .ph_acid_ib = PUMP_PH_ACID_IB,
+        .ph_base_ia = PUMP_PH_BASE_IA,
+        .ph_base_ib = PUMP_PH_BASE_IB,
+        .ec_a_ia = PUMP_EC_A_IA,
+        .ec_a_ib = PUMP_EC_A_IB,
+        .ec_b_ia = PUMP_EC_B_IA,
+        .ec_b_ib = PUMP_EC_B_IB,
+        .ec_c_ia = PUMP_EC_C_IA,
+        .ec_c_ib = PUMP_EC_C_IB
+    };
+
+    automation_controller_init(&pump_pins, settings);
+    if (hydro_settings_register_listener(automation_controller_apply_settings) != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to register automation settings listener");
     }
 
     // Initialize LCD display FIRST, before touch controller
@@ -362,9 +377,15 @@ void app_main(void)
     
     // Create LCD UI using lvgl_main component
     lvgl_main_init();
-    
+
     // Add a small delay to ensure UI is fully initialized
     vTaskDelay(pdMS_TO_TICKS(500));  // Increased delay
+
+    if (hydro_settings_register_listener(lvgl_main_sync_settings) != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to register UI settings listener");
+    } else {
+        lvgl_main_sync_settings(settings);
+    }
     
     // Force a display refresh to ensure everything is properly initialized
     if (lvgl_lock(1000)) {  // Increased timeout to 1 second

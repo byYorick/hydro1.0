@@ -18,4 +18,6 @@ idf_component_register(
         lcd_ili9341
         trema_relay
         xpt2046
+        hydro_settings
+        automation_controller
 )
