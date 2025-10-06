@@ -1,6 +1,7 @@
 #include "lvgl_main.h"
 #include "lvgl.h"
 #include "lcd_ili9341.h"
+#include "hydro_settings.h"
 // Touch controller support will be added through function declarations
 // Font declarations
 LV_FONT_DECLARE(lv_font_montserrat_14)
@@ -56,9 +57,24 @@ static lv_obj_t *label_co2_value;
 
 // Settings screen elements
 static lv_obj_t *screen_settings;
-static lv_obj_t *btn_back;
-static lv_obj_t *label_back;
-static lv_obj_t *btn_settings;  // Add reference to settings button
+static lv_obj_t *tabview_settings;
+static lv_obj_t *switch_auto_dosing;
+static lv_obj_t *slider_target_ph;
+static lv_obj_t *label_target_ph_value;
+static lv_obj_t *slider_ph_tolerance;
+static lv_obj_t *label_ph_tolerance_value;
+static lv_obj_t *slider_target_ec;
+static lv_obj_t *label_target_ec_value;
+static lv_obj_t *slider_ec_tolerance;
+static lv_obj_t *label_ec_tolerance_value;
+static lv_obj_t *slider_dosing_duration;
+static lv_obj_t *label_dosing_duration_value;
+static lv_obj_t *slider_dosing_cooldown;
+static lv_obj_t *label_dosing_cooldown_value;
+static lv_obj_t *switch_lighting_auto;
+static lv_obj_t *switch_lighting_manual_state;
+static lv_obj_t *spinbox_light_on;
+static lv_obj_t *spinbox_light_off;
 
 // Стили
 static lv_style_t style_title;
@@ -76,6 +92,8 @@ static lv_style_t style_unit;
 
 // Очередь для обновлений данных датчиков
 static QueueHandle_t sensor_data_queue = NULL;
+static TaskHandle_t display_task_handle = NULL;
+static bool settings_sync_in_progress = false;
 #define SENSOR_DATA_QUEUE_SIZE 10
 
 // Структура данных датчиков
@@ -95,7 +113,25 @@ static void init_styles(void);
 static lv_obj_t* create_sensor_card(lv_obj_t *parent);
 static void update_sensor_display(sensor_data_t *data);
 static void create_settings_ui(void);
-static void event_handler(lv_event_t * e);
+static void navigation_event_handler(lv_event_t * e);
+static void settings_value_changed_event(lv_event_t *e);
+static void update_settings_controls(const hydro_settings_t *settings);
+
+enum {
+    NAV_BTN_SETTINGS = 1,
+    NAV_BTN_BACK = 2,
+    SETTINGS_CTRL_AUTO_DOSING = 100,
+    SETTINGS_CTRL_TARGET_PH,
+    SETTINGS_CTRL_PH_TOL,
+    SETTINGS_CTRL_TARGET_EC,
+    SETTINGS_CTRL_EC_TOL,
+    SETTINGS_CTRL_DOSING_DURATION,
+    SETTINGS_CTRL_DOSING_COOLDOWN,
+    SETTINGS_CTRL_LIGHT_AUTO,
+    SETTINGS_CTRL_LIGHT_MANUAL,
+    SETTINGS_CTRL_LIGHT_ON_HOUR,
+    SETTINGS_CTRL_LIGHT_OFF_HOUR
+};
 
 // УЛУЧШЕННАЯ ИНИЦИАЛИЗАЦИЯ СТИЛЕЙ
 static void init_styles(void)
@@ -272,15 +308,13 @@ static void create_main_ui(void)
     lv_obj_t *btn_settings = lv_btn_create(screen_main);
     lv_obj_set_size(btn_settings, 100, 40);
     lv_obj_align(btn_settings, LV_ALIGN_BOTTOM_MID, 0, -10);
-    lv_obj_add_event_cb(btn_settings, event_handler, LV_EVENT_CLICKED, (void*)1);  // Pass ID 1 for settings button
+    lv_obj_add_event_cb(btn_settings, navigation_event_handler, LV_EVENT_CLICKED, (void*)1);
     
     lv_obj_t *label_settings = lv_label_create(btn_settings);
     lv_label_set_text(label_settings, "Settings");
     lv_obj_center(label_settings);
 
-    // Очередь и задача (без изменений)
-    sensor_data_queue = xQueueCreate(SENSOR_DATA_QUEUE_SIZE, sizeof(sensor_data_t));
-    xTaskCreate(display_update_task, "display_update", 4096, NULL, 5, NULL);
+    // Очередь и задача создаются на этапе инициализации
 }
 
 // Обновление отображения датчиков с новыми значениями
@@ -424,7 +458,25 @@ void lvgl_main_init(void)
 {
     // Initialize settings screen pointer
     screen_settings = NULL;
-    
+    tabview_settings = NULL;
+    switch_auto_dosing = NULL;
+    slider_target_ph = NULL;
+    label_target_ph_value = NULL;
+    slider_ph_tolerance = NULL;
+    label_ph_tolerance_value = NULL;
+    slider_target_ec = NULL;
+    label_target_ec_value = NULL;
+    slider_ec_tolerance = NULL;
+    label_ec_tolerance_value = NULL;
+    slider_dosing_duration = NULL;
+    label_dosing_duration_value = NULL;
+    slider_dosing_cooldown = NULL;
+    label_dosing_cooldown_value = NULL;
+    switch_lighting_auto = NULL;
+    switch_lighting_manual_state = NULL;
+    spinbox_light_on = NULL;
+    spinbox_light_off = NULL;
+
     // Create sensor data queue if not already created
     if (sensor_data_queue == NULL) {
         sensor_data_queue = xQueueCreate(SENSOR_DATA_QUEUE_SIZE, sizeof(sensor_data_t));
@@ -446,73 +498,445 @@ void lvgl_main_init(void)
         ESP_LOGE("LVGL_MAIN", "Failed to acquire LVGL lock for UI initialization");
     }
     
-    // Create display update task
-    xTaskCreate(display_update_task, "display_update", 4096, NULL, 3, NULL);
+    // Create display update task once
+    if (display_task_handle == NULL) {
+        if (xTaskCreate(display_update_task, "display_update", 4096, NULL, 3, &display_task_handle) != pdPASS) {
+            ESP_LOGE("LVGL_MAIN", "Failed to create display update task");
+        }
+    }
 }
 
-// Event handler for UI elements
-static void event_handler(lv_event_t * e)
+static lv_obj_t *create_settings_panel(lv_obj_t *parent)
 {
+    lv_obj_t *panel = lv_obj_create(parent);
+    lv_obj_set_size(panel, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_opa(panel, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(panel, 0, 0);
+    lv_obj_set_style_pad_all(panel, 12, 0);
+    lv_obj_set_style_pad_row(panel, 16, 0);
+    lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_COLUMN);
+    return panel;
+}
+
+static lv_obj_t *create_settings_row(lv_obj_t *parent)
+{
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_pad_all(row, 0, 0);
+    lv_obj_set_style_pad_column(row, 12, 0);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    return row;
+}
+
+static void set_switch_checked(lv_obj_t *obj, bool checked)
+{
+    if (!obj) {
+        return;
+    }
+    if (checked) {
+        lv_obj_add_state(obj, LV_STATE_CHECKED);
+    } else {
+        lv_obj_clear_state(obj, LV_STATE_CHECKED);
+    }
+}
+
+static void set_control_disabled(lv_obj_t *obj, bool disabled)
+{
+    if (!obj) {
+        return;
+    }
+    if (disabled) {
+        lv_obj_add_state(obj, LV_STATE_DISABLED);
+    } else {
+        lv_obj_clear_state(obj, LV_STATE_DISABLED);
+    }
+}
+
+static void update_settings_labels(const hydro_settings_t *settings)
+{
+    if (!settings) {
+        return;
+    }
+
+    char buffer[24];
+    if (label_target_ph_value) {
+        snprintf(buffer, sizeof(buffer), "%.1f", settings->target_ph);
+        lv_label_set_text(label_target_ph_value, buffer);
+    }
+    if (label_ph_tolerance_value) {
+        snprintf(buffer, sizeof(buffer), "±%.1f", settings->ph_tolerance);
+        lv_label_set_text(label_ph_tolerance_value, buffer);
+    }
+    if (label_target_ec_value) {
+        snprintf(buffer, sizeof(buffer), "%.2f", settings->target_ec);
+        lv_label_set_text(label_target_ec_value, buffer);
+    }
+    if (label_ec_tolerance_value) {
+        snprintf(buffer, sizeof(buffer), "±%.2f", settings->ec_tolerance);
+        lv_label_set_text(label_ec_tolerance_value, buffer);
+    }
+    if (label_dosing_duration_value) {
+        snprintf(buffer, sizeof(buffer), "%.2f с", (float)settings->dosing_duration_ms / 1000.0f);
+        lv_label_set_text(label_dosing_duration_value, buffer);
+    }
+    if (label_dosing_cooldown_value) {
+        snprintf(buffer, sizeof(buffer), "%u с", (unsigned)settings->dosing_cooldown_s);
+        lv_label_set_text(label_dosing_cooldown_value, buffer);
+    }
+}
+
+static void update_settings_controls(const hydro_settings_t *settings)
+{
+    if (!settings || !screen_settings) {
+        return;
+    }
+
+    settings_sync_in_progress = true;
+
+    set_switch_checked(switch_auto_dosing, settings->auto_dosing_enabled);
+
+    if (slider_target_ph) {
+        lv_slider_set_range(slider_target_ph, 50, 80);
+        lv_slider_set_value(slider_target_ph, (int32_t)(settings->target_ph * 10.0f), LV_ANIM_OFF);
+    }
+    if (slider_ph_tolerance) {
+        lv_slider_set_range(slider_ph_tolerance, 1, 20);
+        lv_slider_set_value(slider_ph_tolerance, (int32_t)(settings->ph_tolerance * 10.0f), LV_ANIM_OFF);
+    }
+    if (slider_target_ec) {
+        lv_slider_set_range(slider_target_ec, 5, 35);
+        lv_slider_set_value(slider_target_ec, (int32_t)(settings->target_ec * 10.0f), LV_ANIM_OFF);
+    }
+    if (slider_ec_tolerance) {
+        lv_slider_set_range(slider_ec_tolerance, 1, 30);
+        lv_slider_set_value(slider_ec_tolerance, (int32_t)(settings->ec_tolerance * 10.0f), LV_ANIM_OFF);
+    }
+    if (slider_dosing_duration) {
+        lv_slider_set_range(slider_dosing_duration, 100, 3000);
+        lv_slider_set_value(slider_dosing_duration, (int32_t)settings->dosing_duration_ms, LV_ANIM_OFF);
+    }
+    if (slider_dosing_cooldown) {
+        lv_slider_set_range(slider_dosing_cooldown, 30, 900);
+        lv_slider_set_value(slider_dosing_cooldown, (int32_t)settings->dosing_cooldown_s, LV_ANIM_OFF);
+    }
+
+    set_switch_checked(switch_lighting_auto, settings->lighting_auto_mode);
+    set_switch_checked(switch_lighting_manual_state, settings->lighting_manual_state);
+
+    if (spinbox_light_on) {
+        lv_spinbox_set_value(spinbox_light_on, settings->lighting_on_hour);
+    }
+    if (spinbox_light_off) {
+        lv_spinbox_set_value(spinbox_light_off, settings->lighting_off_hour);
+    }
+
+    set_control_disabled(switch_lighting_manual_state, settings->lighting_auto_mode);
+    set_control_disabled(spinbox_light_on, settings->lighting_auto_mode);
+    set_control_disabled(spinbox_light_off, settings->lighting_auto_mode);
+
+    settings_sync_in_progress = false;
+
+    update_settings_labels(settings);
+}
+
+// Event handler for UI navigation buttons
+static void navigation_event_handler(lv_event_t * e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+
+    int button_id = (int)lv_event_get_user_data(e);
+    if (button_id == NAV_BTN_SETTINGS) {
+        create_settings_ui();
+        update_settings_controls(hydro_settings_get());
+        lv_scr_load(screen_settings);
+    } else if (button_id == NAV_BTN_BACK) {
+        lv_scr_load(screen_main);
+    }
+}
+
+// Event handler for settings controls
+static void settings_value_changed_event(lv_event_t *e)
+{
+    if (settings_sync_in_progress) {
+        return;
+    }
+
+    lv_obj_t *target = lv_event_get_target(e);
     lv_event_code_t code = lv_event_get_code(e);
-    lv_obj_t * obj = lv_event_get_target(e);
-    
-    if(code == LV_EVENT_CLICKED) {
-        // Get user data to identify which button was pressed
-        int button_id = (int)lv_event_get_user_data(e);
-        
-        // Check if Settings button was clicked (button_id == 1)
-        if(button_id == 1) {
-            // Create and show settings screen
-            create_settings_ui();
-            lv_scr_load(screen_settings);
+    int control_id = (int)lv_event_get_user_data(e);
+    bool needs_refresh = false;
+    char buffer[24];
+
+    switch (control_id) {
+        case SETTINGS_CTRL_AUTO_DOSING:
+            if (code == LV_EVENT_VALUE_CHANGED) {
+                hydro_settings_set_auto_dosing_enabled(lv_obj_has_state(target, LV_STATE_CHECKED));
+                needs_refresh = true;
+            }
+            break;
+        case SETTINGS_CTRL_TARGET_PH: {
+            float value = (float)lv_slider_get_value(target) / 10.0f;
+            if (code == LV_EVENT_VALUE_CHANGED) {
+                if (label_target_ph_value) {
+                    snprintf(buffer, sizeof(buffer), "%.1f", value);
+                    lv_label_set_text(label_target_ph_value, buffer);
+                }
+            } else if (code == LV_EVENT_RELEASED) {
+                hydro_settings_set_target_ph(value);
+                needs_refresh = true;
+            }
+            break;
         }
-        // Check if Back button was clicked (button_id == 2)
-        else if(button_id == 2) {
-            // Return to main screen
-            lv_scr_load(screen_main);
+        case SETTINGS_CTRL_PH_TOL: {
+            float value = (float)lv_slider_get_value(target) / 10.0f;
+            if (code == LV_EVENT_VALUE_CHANGED) {
+                if (label_ph_tolerance_value) {
+                    snprintf(buffer, sizeof(buffer), "±%.1f", value);
+                    lv_label_set_text(label_ph_tolerance_value, buffer);
+                }
+            } else if (code == LV_EVENT_RELEASED) {
+                hydro_settings_set_ph_tolerance(value);
+                needs_refresh = true;
+            }
+            break;
         }
+        case SETTINGS_CTRL_TARGET_EC: {
+            float value = (float)lv_slider_get_value(target) / 10.0f;
+            if (code == LV_EVENT_VALUE_CHANGED) {
+                if (label_target_ec_value) {
+                    snprintf(buffer, sizeof(buffer), "%.2f", value);
+                    lv_label_set_text(label_target_ec_value, buffer);
+                }
+            } else if (code == LV_EVENT_RELEASED) {
+                hydro_settings_set_target_ec(value);
+                needs_refresh = true;
+            }
+            break;
+        }
+        case SETTINGS_CTRL_EC_TOL: {
+            float value = (float)lv_slider_get_value(target) / 10.0f;
+            if (code == LV_EVENT_VALUE_CHANGED) {
+                if (label_ec_tolerance_value) {
+                    snprintf(buffer, sizeof(buffer), "±%.2f", value);
+                    lv_label_set_text(label_ec_tolerance_value, buffer);
+                }
+            } else if (code == LV_EVENT_RELEASED) {
+                hydro_settings_set_ec_tolerance(value);
+                needs_refresh = true;
+            }
+            break;
+        }
+        case SETTINGS_CTRL_DOSING_DURATION: {
+            uint32_t value = (uint32_t)lv_slider_get_value(target);
+            if (code == LV_EVENT_VALUE_CHANGED) {
+                if (label_dosing_duration_value) {
+                    snprintf(buffer, sizeof(buffer), "%.2f с", (float)value / 1000.0f);
+                    lv_label_set_text(label_dosing_duration_value, buffer);
+                }
+            } else if (code == LV_EVENT_RELEASED) {
+                hydro_settings_set_dosing_duration(value);
+                needs_refresh = true;
+            }
+            break;
+        }
+        case SETTINGS_CTRL_DOSING_COOLDOWN: {
+            uint32_t value = (uint32_t)lv_slider_get_value(target);
+            if (code == LV_EVENT_VALUE_CHANGED) {
+                if (label_dosing_cooldown_value) {
+                    snprintf(buffer, sizeof(buffer), "%u с", (unsigned)value);
+                    lv_label_set_text(label_dosing_cooldown_value, buffer);
+                }
+            } else if (code == LV_EVENT_RELEASED) {
+                hydro_settings_set_dosing_cooldown(value);
+                needs_refresh = true;
+            }
+            break;
+        }
+        case SETTINGS_CTRL_LIGHT_AUTO:
+            if (code == LV_EVENT_VALUE_CHANGED) {
+                hydro_settings_set_lighting_auto_mode(lv_obj_has_state(target, LV_STATE_CHECKED));
+                needs_refresh = true;
+            }
+            break;
+        case SETTINGS_CTRL_LIGHT_MANUAL:
+            if (code == LV_EVENT_VALUE_CHANGED) {
+                hydro_settings_set_lighting_manual_state(lv_obj_has_state(target, LV_STATE_CHECKED));
+                needs_refresh = true;
+            }
+            break;
+        case SETTINGS_CTRL_LIGHT_ON_HOUR:
+        case SETTINGS_CTRL_LIGHT_OFF_HOUR: {
+            if (code == LV_EVENT_VALUE_CHANGED) {
+                uint8_t on_hour = spinbox_light_on ? (uint8_t)lv_spinbox_get_value(spinbox_light_on) : 0;
+                uint8_t off_hour = spinbox_light_off ? (uint8_t)lv_spinbox_get_value(spinbox_light_off) : 0;
+                hydro_settings_set_lighting_schedule(on_hour, off_hour);
+                needs_refresh = true;
+            }
+            break;
+        }
+        default:
+            break;
+    }
+
+    if (needs_refresh && screen_settings) {
+        update_settings_controls(hydro_settings_get());
     }
 }
 
 // Create settings UI screen
 static void create_settings_ui(void)
 {
-    if(screen_settings != NULL) {
-        // Screen already exists, just update it
+    if (screen_settings != NULL) {
         return;
     }
-    
-    // Create settings screen
+
     screen_settings = lv_obj_create(NULL);
-    
-    // Add title
-    lv_obj_t *label_title = lv_label_create(screen_settings);
-    lv_label_set_text(label_title, "Settings");
-    lv_obj_set_style_text_font(label_title, &lv_font_montserrat_18, 0);
-    lv_obj_align(label_title, LV_ALIGN_TOP_MID, 0, 10);
-    
-    // Add some example settings
-    lv_obj_t *label_setting1 = lv_label_create(screen_settings);
-    lv_label_set_text(label_setting1, "WiFi Settings");
-    lv_obj_align_to(label_setting1, label_title, LV_ALIGN_OUT_BOTTOM_MID, 0, 20);
-    
-    lv_obj_t *label_setting2 = lv_label_create(screen_settings);
-    lv_label_set_text(label_setting2, "Sensor Calibration");
-    lv_obj_align_to(label_setting2, label_setting1, LV_ALIGN_OUT_BOTTOM_MID, 0, 15);
-    
-    lv_obj_t *label_setting3 = lv_label_create(screen_settings);
-    lv_label_set_text(label_setting3, "System Info");
-    lv_obj_align_to(label_setting3, label_setting2, LV_ALIGN_OUT_BOTTOM_MID, 0, 15);
-    
-    // Add Back button
-    btn_back = lv_btn_create(screen_settings);
-    lv_obj_set_size(btn_back, 80, 30);
+
+    tabview_settings = lv_tabview_create(screen_settings, LV_DIR_TOP, 40);
+    lv_obj_set_size(tabview_settings, LV_PCT(100), LV_PCT(100));
+
+    lv_obj_t *tab_nutrition = lv_tabview_add_tab(tabview_settings, "Питание");
+    lv_obj_t *tab_automation = lv_tabview_add_tab(tabview_settings, "Авто");
+    lv_obj_t *tab_lighting = lv_tabview_add_tab(tabview_settings, "Свет");
+
+    lv_obj_t *panel_nutrition = create_settings_panel(tab_nutrition);
+    lv_obj_t *panel_automation = create_settings_panel(tab_automation);
+    lv_obj_t *panel_lighting = create_settings_panel(tab_lighting);
+
+    // Nutrition / dosing settings
+    lv_obj_t *row_auto = create_settings_row(panel_nutrition);
+    lv_obj_t *label_auto = lv_label_create(row_auto);
+    lv_label_set_text(label_auto, "Авто-дозирование");
+    switch_auto_dosing = lv_switch_create(row_auto);
+    lv_obj_add_event_cb(switch_auto_dosing, settings_value_changed_event, LV_EVENT_VALUE_CHANGED, (void*)SETTINGS_CTRL_AUTO_DOSING);
+
+    lv_obj_t *row_target_ph = create_settings_row(panel_nutrition);
+    lv_obj_t *label_target_ph = lv_label_create(row_target_ph);
+    lv_label_set_text(label_target_ph, "Целевой pH");
+    slider_target_ph = lv_slider_create(row_target_ph);
+    lv_obj_set_flex_grow(slider_target_ph, 1);
+    lv_slider_set_range(slider_target_ph, 50, 80);
+    lv_obj_add_event_cb(slider_target_ph, settings_value_changed_event, LV_EVENT_VALUE_CHANGED, (void*)SETTINGS_CTRL_TARGET_PH);
+    lv_obj_add_event_cb(slider_target_ph, settings_value_changed_event, LV_EVENT_RELEASED, (void*)SETTINGS_CTRL_TARGET_PH);
+    label_target_ph_value = lv_label_create(row_target_ph);
+    lv_label_set_text(label_target_ph_value, "--");
+    lv_obj_set_width(label_target_ph_value, 60);
+    lv_obj_set_style_text_align(label_target_ph_value, LV_TEXT_ALIGN_RIGHT, 0);
+
+    lv_obj_t *row_ph_tol = create_settings_row(panel_nutrition);
+    lv_obj_t *label_ph_tol = lv_label_create(row_ph_tol);
+    lv_label_set_text(label_ph_tol, "Допуск pH");
+    slider_ph_tolerance = lv_slider_create(row_ph_tol);
+    lv_obj_set_flex_grow(slider_ph_tolerance, 1);
+    lv_slider_set_range(slider_ph_tolerance, 1, 20);
+    lv_obj_add_event_cb(slider_ph_tolerance, settings_value_changed_event, LV_EVENT_VALUE_CHANGED, (void*)SETTINGS_CTRL_PH_TOL);
+    lv_obj_add_event_cb(slider_ph_tolerance, settings_value_changed_event, LV_EVENT_RELEASED, (void*)SETTINGS_CTRL_PH_TOL);
+    label_ph_tolerance_value = lv_label_create(row_ph_tol);
+    lv_label_set_text(label_ph_tolerance_value, "--");
+    lv_obj_set_width(label_ph_tolerance_value, 60);
+    lv_obj_set_style_text_align(label_ph_tolerance_value, LV_TEXT_ALIGN_RIGHT, 0);
+
+    lv_obj_t *row_target_ec = create_settings_row(panel_nutrition);
+    lv_obj_t *label_target_ec = lv_label_create(row_target_ec);
+    lv_label_set_text(label_target_ec, "Целевой EC");
+    slider_target_ec = lv_slider_create(row_target_ec);
+    lv_obj_set_flex_grow(slider_target_ec, 1);
+    lv_slider_set_range(slider_target_ec, 5, 35);
+    lv_obj_add_event_cb(slider_target_ec, settings_value_changed_event, LV_EVENT_VALUE_CHANGED, (void*)SETTINGS_CTRL_TARGET_EC);
+    lv_obj_add_event_cb(slider_target_ec, settings_value_changed_event, LV_EVENT_RELEASED, (void*)SETTINGS_CTRL_TARGET_EC);
+    label_target_ec_value = lv_label_create(row_target_ec);
+    lv_label_set_text(label_target_ec_value, "--");
+    lv_obj_set_width(label_target_ec_value, 60);
+    lv_obj_set_style_text_align(label_target_ec_value, LV_TEXT_ALIGN_RIGHT, 0);
+
+    lv_obj_t *row_ec_tol = create_settings_row(panel_nutrition);
+    lv_obj_t *label_ec_tol = lv_label_create(row_ec_tol);
+    lv_label_set_text(label_ec_tol, "Допуск EC");
+    slider_ec_tolerance = lv_slider_create(row_ec_tol);
+    lv_obj_set_flex_grow(slider_ec_tolerance, 1);
+    lv_slider_set_range(slider_ec_tolerance, 1, 30);
+    lv_obj_add_event_cb(slider_ec_tolerance, settings_value_changed_event, LV_EVENT_VALUE_CHANGED, (void*)SETTINGS_CTRL_EC_TOL);
+    lv_obj_add_event_cb(slider_ec_tolerance, settings_value_changed_event, LV_EVENT_RELEASED, (void*)SETTINGS_CTRL_EC_TOL);
+    label_ec_tolerance_value = lv_label_create(row_ec_tol);
+    lv_label_set_text(label_ec_tolerance_value, "--");
+    lv_obj_set_width(label_ec_tolerance_value, 60);
+    lv_obj_set_style_text_align(label_ec_tolerance_value, LV_TEXT_ALIGN_RIGHT, 0);
+
+    // Automation tab
+    lv_obj_t *row_duration = create_settings_row(panel_automation);
+    lv_obj_t *label_duration = lv_label_create(row_duration);
+    lv_label_set_text(label_duration, "Длительность дозы");
+    slider_dosing_duration = lv_slider_create(row_duration);
+    lv_obj_set_flex_grow(slider_dosing_duration, 1);
+    lv_slider_set_range(slider_dosing_duration, 100, 3000);
+    lv_obj_add_event_cb(slider_dosing_duration, settings_value_changed_event, LV_EVENT_VALUE_CHANGED, (void*)SETTINGS_CTRL_DOSING_DURATION);
+    lv_obj_add_event_cb(slider_dosing_duration, settings_value_changed_event, LV_EVENT_RELEASED, (void*)SETTINGS_CTRL_DOSING_DURATION);
+    label_dosing_duration_value = lv_label_create(row_duration);
+    lv_label_set_text(label_dosing_duration_value, "--");
+    lv_obj_set_width(label_dosing_duration_value, 80);
+    lv_obj_set_style_text_align(label_dosing_duration_value, LV_TEXT_ALIGN_RIGHT, 0);
+
+    lv_obj_t *row_cooldown = create_settings_row(panel_automation);
+    lv_obj_t *label_cooldown = lv_label_create(row_cooldown);
+    lv_label_set_text(label_cooldown, "Пауза между дозами");
+    slider_dosing_cooldown = lv_slider_create(row_cooldown);
+    lv_obj_set_flex_grow(slider_dosing_cooldown, 1);
+    lv_slider_set_range(slider_dosing_cooldown, 30, 900);
+    lv_obj_add_event_cb(slider_dosing_cooldown, settings_value_changed_event, LV_EVENT_VALUE_CHANGED, (void*)SETTINGS_CTRL_DOSING_COOLDOWN);
+    lv_obj_add_event_cb(slider_dosing_cooldown, settings_value_changed_event, LV_EVENT_RELEASED, (void*)SETTINGS_CTRL_DOSING_COOLDOWN);
+    label_dosing_cooldown_value = lv_label_create(row_cooldown);
+    lv_label_set_text(label_dosing_cooldown_value, "--");
+    lv_obj_set_width(label_dosing_cooldown_value, 80);
+    lv_obj_set_style_text_align(label_dosing_cooldown_value, LV_TEXT_ALIGN_RIGHT, 0);
+
+    // Lighting tab
+    lv_obj_t *row_light_auto = create_settings_row(panel_lighting);
+    lv_obj_t *label_light_auto = lv_label_create(row_light_auto);
+    lv_label_set_text(label_light_auto, "Автоматический свет");
+    switch_lighting_auto = lv_switch_create(row_light_auto);
+    lv_obj_add_event_cb(switch_lighting_auto, settings_value_changed_event, LV_EVENT_VALUE_CHANGED, (void*)SETTINGS_CTRL_LIGHT_AUTO);
+
+    lv_obj_t *row_light_manual = create_settings_row(panel_lighting);
+    lv_obj_t *label_light_manual = lv_label_create(row_light_manual);
+    lv_label_set_text(label_light_manual, "Свет вручную");
+    switch_lighting_manual_state = lv_switch_create(row_light_manual);
+    lv_obj_add_event_cb(switch_lighting_manual_state, settings_value_changed_event, LV_EVENT_VALUE_CHANGED, (void*)SETTINGS_CTRL_LIGHT_MANUAL);
+
+    lv_obj_t *row_light_on = create_settings_row(panel_lighting);
+    lv_obj_t *label_light_on = lv_label_create(row_light_on);
+    lv_label_set_text(label_light_on, "Включение, час");
+    spinbox_light_on = lv_spinbox_create(row_light_on);
+    lv_spinbox_set_range(spinbox_light_on, 0, 23);
+    lv_spinbox_set_digit_format(spinbox_light_on, 2, 0);
+    lv_spinbox_set_step(spinbox_light_on, 1);
+    lv_obj_set_width(spinbox_light_on, 70);
+    lv_obj_add_event_cb(spinbox_light_on, settings_value_changed_event, LV_EVENT_VALUE_CHANGED, (void*)SETTINGS_CTRL_LIGHT_ON_HOUR);
+
+    lv_obj_t *row_light_off = create_settings_row(panel_lighting);
+    lv_obj_t *label_light_off = lv_label_create(row_light_off);
+    lv_label_set_text(label_light_off, "Выключение, час");
+    spinbox_light_off = lv_spinbox_create(row_light_off);
+    lv_spinbox_set_range(spinbox_light_off, 0, 23);
+    lv_spinbox_set_digit_format(spinbox_light_off, 2, 0);
+    lv_spinbox_set_step(spinbox_light_off, 1);
+    lv_obj_set_width(spinbox_light_off, 70);
+    lv_obj_add_event_cb(spinbox_light_off, settings_value_changed_event, LV_EVENT_VALUE_CHANGED, (void*)SETTINGS_CTRL_LIGHT_OFF_HOUR);
+
+    // Back button
+    lv_obj_t *btn_back = lv_btn_create(screen_settings);
+    lv_obj_set_size(btn_back, 100, 36);
     lv_obj_align(btn_back, LV_ALIGN_BOTTOM_MID, 0, -10);
-    lv_obj_add_event_cb(btn_back, event_handler, LV_EVENT_CLICKED, (void*)2);  // Pass ID 2 for back button
-    
-    label_back = lv_label_create(btn_back);
-    lv_label_set_text(label_back, "Back");
+    lv_obj_add_event_cb(btn_back, navigation_event_handler, LV_EVENT_CLICKED, (void*)NAV_BTN_BACK);
+    lv_obj_t *label_back = lv_label_create(btn_back);
+    lv_label_set_text(label_back, "Назад");
     lv_obj_center(label_back);
+
+    update_settings_controls(hydro_settings_get());
 }
 
 // Обновление значений датчиков на экране
@@ -538,4 +962,23 @@ void lvgl_update_sensor_values(float ph, float ec, float temp, float hum, float 
     if (uxQueueSpacesAvailable(sensor_data_queue) > 0) {
         xQueueSend(sensor_data_queue, &sensor_data, 0);
     }
+}
+
+void lvgl_main_sync_settings(const hydro_settings_t *settings)
+{
+    if (!settings) {
+        return;
+    }
+
+    if (!lv_is_initialized()) {
+        return;
+    }
+
+    if (!lvgl_lock(50)) {
+        ESP_LOGD(TAG, "LVGL lock busy, skip settings sync");
+        return;
+    }
+
+    update_settings_controls(settings);
+    lvgl_unlock();
 }
