@@ -58,6 +58,7 @@
 
 // Компоненты системы управления
 #include "config_manager.h"
+#include "system_interfaces.h"
 #include "notification_system.h"
 #include "data_logger.h"
 #include "task_scheduler.h"
@@ -210,7 +211,14 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to initialize task context. System cannot continue.");
         return;
     }
-    
+
+    if (g_config_loaded) {
+        esp_err_t cfg_ret = system_tasks_set_config(&g_system_config);
+        if (cfg_ret != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to share configuration with tasks: %s", esp_err_to_name(cfg_ret));
+        }
+    }
+
     // ========== ЭТАП 6.1: Создание FreeRTOS задач ==========
     ESP_LOGI(TAG, "[6.1/7] Creating FreeRTOS tasks...");
     if (system_tasks_create_all(&task_handles) != ESP_OK) {
@@ -240,9 +248,8 @@ void app_main(void)
     notification_system(NOTIFICATION_INFO, "System Started", 
                        NOTIF_SOURCE_SYSTEM);
     
-    // Логируем запуск системы (отключено)
-    // data_logger_log_system_event(LOG_LEVEL_INFO, 
-    //                              "System started successfully - v" APP_VERSION);
+    data_logger_log_system_event(LOG_LEVEL_INFO,
+                                 "System started successfully - v" APP_VERSION);
     
     // ========== ОСНОВНОЙ ЦИКЛ ==========
     // Главный цикл - просто поддерживает работу системы
@@ -469,11 +476,17 @@ static esp_err_t init_pumps(void)
  * 
  * @return ESP_OK при успехе, код ошибки при неудаче
  */
+
 static esp_err_t init_system_components(void)
 {
     esp_err_t ret;
-    
-    // Config Manager: Управление конфигурацией
+
+    ret = system_interfaces_init_defaults();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize system interfaces: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
     ret = config_manager_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize config manager: %s", esp_err_to_name(ret));
@@ -527,8 +540,7 @@ static esp_err_t init_system_components(void)
     }
     task_scheduler_set_event_callback(task_event_callback);
     ESP_LOGI(TAG, "  ✓ Task Scheduler initialized");
-    
-    // pH/EC Controller: Контроллер коррекции
+
     ret = ph_ec_controller_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize pH/EC controller: %s", esp_err_to_name(ret));
@@ -544,6 +556,7 @@ static esp_err_t init_system_components(void)
 
     return ESP_OK;
 }
+
 
 /*******************************************************************************
  * CALLBACK ФУНКЦИИ
@@ -608,6 +621,17 @@ static void correction_event_callback(const char *type, float current, float tar
              type,
              current,
              target);
+}
+
+static void log_callback(const data_logger_entry_t *entry)
+{
+    if (entry == NULL) {
+        return;
+    }
+    ESP_LOGD(TAG, "Log[%lu] %s: %s",
+             (unsigned long)entry->id,
+             data_logger_type_to_string(entry->type),
+             entry->message);
 }
 
 /*******************************************************************************

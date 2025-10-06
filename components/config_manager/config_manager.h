@@ -39,6 +39,11 @@ esp_err_t config_save(const system_config_t *config);
 esp_err_t config_manager_reset_to_defaults(system_config_t *out_config);
 
 /**
+ * @brief Получение конфигурации по умолчанию без взаимодействия с NVS.
+ */
+void config_manager_get_defaults(system_config_t *config);
+
+/**
  * @brief Получение последней загруженной конфигурации.
  *
  * Возвращает кэшированную копию конфигурации, если она была загружена через

@@ -23,6 +23,8 @@ static ph_ec_pump_callback_t g_pump_callback = NULL;
 static ph_ec_correction_callback_t g_correction_callback = NULL;
 static float g_current_ph = 7.0f;
 static float g_current_ec = 1.0f;
+static void (*g_pump_init_fn)(int, int) = pump_init;
+static void (*g_pump_run_fn)(int, int, uint32_t) = pump_run_ms;
 
 // Имена насосов
 static const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
@@ -79,9 +81,21 @@ esp_err_t ph_ec_controller_init(void)
         return ESP_ERR_NO_MEM;
     }
 
+    const actuator_provider_t *actuators = system_interfaces_get_actuator_provider();
+    g_pump_init_fn = pump_init;
+    g_pump_run_fn = pump_run_ms;
+    if (actuators != NULL) {
+        if (actuators->pump_init != NULL) {
+            g_pump_init_fn = actuators->pump_init;
+        }
+        if (actuators->pump_run_ms != NULL) {
+            g_pump_run_fn = actuators->pump_run_ms;
+        }
+    }
+
     // Инициализируем все насосы
     for (int i = 0; i < PUMP_INDEX_COUNT; i++) {
-        pump_init(PUMP_PINS[i].ia_pin, PUMP_PINS[i].ib_pin);
+        g_pump_init_fn(PUMP_PINS[i].ia_pin, PUMP_PINS[i].ib_pin);
         
         // Устанавливаем конфигурацию по умолчанию
         g_pump_configs[i].enabled = true;

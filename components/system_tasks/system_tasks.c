@@ -6,11 +6,12 @@
 #include "system_tasks.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include <stdio.h>
 #include <string.h>
 #include <limits.h>
 #include <stdio.h>
 
-// Компоненты системы
+#include "esp_system.h"
 #include "notification_system.h"
 #include "data_logger.h"
 #include "task_scheduler.h"
@@ -18,17 +19,8 @@
 #include "config_manager.h"
 #include "system_interfaces.h"
 
-// Датчики
-#include "sht3x.h"
-#include "ccs811.h"
-#include "trema_ph.h"
-#include "trema_ec.h"
-#include "trema_lux.h"
 
-// UI
 #include "lvgl_main.h"
-
-// Энкодер
 #include "encoder.h"
 
 static const char *TAG = "SYS_TASKS";
@@ -77,11 +69,6 @@ static void notification_task(void *pvParameters);
 static void data_logger_task(void *pvParameters);
 static void scheduler_task(void *pvParameters);
 static void ph_ec_task(void *pvParameters);
-// encoder_task создается в lvgl_main.c - не дублируем!
-
-/*******************************************************************************
- * ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
- ******************************************************************************/
 
 static esp_err_t read_all_sensors(sensor_data_t *data);
 static void register_sensor_failure(sensor_index_t index, const char *details);
@@ -130,9 +117,13 @@ static void register_sensor_recovery(sensor_index_t index)
     sensor_failure_counters[index] = 0;
 }
 
-/*******************************************************************************
- * ФУНКЦИИ ИНИЦИАЛИЗАЦИИ
- ******************************************************************************/
+static const char *SENSOR_NAMES[SENSOR_COUNT] = {
+    "pH", "EC", "Temperature", "Humidity", "Light", "CO2"
+};
+
+static const char *SENSOR_UNITS[SENSOR_COUNT] = {
+    "", "mS/cm", "°C", "%", "lux", "ppm"
+};
 
 esp_err_t system_tasks_init_context(void)
 {
@@ -143,24 +134,27 @@ esp_err_t system_tasks_init_context(void)
 
     ESP_LOGI(TAG, "Initializing task context...");
 
-    // Создаем мьютекс для защиты данных датчиков
     task_context.sensor_data_mutex = xSemaphoreCreateMutex();
     if (task_context.sensor_data_mutex == NULL) {
         ESP_LOGE(TAG, "Failed to create sensor_data_mutex");
         return ESP_ERR_NO_MEM;
     }
 
-    // Создаем очередь данных датчиков
     task_context.sensor_data_queue = xQueueCreate(QUEUE_SIZE_SENSOR_DATA, sizeof(sensor_data_t));
     if (task_context.sensor_data_queue == NULL) {
         ESP_LOGE(TAG, "Failed to create sensor_data_queue");
         return ESP_ERR_NO_MEM;
     }
 
-    // Очередь энкодера создается в encoder.c - не дублируем!
-
     task_context.sensor_data_valid = false;
     memset(&task_context.last_sensor_data, 0, sizeof(sensor_data_t));
+    memset(task_context.sensor_failure_streak, 0, sizeof(task_context.sensor_failure_streak));
+    memset(task_context.sensor_failure_total, 0, sizeof(task_context.sensor_failure_total));
+    memset(task_context.sensor_fault_active, 0, sizeof(task_context.sensor_fault_active));
+    memset(&task_context.sensor_stats, 0, sizeof(task_context.sensor_stats));
+    memset(&task_context.data_logger_stats, 0, sizeof(task_context.data_logger_stats));
+    memset(&task_context.notification_stats, 0, sizeof(task_context.notification_stats));
+    task_context.config_valid = false;
 
     context_initialized = true;
     ESP_LOGI(TAG, "Task context initialized successfully");
@@ -178,67 +172,60 @@ esp_err_t system_tasks_create_all(system_task_handles_t *handles)
 
     BaseType_t ret;
 
-    // Задача чтения датчиков
     ret = xTaskCreate(sensor_task, "sensor_task", TASK_STACK_SIZE_SENSOR, NULL,
                       TASK_PRIORITY_SENSOR, &task_handles.sensor_task);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create sensor_task");
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "✓ sensor_task created (Pri: %d, Stack: %d)", 
+    ESP_LOGI(TAG, "✓ sensor_task created (Pri: %d, Stack: %d)",
              TASK_PRIORITY_SENSOR, TASK_STACK_SIZE_SENSOR);
 
-    // Задача обновления дисплея
     ret = xTaskCreate(display_task, "display_task", TASK_STACK_SIZE_DISPLAY, NULL,
                       TASK_PRIORITY_DISPLAY, &task_handles.display_task);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create display_task");
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "✓ display_task created (Pri: %d, Stack: %d)", 
+    ESP_LOGI(TAG, "✓ display_task created (Pri: %d, Stack: %d)",
              TASK_PRIORITY_DISPLAY, TASK_STACK_SIZE_DISPLAY);
 
-    // Задача уведомлений
     ret = xTaskCreate(notification_task, "notification_task", TASK_STACK_SIZE_NOTIFICATION, NULL,
                       TASK_PRIORITY_NOTIFICATION, &task_handles.notification_task);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create notification_task");
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "✓ notification_task created (Pri: %d, Stack: %d)", 
+    ESP_LOGI(TAG, "✓ notification_task created (Pri: %d, Stack: %d)",
              TASK_PRIORITY_NOTIFICATION, TASK_STACK_SIZE_NOTIFICATION);
 
-    // Задача логирования
     ret = xTaskCreate(data_logger_task, "data_logger_task", TASK_STACK_SIZE_DATALOGGER, NULL,
                       TASK_PRIORITY_DATALOGGER, &task_handles.data_logger_task);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create data_logger_task");
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "✓ data_logger_task created (Pri: %d, Stack: %d)", 
+    ESP_LOGI(TAG, "✓ data_logger_task created (Pri: %d, Stack: %d)",
              TASK_PRIORITY_DATALOGGER, TASK_STACK_SIZE_DATALOGGER);
 
-    // Задача планировщика
     ret = xTaskCreate(scheduler_task, "scheduler_task", TASK_STACK_SIZE_SCHEDULER, NULL,
                       TASK_PRIORITY_SCHEDULER, &task_handles.scheduler_task);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create scheduler_task");
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "✓ scheduler_task created (Pri: %d, Stack: %d)", 
+    ESP_LOGI(TAG, "✓ scheduler_task created (Pri: %d, Stack: %d)",
              TASK_PRIORITY_SCHEDULER, TASK_STACK_SIZE_SCHEDULER);
 
-    // Задача pH/EC контроля
     ret = xTaskCreate(ph_ec_task, "ph_ec_task", TASK_STACK_SIZE_PH_EC, NULL,
                       TASK_PRIORITY_PH_EC, &task_handles.ph_ec_task);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create ph_ec_task");
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "✓ ph_ec_task created (Pri: %d, Stack: %d)", 
+    ESP_LOGI(TAG, "✓ ph_ec_task created (Pri: %d, Stack: %d)",
              TASK_PRIORITY_PH_EC, TASK_STACK_SIZE_PH_EC);
 
-    // Задача энкодера создается в lvgl_main.c - не дублируем!
     ESP_LOGI(TAG, "✓ encoder_task will be created by lvgl_main.c");
 
     if (handles != NULL) {
@@ -259,27 +246,55 @@ system_task_handles_t* system_tasks_get_handles(void)
     return &task_handles;
 }
 
-/*******************************************************************************
- * РЕАЛИЗАЦИЯ ЗАДАЧ
- ******************************************************************************/
+esp_err_t system_tasks_set_config(const system_config_t *config)
+{
+    if (!context_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (config == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    task_context.active_config = *config;
+    task_context.config_valid = true;
+    return ESP_OK;
+}
 
 static void sensor_task(void *pvParameters)
 {
     sensor_data_t sensor_data;
     TickType_t last_wake_time = xTaskGetTickCount();
+    TickType_t last_cycle_tick = last_wake_time;
     uint32_t read_count = 0;
 
     ESP_LOGI(TAG, "Sensor task started (interval: %d ms)", TASK_INTERVAL_SENSOR);
-    vTaskDelay(pdMS_TO_TICKS(3000)); // Задержка для инициализации UI
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    last_wake_time = xTaskGetTickCount();
+    last_cycle_tick = last_wake_time;
 
     while (1) {
         read_count++;
-        ESP_LOGD(TAG, "Reading sensors (cycle %lu)", (unsigned long)read_count);
+        TickType_t now_tick = xTaskGetTickCount();
+        if (now_tick - last_cycle_tick > pdMS_TO_TICKS(TASK_INTERVAL_SENSOR)) {
+            task_context.sensor_stats.missed_deadlines++;
+        }
+        last_cycle_tick = now_tick;
 
         uint64_t cycle_start_us = esp_timer_get_time();
 
         // Читаем все датчики
         esp_err_t ret = read_all_sensors(&sensor_data);
+
+        task_context.sensor_stats.execution_count++;
+        if (ret != ESP_OK) {
+            task_context.sensor_stats.failure_count++;
+        }
+
+        uint32_t duration_ms = (uint32_t)((esp_timer_get_time() - start_us) / 1000ULL);
+        task_context.sensor_stats.last_duration_ms = duration_ms;
+        if (duration_ms > task_context.sensor_stats.max_duration_ms) {
+            task_context.sensor_stats.max_duration_ms = duration_ms;
+        }
 
         if (ret == ESP_OK) {
             if (xSemaphoreTake(task_context.sensor_data_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -326,12 +341,10 @@ static void display_task(void *pvParameters)
     ESP_LOGI(TAG, "Display task started (interval: %d ms)", TASK_INTERVAL_DISPLAY);
 
     while (1) {
-        // Получаем данные из очереди
         if (xQueueReceive(task_context.sensor_data_queue, &sensor_data, pdMS_TO_TICKS(100)) == pdPASS) {
-            // Обновляем дисплей
             lvgl_update_sensor_values(sensor_data.ph, sensor_data.ec,
-                                     sensor_data.temperature, sensor_data.humidity,
-                                     sensor_data.lux, sensor_data.co2);
+                                      sensor_data.temperature, sensor_data.humidity,
+                                      sensor_data.lux, sensor_data.co2);
         }
 
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(TASK_INTERVAL_DISPLAY));
@@ -341,12 +354,29 @@ static void display_task(void *pvParameters)
 static void notification_task(void *pvParameters)
 {
     TickType_t last_wake_time = xTaskGetTickCount();
+    TickType_t last_cycle_tick = last_wake_time;
 
     ESP_LOGI(TAG, "Notification task started (interval: %d ms)", TASK_INTERVAL_NOTIFICATION);
 
     while (1) {
-        // Обрабатываем уведомления
-        notification_process();
+        TickType_t now_tick = xTaskGetTickCount();
+        if (now_tick - last_cycle_tick > pdMS_TO_TICKS(TASK_INTERVAL_NOTIFICATION)) {
+            task_context.notification_stats.missed_deadlines++;
+        }
+        last_cycle_tick = now_tick;
+
+        uint64_t start_us = esp_timer_get_time();
+        esp_err_t ret = notification_process();
+        task_context.notification_stats.execution_count++;
+        if (ret != ESP_OK) {
+            task_context.notification_stats.failure_count++;
+        }
+
+        uint32_t duration_ms = (uint32_t)((esp_timer_get_time() - start_us) / 1000ULL);
+        task_context.notification_stats.last_duration_ms = duration_ms;
+        if (duration_ms > task_context.notification_stats.max_duration_ms) {
+            task_context.notification_stats.max_duration_ms = duration_ms;
+        }
 
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(TASK_INTERVAL_NOTIFICATION));
     }
@@ -371,9 +401,7 @@ static void scheduler_task(void *pvParameters)
     ESP_LOGI(TAG, "Scheduler task started (interval: %d ms)", TASK_INTERVAL_SCHEDULER);
 
     while (1) {
-        // Выполняем готовые задачи планировщика
         task_scheduler_process();
-
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(TASK_INTERVAL_SCHEDULER));
     }
 }
@@ -385,18 +413,91 @@ static void ph_ec_task(void *pvParameters)
     ESP_LOGI(TAG, "pH/EC control task started (interval: %d ms)", TASK_INTERVAL_PH_EC);
 
     while (1) {
-        // Обрабатываем контроллер pH/EC
         ph_ec_controller_process();
-
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(TASK_INTERVAL_PH_EC));
     }
 }
 
-// encoder_task реализована в lvgl_main.c - не дублируем!
+static float get_sensor_target(sensor_index_t index)
+{
+    if (task_context.config_valid && index < SENSOR_COUNT) {
+        return task_context.active_config.sensor_config[index].target_value;
+    }
 
-/*******************************************************************************
- * ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
- ******************************************************************************/
+    const float defaults[SENSOR_COUNT] = {
+        PH_TARGET_DEFAULT,
+        EC_TARGET_DEFAULT,
+        TEMP_TARGET_DEFAULT,
+        HUMIDITY_TARGET_DEFAULT,
+        LUX_TARGET_DEFAULT,
+        CO2_TARGET_DEFAULT,
+    };
+    return defaults[index];
+}
+
+static float get_sensor_fallback(sensor_index_t index)
+{
+    float last_value = get_last_sensor_value(index);
+    if (!task_context.sensor_data_valid) {
+        return get_sensor_target(index);
+    }
+    return last_value;
+}
+
+static float get_last_sensor_value(sensor_index_t index)
+{
+    if (!task_context.sensor_data_valid) {
+        return get_sensor_target(index);
+    }
+
+    switch (index) {
+        case SENSOR_INDEX_PH:          return task_context.last_sensor_data.ph;
+        case SENSOR_INDEX_EC:          return task_context.last_sensor_data.ec;
+        case SENSOR_INDEX_TEMPERATURE: return task_context.last_sensor_data.temperature;
+        case SENSOR_INDEX_HUMIDITY:    return task_context.last_sensor_data.humidity;
+        case SENSOR_INDEX_LUX:         return task_context.last_sensor_data.lux;
+        case SENSOR_INDEX_CO2:         return task_context.last_sensor_data.co2;
+        default:                       return get_sensor_target(index);
+    }
+}
+
+static void sensor_update_success(sensor_index_t index, float value)
+{
+    if (index >= SENSOR_COUNT) {
+        return;
+    }
+
+    if (task_context.sensor_fault_active[index]) {
+        char message[128];
+        snprintf(message, sizeof(message), "%s sensor recovered: %.2f %s",
+                 SENSOR_NAMES[index], value, SENSOR_UNITS[index]);
+        notification_system(NOTIF_TYPE_INFO, message, NOTIF_SOURCE_SENSOR);
+        data_logger_log_system_event(LOG_LEVEL_INFO, message);
+    }
+
+    task_context.sensor_failure_streak[index] = 0;
+    task_context.sensor_fault_active[index] = false;
+}
+
+static void sensor_update_failure(sensor_index_t index, const char *reason, float fallback)
+{
+    if (index >= SENSOR_COUNT) {
+        return;
+    }
+
+    task_context.sensor_failure_total[index]++;
+    uint32_t streak = ++task_context.sensor_failure_streak[index];
+
+    if (!task_context.sensor_fault_active[index] && streak >= SENSOR_FAILURE_THRESHOLD) {
+        char message[128];
+        snprintf(message, sizeof(message), "%s sensor failure (%s). Using %.2f %s",
+                 SENSOR_NAMES[index], (reason != NULL) ? reason : "no data",
+                 fallback, SENSOR_UNITS[index]);
+        notification_system(NOTIF_TYPE_WARNING, message, NOTIF_SOURCE_SENSOR);
+        data_logger_log_alarm(LOG_LEVEL_WARNING, message);
+        task_context.sensor_fault_active[index] = true;
+    }
+}
 
 static esp_err_t read_all_sensors(sensor_data_t *data)
 {
@@ -445,6 +546,7 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
     if (sensor_if->read_ph != NULL && sensor_if->read_ph(&ph) == ESP_OK) {
         data->ph = ph;
         data->valid[SENSOR_INDEX_PH] = true;
+        sensor_update_success(SENSOR_INDEX_PH, ph);
         successful_reads++;
         register_sensor_recovery(SENSOR_INDEX_PH);
         ESP_LOGI(TAG, "pH read: %.2f", ph);
@@ -458,6 +560,7 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
     if (sensor_if->read_ec != NULL && sensor_if->read_ec(&ec) == ESP_OK) {
         data->ec = ec;
         data->valid[SENSOR_INDEX_EC] = true;
+        sensor_update_success(SENSOR_INDEX_EC, ec);
         successful_reads++;
         register_sensor_recovery(SENSOR_INDEX_EC);
         ESP_LOGI(TAG, "EC read: %.2f mS/cm", ec);
@@ -471,6 +574,7 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
     if (sensor_if->read_lux != NULL && sensor_if->read_lux(&lux)) {
         data->lux = lux;
         data->valid[SENSOR_INDEX_LUX] = true;
+        sensor_update_success(SENSOR_INDEX_LUX, data->lux);
         successful_reads++;
         register_sensor_recovery(SENSOR_INDEX_LUX);
         ESP_LOGI(TAG, "Lux read: %.0f", lux);
@@ -485,6 +589,7 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
     if (sensor_if->read_co2 != NULL && sensor_if->read_co2(&co2, &tvoc)) {
         data->co2 = co2;
         data->valid[SENSOR_INDEX_CO2] = true;
+        sensor_update_success(SENSOR_INDEX_CO2, co2);
         successful_reads++;
         register_sensor_recovery(SENSOR_INDEX_CO2);
         ESP_LOGI(TAG, "CO2 read: %.0f ppm (TVOC: %.0f)", co2, tvoc);
@@ -499,10 +604,6 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
     return (successful_reads > 0) ? ESP_OK : ESP_FAIL;
 }
 
-/*******************************************************************************
- * ФУНКЦИИ УПРАВЛЕНИЯ
- ******************************************************************************/
-
 esp_err_t system_tasks_stop_all(void)
 {
     ESP_LOGI(TAG, "Stopping all tasks...");
@@ -513,7 +614,6 @@ esp_err_t system_tasks_stop_all(void)
     if (task_handles.data_logger_task) vTaskDelete(task_handles.data_logger_task);
     if (task_handles.scheduler_task) vTaskDelete(task_handles.scheduler_task);
     if (task_handles.ph_ec_task) vTaskDelete(task_handles.ph_ec_task);
-    // encoder_task управляется в lvgl_main.c
 
     memset(&task_handles, 0, sizeof(task_handles));
 
@@ -567,4 +667,3 @@ esp_err_t system_tasks_get_stats(char *buffer, size_t size)
 
     return ESP_OK;
 }
-
