@@ -49,8 +49,15 @@ esp_err_t ph_ec_controller_init(void);
  * @param config Конфигурация
  * @return ESP_OK при успехе
  */
-esp_err_t ph_ec_controller_set_pump_config(pump_index_t pump_idx, 
+esp_err_t ph_ec_controller_set_pump_config(pump_index_t pump_idx,
                                            const pump_config_t *config);
+
+/**
+ * @brief Применение системной конфигурации контроллера
+ * @param config Конфигурация системы
+ * @return ESP_OK при успехе
+ */
+esp_err_t ph_ec_controller_apply_config(const system_config_t *config);
 
 /**
  * @brief Установка параметров контроля pH

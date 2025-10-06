@@ -25,5 +25,6 @@ idf_component_register(
         notification_system
         data_logger
         task_scheduler
+        system_interfaces
         ph_ec_controller
 )

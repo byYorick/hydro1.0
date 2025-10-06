@@ -15,6 +15,7 @@ idf_component_register(
         task_scheduler
         ph_ec_controller
         config_manager
+        system_interfaces
         lvgl_main
         encoder
 )

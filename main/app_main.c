@@ -62,6 +62,7 @@
 #include "data_logger.h"
 #include "task_scheduler.h"
 #include "ph_ec_controller.h"
+#include "system_interfaces.h"
 
 // Драйверы оборудования
 #include "lcd_ili9341.h"
@@ -112,6 +113,9 @@ static bool system_initialized = false;
 /// Дескрипторы задач (управляются модулем system_tasks)
 static system_task_handles_t task_handles = {0};
 
+/// Кэш системной конфигурации
+static system_config_t g_system_config = {0};
+
 /*******************************************************************************
  * ПРОТОТИПЫ ФУНКЦИЙ
  ******************************************************************************/
@@ -128,6 +132,7 @@ static void notification_callback(const notification_t *notification);
 static void task_event_callback(uint32_t task_id, task_status_t status);
 static void pump_event_callback(pump_index_t pump, bool started);
 static void correction_event_callback(const char *type, float current, float target);
+static void log_callback(const data_logger_entry_t *entry);
 
 // Вспомогательные функции
 static void print_system_info(void);
@@ -474,7 +479,22 @@ static esp_err_t init_system_components(void)
         ESP_LOGE(TAG, "Failed to initialize config manager: %s", esp_err_to_name(ret));
         return ret;
     }
-    ESP_LOGI(TAG, "  ✓ Config Manager initialized");
+
+    ret = config_load(&g_system_config);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load system configuration: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  ✓ Config Manager initialized (auto mode: %s)",
+             g_system_config.auto_control_enabled ? "ON" : "OFF");
+
+    // Interfaces: базовые адаптеры датчиков и исполнительных устройств
+    ret = system_interfaces_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize system interfaces: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  ✓ System interfaces initialized");
     
     // Notification System: Система уведомлений
     ret = notification_system_init(100); // Максимум 100 уведомлений
@@ -485,15 +505,19 @@ static esp_err_t init_system_components(void)
     notification_set_callback(notification_callback);
     ESP_LOGI(TAG, "  ✓ Notification System initialized");
     
-    // Data Logger: Логирование данных (временно отключено для экономии памяти)
-    // ret = data_logger_init(MAX_LOG_ENTRIES);
-    // if (ret != ESP_OK) {
-    //     ESP_LOGE(TAG, "Failed to initialize data logger: %s", esp_err_to_name(ret));
-    //     return ret;
-    // }
-    // data_logger_set_callback(log_callback);
-    // data_logger_set_auto_cleanup(true, LOG_AUTO_CLEANUP_DAYS);
-    ESP_LOGW(TAG, "  ! Data Logger disabled (insufficient memory)");
+    // Data Logger: Логирование данных
+    ret = data_logger_init(MAX_LOG_ENTRIES);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize data logger: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    data_logger_set_callback(log_callback);
+    data_logger_set_auto_cleanup(true, LOG_AUTO_CLEANUP_DAYS);
+    ret = data_logger_load_from_nvs();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "  ! Failed to restore logs from NVS: %s", esp_err_to_name(ret));
+    }
+    ESP_LOGI(TAG, "  ✓ Data Logger initialized (capacity: %d)", MAX_LOG_ENTRIES);
     
     // Task Scheduler: Планировщик задач
     ret = task_scheduler_init();
@@ -512,8 +536,12 @@ static esp_err_t init_system_components(void)
     }
     ph_ec_controller_set_pump_callback(pump_event_callback);
     ph_ec_controller_set_correction_callback(correction_event_callback);
+    ret = ph_ec_controller_apply_config(&g_system_config);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "  ! Failed to apply controller config: %s", esp_err_to_name(ret));
+    }
     ESP_LOGI(TAG, "  ✓ pH/EC Controller initialized");
-    
+
     return ESP_OK;
 }
 
@@ -529,10 +557,22 @@ static void notification_callback(const notification_t *notification)
     if (notification == NULL) {
         return;
     }
-    
+
     ESP_LOGI(TAG, "Notification [%s]: %s",
              notification_type_to_string(notification->type),
              notification->message);
+}
+
+static void log_callback(const data_logger_entry_t *entry)
+{
+    if (entry == NULL) {
+        return;
+    }
+
+    ESP_LOGD(TAG, "Log[%lu] %s: %s",
+             (unsigned long)entry->id,
+             data_logger_type_to_string(entry->type),
+             entry->message);
 }
 
 /**
