@@ -32,12 +32,12 @@ static bool default_read_temperature_humidity(float *temperature, float *humidit
 
 static esp_err_t default_read_ph(float *value)
 {
-    return trema_ph_read(value);
+    return trema_ph_read(value) ? ESP_OK : ESP_FAIL;
 }
 
 static esp_err_t default_read_ec(float *value)
 {
-    return trema_ec_read(value);
+    return trema_ec_read(value) ? ESP_OK : ESP_FAIL;
 }
 
 static bool default_read_lux(float *lux_value)

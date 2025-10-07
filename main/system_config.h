@@ -53,8 +53,8 @@ extern "C" {
 // I2C адреса устройств
 #define I2C_ADDR_SHT3X          0x44        // Датчик температуры/влажности
 #define I2C_ADDR_CCS811         0x5A        // Датчик CO2/VOC
-#define I2C_ADDR_TREMA_PH       0x48        // Датчик pH
-#define I2C_ADDR_TREMA_EC       0x08        // Датчик EC (электропроводность)
+#define I2C_ADDR_TREMA_PH       0x0A        // Датчик pH (iarduino pH Flash-I2C, Model ID: 0x1A)
+#define I2C_ADDR_TREMA_EC       0x08        // Датчик EC (iarduino TDS/EC Flash-I2C, Model ID: 0x19)
 #define I2C_ADDR_TREMA_LUX      0x12        // Датчик освещенности
 
 /*******************************************************************************

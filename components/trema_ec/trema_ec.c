@@ -19,35 +19,30 @@ static bool sensor_initialized = false;
 
 bool trema_ec_init(void)
 {
-    ESP_LOGI(TAG, "Initializing EC sensor at address 0x%02X...", TREMA_EC_ADDR);
-    
     // Try to communicate with the sensor
     // Read the model register to verify sensor presence
     data[0] = 0x04; // REG_MODEL
     if (i2c_bus_write(TREMA_EC_ADDR, data, 1) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to write to EC sensor (addr=0x%02X, reg=0x04)", TREMA_EC_ADDR);
+        ESP_LOGW(TAG, "Failed to write to EC sensor");
         return false;
     }
     
     vTaskDelay(pdMS_TO_TICKS(10));
     
     if (i2c_bus_read(TREMA_EC_ADDR, data, 1) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to read from EC sensor (addr=0x%02X)", TREMA_EC_ADDR);
+        ESP_LOGW(TAG, "Failed to read from EC sensor");
         return false;
     }
-    
-    ESP_LOGI(TAG, "EC sensor model ID read: 0x%02X (expected 0x19)", data[0]);
     
     // Check if we got a valid response
     // For iarduino TDS sensor, model ID should be 0x19
     if (data[0] != 0x19) {
-        ESP_LOGW(TAG, "Invalid EC sensor model ID: 0x%02X (expected 0x19)", data[0]);
-        ESP_LOGI(TAG, "Sensor may not be connected or has different model ID");
+        ESP_LOGW(TAG, "Invalid EC sensor model ID: 0x%02X", data[0]);
         return false;
     }
     
     sensor_initialized = true;
-    ESP_LOGI(TAG, "✓ EC sensor initialized successfully (model 0x19)");
+    ESP_LOGI(TAG, "EC sensor initialized successfully");
     return true;
 }
 
@@ -65,20 +60,20 @@ bool trema_ec_read(float *ec)
     }
     
     // Request EC measurement
-    data[0] = REG_TDS_EC; // Register address for EC measurement (0x22)
+    data[0] = REG_TDS_EC; // Register address for EC measurement
     if (i2c_bus_write(TREMA_EC_ADDR, data, 1) != ESP_OK) {
-        ESP_LOGW(TAG, "EC sensor write failed (addr=0x%02X, reg=0x%02X), using stub", TREMA_EC_ADDR, REG_TDS_EC);
+        ESP_LOGD(TAG, "EC sensor read failed, using stub values");
         // Use stub values when sensor communication fails
         *ec = stub_ec;
         use_stub_values = true;
         return true; // Return true to indicate success with stub values
     }
     
-    vTaskDelay(pdMS_TO_TICKS(50)); // Увеличена задержка для стабильности чтения
+    vTaskDelay(pdMS_TO_TICKS(20));
     
     // Read the EC value (2 bytes)
     if (i2c_bus_read(TREMA_EC_ADDR, data, 2) != ESP_OK) {
-        ESP_LOGW(TAG, "EC sensor read failed, using stub values");
+        ESP_LOGD(TAG, "EC sensor read failed, using stub values");
         // Use stub values when sensor communication fails
         *ec = stub_ec;
         use_stub_values = true;
@@ -89,16 +84,11 @@ bool trema_ec_read(float *ec)
     // EC value is stored as integer in thousandths (multiply by 0.001)
     // The sensor returns value in mS/cm (milliSiemens per centimeter)
     uint16_t ec_raw = ((uint16_t)data[1] << 8) | data[0];
-    
-    ESP_LOGI(TAG, "EC raw bytes: [0]=0x%02X [1]=0x%02X, raw_value=%u", data[0], data[1], ec_raw);
-    
     *ec = (float)ec_raw * 0.001f;
     
-    ESP_LOGI(TAG, "EC converted: %.3f mS/cm", *ec);
-    
-    // Validate EC range (по спецификации: 0–20,000 мСм/см = 0-20.0 mS/cm)
-    if (*ec < 0.0f || *ec > 20.0f) {
-        ESP_LOGW(TAG, "Invalid EC value: %.3f mS/cm (raw=%u), using stub value", *ec, ec_raw);
+    // Validate EC range (typical range for hydroponics is 0.1 - 5.0 mS/cm)
+    if (*ec < 0.0f || *ec > 10.0f) {
+        ESP_LOGW(TAG, "Invalid EC value: %.3f mS/cm, using stub value", *ec);
         *ec = stub_ec;
         use_stub_values = true;
     } else {
