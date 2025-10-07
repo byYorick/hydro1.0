@@ -18,7 +18,8 @@
 #include "ph_ec_controller.h"
 #include "config_manager.h"
 #include "system_interfaces.h"
-
+#include "error_handler.h"
+#include "trema_ec.h"
 
 #include "lvgl_main.h"
 #include "encoder.h"
@@ -319,7 +320,17 @@ static void sensor_task(void *pvParameters)
                 xSemaphoreGive(task_context.sensor_data_mutex);
             }
 
-            xQueueSend(task_context.sensor_data_queue, &sensor_data, 0);
+            // Отправляем данные в очередь, удаляя старые при переполнении
+            if (xQueueSend(task_context.sensor_data_queue, &sensor_data, 0) != pdTRUE) {
+                // Очередь полная - удаляем самое старое значение
+                sensor_data_t oldest;
+                if (xQueueReceive(task_context.sensor_data_queue, &oldest, 0) == pdTRUE) {
+                    // Пытаемся добавить новое значение
+                    xQueueSend(task_context.sensor_data_queue, &sensor_data, 0);
+                    ESP_LOGW(TAG, "Sensor queue full, replaced oldest data");
+                }
+            }
+            
             ph_ec_controller_update_values(sensor_data.ph, sensor_data.ec);
 
             data_logger_log_sensor_data(sensor_data.ph, sensor_data.ec,
@@ -574,6 +585,12 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
         ESP_LOGW(TAG, "pH read failed, using default %.2f", PH_TARGET_DEFAULT);
     }
 
+    // Устанавливаем температуру для компенсации EC измерений (критично для точности!)
+    if (data->valid[SENSOR_INDEX_TEMPERATURE]) {
+        trema_ec_set_temperature(data->temperature);
+        ESP_LOGD(TAG, "Temperature compensation set for EC: %.1f°C", data->temperature);
+    }
+    
     float ec = EC_TARGET_DEFAULT;
     if (sensor_if->read_ec != NULL && sensor_if->read_ec(&ec) == ESP_OK) {
         data->ec = ec;

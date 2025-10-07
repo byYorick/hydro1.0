@@ -259,6 +259,11 @@ static QueueHandle_t sensor_data_queue = NULL;
 static int current_focus_index = -1;
 static bool display_task_started = false;
 
+// Управление видимостью фокуса
+static lv_timer_t *focus_hide_timer = NULL;
+static bool focus_visible = true;
+#define FOCUS_HIDE_TIMEOUT_MS 30000  // 30 секунд
+
 static sensor_data_t last_sensor_data = {0};
 static lv_coord_t sensor_history[SENSOR_COUNT][HISTORY_POINTS];
 static uint16_t sensor_history_pos[SENSOR_COUNT];
@@ -285,6 +290,10 @@ static void sensor_card_event_cb(lv_event_t *e);
 static void create_detail_screen(uint8_t sensor_index);
 static void create_settings_screen(uint8_t sensor_index);
 static void show_screen(screen_type_t screen);
+static void focus_hide_timer_cb(lv_timer_t *timer);
+static void show_focus(void);
+static void hide_focus(void);
+static void reset_focus_timer(void);
 static void back_button_event_cb(lv_event_t *e);
 static void settings_button_event_cb(lv_event_t *e);
 static void encoder_task(void *pvParameters);
@@ -493,6 +502,18 @@ static void init_styles(void)
     lv_style_set_text_color(&style_detail_info, COLOR_TEXT_MUTED);
     lv_style_set_text_font(&style_detail_info, &lv_font_montserrat_12);
     lv_style_set_text_opa(&style_detail_info, LV_OPA_COVER);
+
+    // =============================================
+    // СТИЛЬ ФОКУСА - РАМКА ВОКРУГ ЭЛЕМЕНТА
+    // =============================================
+    lv_style_init(&style_focus);
+    lv_style_set_border_color(&style_focus, COLOR_ACCENT);       // Бирюзовая рамка
+    lv_style_set_border_width(&style_focus, 3);                  // Толщина рамки 3px
+    lv_style_set_border_opa(&style_focus, LV_OPA_COVER);         // Полная непрозрачность
+    lv_style_set_outline_color(&style_focus, COLOR_ACCENT);      // Внешняя обводка
+    lv_style_set_outline_width(&style_focus, 2);                 // Толщина обводки 2px
+    lv_style_set_outline_pad(&style_focus, 2);                   // Отступ обводки 2px
+    lv_style_set_outline_opa(&style_focus, LV_OPA_50);           // Полупрозрачная обводка
 
     styles_initialized = true;
     ESP_LOGI(TAG, "Стили интерфейса инициализированы с улучшенной цветовой схемой для дисплея 240x320");
@@ -880,6 +901,12 @@ static void create_main_ui(void)
         xTaskCreate(display_update_task, "display_update", 4096, NULL, 6, NULL);
         display_task_started = true;
     }
+    
+    // Инициализируем таймер автоскрытия фокуса
+    if (focus_hide_timer == NULL) {
+        reset_focus_timer();
+        ESP_LOGI(TAG, "Focus hide timer initialized");
+    }
 }
 
 static void create_detail_ui(int index)
@@ -1052,15 +1079,21 @@ void lvgl_set_focus(int index)
         return;
     }
     
+    // Убираем фокус с предыдущего элемента (только если фокус видим)
     if (current_focus_index >= 0 && current_focus_index < SENSOR_COUNT) {
-        if (sensor_containers[current_focus_index]) {
+        if (sensor_containers[current_focus_index] && focus_visible) {
             lv_obj_remove_style(sensor_containers[current_focus_index], &style_focus, LV_PART_MAIN);
         }
     }
 
     current_focus_index = index;
+    selected_card_index = index;  // Синхронизируем индексы
+    
+    // Устанавливаем фокус на новом элементе (только если фокус видим)
     if (sensor_containers[index]) {
-        lv_obj_add_style(sensor_containers[index], &style_focus, LV_PART_MAIN);
+        if (focus_visible) {
+            lv_obj_add_style(sensor_containers[index], &style_focus, LV_PART_MAIN);
+        }
         lv_obj_scroll_to_view_recursive(sensor_containers[index], LV_ANIM_OFF);
         if (encoder_group) {
             lv_group_focus_obj(sensor_containers[index]);
@@ -1088,6 +1121,83 @@ void lvgl_clear_focus_group(void)
         lv_group_remove_all_objs(encoder_group);
     }
     current_focus_index = -1;
+}
+
+/* =============================
+ *  FOCUS VISIBILITY CONTROL
+ * ============================= */
+
+/**
+ * @brief Callback таймера для автоскрытия фокуса
+ */
+static void focus_hide_timer_cb(lv_timer_t *timer)
+{
+    LV_UNUSED(timer);
+    hide_focus();
+    ESP_LOGI(TAG, "Focus hidden after inactivity timeout");
+}
+
+/**
+ * @brief Показать фокус на текущем элементе
+ */
+static void show_focus(void)
+{
+    if (focus_visible) {
+        return;  // Фокус уже видим
+    }
+    
+    focus_visible = true;
+    
+    // Применяем стиль фокуса к текущему элементу
+    if (current_focus_index >= 0 && current_focus_index < SENSOR_COUNT) {
+        if (sensor_containers[current_focus_index]) {
+            lv_obj_add_style(sensor_containers[current_focus_index], &style_focus, LV_PART_MAIN);
+        }
+    }
+    
+    ESP_LOGD(TAG, "Focus shown");
+}
+
+/**
+ * @brief Скрыть фокус
+ */
+static void hide_focus(void)
+{
+    if (!focus_visible) {
+        return;  // Фокус уже скрыт
+    }
+    
+    focus_visible = false;
+    
+    // Убираем стиль фокуса с текущего элемента
+    if (current_focus_index >= 0 && current_focus_index < SENSOR_COUNT) {
+        if (sensor_containers[current_focus_index]) {
+            lv_obj_remove_style(sensor_containers[current_focus_index], &style_focus, LV_PART_MAIN);
+        }
+    }
+    
+    ESP_LOGD(TAG, "Focus hidden");
+}
+
+/**
+ * @brief Сбросить таймер автоскрытия фокуса
+ * Вызывается при любой активности энкодера
+ */
+static void reset_focus_timer(void)
+{
+    // Показываем фокус если он был скрыт
+    if (!focus_visible) {
+        show_focus();
+    }
+    
+    // Перезапускаем таймер
+    if (focus_hide_timer == NULL) {
+        focus_hide_timer = lv_timer_create(focus_hide_timer_cb, FOCUS_HIDE_TIMEOUT_MS, NULL);
+        ESP_LOGI(TAG, "Focus hide timer created (%d ms)", FOCUS_HIDE_TIMEOUT_MS);
+    } else {
+        lv_timer_reset(focus_hide_timer);
+        ESP_LOGD(TAG, "Focus hide timer reset");
+    }
 }
 
 static void set_encoder_group(lv_group_t *group)
@@ -1215,12 +1325,20 @@ static void display_update_task(void *pvParameters)
     sensor_data_t sensor_data;
     uint32_t receive_count = 0;
     while (1) {
-        if (xQueueReceive(sensor_data_queue, &sensor_data, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        // Обрабатываем все данные из очереди за один цикл
+        bool data_processed = false;
+        while (xQueueReceive(sensor_data_queue, &sensor_data, 0) == pdTRUE) {
             receive_count++;
-            ESP_LOGI(TAG, "Received data from queue (count: %lu)", (unsigned long)receive_count);
+            data_processed = true;
+            // Берем только последнее значение из очереди, игнорируя промежуточные
+        }
+        
+        if (data_processed) {
+            ESP_LOGI(TAG, "Processing latest data from queue (count: %lu)", (unsigned long)receive_count);
             
             if (!lvgl_lock(100)) {
                 ESP_LOGW(TAG, "Failed to acquire LVGL lock, skipping update");
+                vTaskDelay(pdMS_TO_TICKS(100));
                 continue;
             }
             
@@ -1230,10 +1348,10 @@ static void display_update_task(void *pvParameters)
                 ESP_LOGW(TAG, "LVGL not initialized yet!");
             }
             lvgl_unlock();
-        } else {
-            ESP_LOGD(TAG, "No data in queue (timeout)");
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
+        
+        // Обновляем дисплей каждые 200мс
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
 }
 
@@ -1709,6 +1827,9 @@ static void handle_encoder_event(encoder_event_t *event)
         return;
     }
     
+    // Сбрасываем таймер скрытия фокуса при любой активности энкодера
+    reset_focus_timer();
+    
     switch (event->type) {
         case ENCODER_EVENT_ROTATE_CW:
             ESP_LOGI(TAG, "Encoder CW rotation");
@@ -1777,29 +1898,9 @@ static void update_card_selection(void)
         return;
     }
     
-    // Сбрасываем выделение всех карточек
-    for (int i = 0; i < SENSOR_COUNT; i++) {
-        if (sensor_cards[i]) {
-            lv_obj_clear_state(sensor_cards[i], LV_STATE_FOCUSED);
-            lv_obj_set_style_bg_color(sensor_cards[i], COLOR_CARD, 0);
-            lv_obj_set_style_border_color(sensor_cards[i], COLOR_SHADOW, 0);
-            lv_obj_set_style_border_width(sensor_cards[i], 1, 0);
-            ESP_LOGI(TAG, "  Card %d: focus cleared", i);
-        } else {
-            ESP_LOGW(TAG, "  Card %d: NULL pointer!", i);
-        }
-    }
-    
-    // Выделяем выбранную карточку
-    if (sensor_cards[selected_card_index]) {
-        lv_obj_add_state(sensor_cards[selected_card_index], LV_STATE_FOCUSED);
-        lv_obj_set_style_bg_color(sensor_cards[selected_card_index], COLOR_ACCENT_SOFT, 0);
-        lv_obj_set_style_border_color(sensor_cards[selected_card_index], COLOR_ACCENT, 0);
-        lv_obj_set_style_border_width(sensor_cards[selected_card_index], 2, 0);
-        ESP_LOGI(TAG, "✅ Card %d: FOCUSED and highlighted", selected_card_index);
-    } else {
-        ESP_LOGE(TAG, "❌ Selected card %d is NULL!", selected_card_index);
-    }
+    // Используем систему фокуса с рамкой вместо изменения цвета фона
+    lvgl_set_focus(selected_card_index);
+    ESP_LOGI(TAG, "✅ Focus set to card %d using border style", selected_card_index);
 }
 
 // Обновление выделения пунктов настроек
@@ -1951,260 +2052,261 @@ static void encoder_event_cb(lv_event_t *e)
             last_encoder_diff = 0; // Сбрасываем после обработки
         }
     }
+}
 
-    // =============================================
-    // НОВЫЕ ЭКРАНЫ ДЛЯ МОБИЛЬНОГО ПРИЛОЖЕНИЯ
-    // =============================================
+// =============================================
+// НОВЫЕ ЭКРАНЫ ДЛЯ МОБИЛЬНОГО ПРИЛОЖЕНИЯ
+// =============================================
 
-    /**
-     * @brief Создание экрана подключения к мобильному приложению
-     */
-    void create_mobile_connect_screen(void)
-    {
-        static lv_obj_t *mobile_screen = NULL;
+/**
+ * @brief Создание экрана подключения к мобильному приложению
+ */
+static void create_mobile_connect_screen(void)
+{
+    static lv_obj_t *mobile_screen = NULL;
 
-        if (mobile_screen != NULL) return;
+    if (mobile_screen != NULL) return;
 
-        mobile_screen = lv_obj_create(NULL);
-        lv_obj_remove_style_all(mobile_screen);
-        lv_obj_add_style(mobile_screen, &style_bg, 0);
+    mobile_screen = lv_obj_create(NULL);
+    lv_obj_remove_style_all(mobile_screen);
+    lv_obj_add_style(mobile_screen, &style_bg, 0);
 
-        // Статус-бар
-        create_status_bar(mobile_screen, "📱 Мобильное приложение");
+    // Статус-бар
+    create_status_bar(mobile_screen, "📱 Мобильное приложение");
 
-        // Основной контент
-        lv_obj_t *content = lv_obj_create(mobile_screen);
-        lv_obj_remove_style_all(content);
-        lv_obj_set_size(content, 240 - 16, 320 - 80);
-        lv_obj_set_pos(content, 8, 48);
-        lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
-        lv_obj_set_style_pad_all(content, 16, 0);
+    // Основной контент
+    lv_obj_t *content = lv_obj_create(mobile_screen);
+    lv_obj_remove_style_all(content);
+    lv_obj_set_size(content, 240 - 16, 320 - 80);
+    lv_obj_set_pos(content, 8, 48);
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(content, 16, 0);
 
-        // Заголовок
-        lv_obj_t *title = lv_label_create(content);
-        lv_obj_add_style(title, &style_detail_title, 0);
-        lv_label_set_text(title, "Подключение к мобильному приложению");
-        lv_obj_set_width(title, 240 - 32);
+    // Заголовок
+    lv_obj_t *title = lv_label_create(content);
+    lv_obj_add_style(title, &style_detail_title, 0);
+    lv_label_set_text(title, "Подключение к мобильному приложению");
+    lv_obj_set_width(title, 240 - 32);
 
-        // Статус подключения
-        lv_obj_t *status_label = lv_label_create(content);
-        lv_obj_add_style(status_label, &style_label, 0);
-        lv_label_set_text(status_label, "Статус: Поиск устройств...");
-        lv_obj_set_width(status_label, 240 - 32);
+    // Статус подключения
+    lv_obj_t *status_label = lv_label_create(content);
+    lv_obj_add_style(status_label, &style_label, 0);
+    lv_label_set_text(status_label, "Статус: Поиск устройств...");
+    lv_obj_set_width(status_label, 240 - 32);
 
-        // Инструкции
-        lv_obj_t *instructions = lv_label_create(content);
-        lv_obj_add_style(instructions, &style_detail_info, 0);
-        lv_label_set_text(instructions,
-            "1. Убедитесь, что Bluetooth включен\n"
-            "2. Откройте мобильное приложение\n"
-            "3. Выберите устройство HydroMonitor\n"
-            "4. Дождитесь подключения");
-        lv_obj_set_width(instructions, 240 - 32);
-        lv_label_set_long_mode(instructions, LV_LABEL_LONG_WRAP);
+    // Инструкции
+    lv_obj_t *instructions = lv_label_create(content);
+    lv_obj_add_style(instructions, &style_detail_info, 0);
+    lv_label_set_text(instructions,
+        "1. Убедитесь, что Bluetooth включен\n"
+        "2. Откройте мобильное приложение\n"
+        "3. Выберите устройство HydroMonitor\n"
+        "4. Дождитесь подключения");
+    lv_obj_set_width(instructions, 240 - 32);
+    lv_label_set_long_mode(instructions, LV_LABEL_LONG_WRAP);
 
-        // Кнопка назад
-        lv_obj_t *back_btn = lv_btn_create(content);
-        lv_obj_add_style(back_btn, &style_button_secondary, 0);
-        lv_obj_set_size(back_btn, 80, 35);
-        lv_obj_t *back_label = lv_label_create(back_btn);
-        lv_label_set_text(back_label, "Назад");
-        lv_obj_center(back_label);
+    // Кнопка назад
+    lv_obj_t *back_btn = lv_btn_create(content);
+    lv_obj_add_style(back_btn, &style_button_secondary, 0);
+    lv_obj_set_size(back_btn, 80, 35);
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_label_set_text(back_label, "Назад");
+    lv_obj_center(back_label);
 
-        ESP_LOGI(TAG, "Экран мобильного приложения создан");
-    }
+    ESP_LOGI(TAG, "Экран мобильного приложения создан");
+}
 
-    /**
-     * @brief Создание экрана сетевых настроек
-     */
-    void create_network_settings_screen(void)
-    {
-        static lv_obj_t *network_screen = NULL;
+/**
+ * @brief Создание экрана сетевых настроек
+ */
+static void create_network_settings_screen(void)
+{
+    static lv_obj_t *network_screen = NULL;
 
-        if (network_screen != NULL) return;
+    if (network_screen != NULL) return;
 
-        network_screen = lv_obj_create(NULL);
-        lv_obj_remove_style_all(network_screen);
-        lv_obj_add_style(network_screen, &style_bg, 0);
+    network_screen = lv_obj_create(NULL);
+    lv_obj_remove_style_all(network_screen);
+    lv_obj_add_style(network_screen, &style_bg, 0);
 
-        // Статус-бар
-        create_status_bar(network_screen, "🌐 Сетевые настройки");
+    // Статус-бар
+    create_status_bar(network_screen, "🌐 Сетевые настройки");
 
-        // Основной контент
-        lv_obj_t *content = lv_obj_create(network_screen);
-        lv_obj_remove_style_all(content);
-        lv_obj_set_size(content, 240 - 16, 320 - 80);
-        lv_obj_set_pos(content, 8, 48);
-        lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-        lv_obj_set_style_pad_all(content, 16, 0);
+    // Основной контент
+    lv_obj_t *content = lv_obj_create(network_screen);
+    lv_obj_remove_style_all(content);
+    lv_obj_set_size(content, 240 - 16, 320 - 80);
+    lv_obj_set_pos(content, 8, 48);
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(content, 16, 0);
 
-        // Заголовок
-        lv_obj_t *title = lv_label_create(content);
-        lv_obj_add_style(title, &style_detail_title, 0);
-        lv_label_set_text(title, "Настройки сети");
-        lv_obj_set_width(title, 240 - 32);
+    // Заголовок
+    lv_obj_t *title = lv_label_create(content);
+    lv_obj_add_style(title, &style_detail_title, 0);
+    lv_label_set_text(title, "Настройки сети");
+    lv_obj_set_width(title, 240 - 32);
 
-        // WiFi статус
-        lv_obj_t *wifi_status = lv_label_create(content);
-        lv_obj_add_style(wifi_status, &style_label, 0);
-        lv_label_set_text(wifi_status, "WiFi: Подключено к HydroMonitor-AP");
-        lv_obj_set_width(wifi_status, 240 - 32);
+    // WiFi статус
+    lv_obj_t *wifi_status = lv_label_create(content);
+    lv_obj_add_style(wifi_status, &style_label, 0);
+    lv_label_set_text(wifi_status, "WiFi: Подключено к HydroMonitor-AP");
+    lv_obj_set_width(wifi_status, 240 - 32);
 
-        // IP адрес
-        lv_obj_t *ip_label = lv_label_create(content);
-        lv_obj_add_style(ip_label, &style_detail_info, 0);
-        lv_label_set_text(ip_label, "IP: 192.168.4.1");
-        lv_obj_set_width(ip_label, 240 - 32);
+    // IP адрес
+    lv_obj_t *ip_label = lv_label_create(content);
+    lv_obj_add_style(ip_label, &style_detail_info, 0);
+    lv_label_set_text(ip_label, "IP: 192.168.4.1");
+    lv_obj_set_width(ip_label, 240 - 32);
 
-        // Bluetooth статус
-        lv_obj_t *bt_status = lv_label_create(content);
-        lv_obj_add_style(bt_status, &style_label, 0);
-        lv_label_set_text(bt_status, "Bluetooth: Активен");
-        lv_obj_set_width(bt_status, 240 - 32);
+    // Bluetooth статус
+    lv_obj_t *bt_status = lv_label_create(content);
+    lv_obj_add_style(bt_status, &style_label, 0);
+    lv_label_set_text(bt_status, "Bluetooth: Активен");
+    lv_obj_set_width(bt_status, 240 - 32);
 
-        // Кнопка назад
-        lv_obj_t *back_btn = lv_btn_create(content);
-        lv_obj_add_style(back_btn, &style_button_secondary, 0);
-        lv_obj_set_size(back_btn, 80, 35);
-        lv_obj_t *back_label = lv_label_create(back_btn);
-        lv_label_set_text(back_label, "Назад");
-        lv_obj_center(back_label);
+    // Кнопка назад
+    lv_obj_t *back_btn = lv_btn_create(content);
+    lv_obj_add_style(back_btn, &style_button_secondary, 0);
+    lv_obj_set_size(back_btn, 80, 35);
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_label_set_text(back_label, "Назад");
+    lv_obj_center(back_label);
 
-        ESP_LOGI(TAG, "Экран сетевых настроек создан");
-    }
+    ESP_LOGI(TAG, "Экран сетевых настроек создан");
+}
 
-    /**
-     * @brief Создание экрана статуса системы
-     */
-    void create_system_status_screen(void)
-    {
-        static lv_obj_t *status_screen = NULL;
+/**
+ * @brief Создание экрана статуса системы
+ */
+static void create_system_status_screen(void)
+{
+    static lv_obj_t *status_screen = NULL;
 
-        if (status_screen != NULL) return;
+    if (status_screen != NULL) return;
 
-        status_screen = lv_obj_create(NULL);
-        lv_obj_remove_style_all(status_screen);
-        lv_obj_add_style(status_screen, &style_bg, 0);
+    status_screen = lv_obj_create(NULL);
+    lv_obj_remove_style_all(status_screen);
+    lv_obj_add_style(status_screen, &style_bg, 0);
 
-        // Статус-бар
-        create_status_bar(status_screen, "📊 Статус системы");
+    // Статус-бар
+    create_status_bar(status_screen, "📊 Статус системы");
 
-        // Основной контент
-        lv_obj_t *content = lv_obj_create(status_screen);
-        lv_obj_remove_style_all(content);
-        lv_obj_set_size(content, 240 - 16, 320 - 80);
-        lv_obj_set_pos(content, 8, 48);
-        lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-        lv_obj_set_style_pad_all(content, 16, 0);
+    // Основной контент
+    lv_obj_t *content = lv_obj_create(status_screen);
+    lv_obj_remove_style_all(content);
+    lv_obj_set_size(content, 240 - 16, 320 - 80);
+    lv_obj_set_pos(content, 8, 48);
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(content, 16, 0);
 
-        // Заголовок
-        lv_obj_t *title = lv_label_create(content);
-        lv_obj_add_style(title, &style_detail_title, 0);
-        lv_label_set_text(title, "Системная информация");
-        lv_obj_set_width(title, 240 - 32);
+    // Заголовок
+    lv_obj_t *title = lv_label_create(content);
+    lv_obj_add_style(title, &style_detail_title, 0);
+    lv_label_set_text(title, "Системная информация");
+    lv_obj_set_width(title, 240 - 32);
 
-        // Информация о системе
-        lv_obj_t *sys_info = lv_label_create(content);
-        lv_obj_add_style(sys_info, &style_label, 0);
-        lv_label_set_text(sys_info,
-            "• ESP32-S3 Dual Core\n"
-            "• RAM: 512KB + 8MB PSRAM\n"
-            "• Flash: 4MB\n"
-            "• Дисплей: ILI9341 240x320\n"
-            "• FreeRTOS + LVGL");
-        lv_obj_set_width(sys_info, 240 - 32);
-        lv_label_set_long_mode(sys_info, LV_LABEL_LONG_WRAP);
+    // Информация о системе
+    lv_obj_t *sys_info = lv_label_create(content);
+    lv_obj_add_style(sys_info, &style_label, 0);
+    lv_label_set_text(sys_info,
+        "• ESP32-S3 Dual Core\n"
+        "• RAM: 512KB + 8MB PSRAM\n"
+        "• Flash: 4MB\n"
+        "• Дисплей: ILI9341 240x320\n"
+        "• FreeRTOS + LVGL");
+    lv_obj_set_width(sys_info, 240 - 32);
+    lv_label_set_long_mode(sys_info, LV_LABEL_LONG_WRAP);
 
-        // Статистика памяти
-        lv_obj_t *memory_info = lv_label_create(content);
-        lv_obj_add_style(memory_info, &style_detail_info, 0);
-        lv_label_set_text(memory_info, "Память: 85% свободно");
-        lv_obj_set_width(memory_info, 240 - 32);
+    // Статистика памяти
+    lv_obj_t *memory_info = lv_label_create(content);
+    lv_obj_add_style(memory_info, &style_detail_info, 0);
+    lv_label_set_text(memory_info, "Память: 85% свободно");
+    lv_obj_set_width(memory_info, 240 - 32);
 
-        // Время работы
-        lv_obj_t *uptime_info = lv_label_create(content);
-        lv_obj_add_style(uptime_info, &style_detail_info, 0);
-        lv_label_set_text(uptime_info, "Время работы: 02:34:12");
-        lv_obj_set_width(uptime_info, 240 - 32);
+    // Время работы
+    lv_obj_t *uptime_info = lv_label_create(content);
+    lv_obj_add_style(uptime_info, &style_detail_info, 0);
+    lv_label_set_text(uptime_info, "Время работы: 02:34:12");
+    lv_obj_set_width(uptime_info, 240 - 32);
 
-        // Кнопка назад
-        lv_obj_t *back_btn = lv_btn_create(content);
-        lv_obj_add_style(back_btn, &style_button_secondary, 0);
-        lv_obj_set_size(back_btn, 80, 35);
-        lv_obj_t *back_label = lv_label_create(back_btn);
-        lv_label_set_text(back_label, "Назад");
-        lv_obj_center(back_label);
+    // Кнопка назад
+    lv_obj_t *back_btn = lv_btn_create(content);
+    lv_obj_add_style(back_btn, &style_button_secondary, 0);
+    lv_obj_set_size(back_btn, 80, 35);
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_label_set_text(back_label, "Назад");
+    lv_obj_center(back_label);
 
-        ESP_LOGI(TAG, "Экран статуса системы создан");
-    }
+    ESP_LOGI(TAG, "Экран статуса системы создан");
+}
 
-    /**
-     * @brief Создание экрана OTA обновлений
-     */
-    void create_ota_update_screen(void)
-    {
-        static lv_obj_t *ota_screen = NULL;
+/**
+ * @brief Создание экрана OTA обновлений
+ */
+static void create_ota_update_screen(void)
+{
+    static lv_obj_t *ota_screen = NULL;
 
-        if (ota_screen != NULL) return;
+    if (ota_screen != NULL) return;
 
-        ota_screen = lv_obj_create(NULL);
-        lv_obj_remove_style_all(ota_screen);
-        lv_obj_add_style(ota_screen, &style_bg, 0);
+    ota_screen = lv_obj_create(NULL);
+    lv_obj_remove_style_all(ota_screen);
+    lv_obj_add_style(ota_screen, &style_bg, 0);
 
-        // Статус-бар
-        create_status_bar(ota_screen, "⬆️ OTA обновления");
+    // Статус-бар
+    create_status_bar(ota_screen, "⬆️ OTA обновления");
 
-        // Основной контент
-        lv_obj_t *content = lv_obj_create(ota_screen);
-        lv_obj_remove_style_all(content);
-        lv_obj_set_size(content, 240 - 16, 320 - 80);
-        lv_obj_set_pos(content, 8, 48);
-        lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
-        lv_obj_set_style_pad_all(content, 16, 0);
+    // Основной контент
+    lv_obj_t *content = lv_obj_create(ota_screen);
+    lv_obj_remove_style_all(content);
+    lv_obj_set_size(content, 240 - 16, 320 - 80);
+    lv_obj_set_pos(content, 8, 48);
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(content, 16, 0);
 
-        // Заголовок
-        lv_obj_t *title = lv_label_create(content);
-        lv_obj_add_style(title, &style_detail_title, 0);
-        lv_label_set_text(title, "Проверка обновлений");
-        lv_obj_set_width(title, 240 - 32);
+    // Заголовок
+    lv_obj_t *title = lv_label_create(content);
+    lv_obj_add_style(title, &style_detail_title, 0);
+    lv_label_set_text(title, "Проверка обновлений");
+    lv_obj_set_width(title, 240 - 32);
 
-        // Текущая версия
-        lv_obj_t *version_info = lv_label_create(content);
-        lv_obj_add_style(version_info, &style_label, 0);
-        lv_label_set_text(version_info, "Текущая версия: v3.0.0");
-        lv_obj_set_width(version_info, 240 - 32);
+    // Текущая версия
+    lv_obj_t *version_info = lv_label_create(content);
+    lv_obj_add_style(version_info, &style_label, 0);
+    lv_label_set_text(version_info, "Текущая версия: v3.0.0");
+    lv_obj_set_width(version_info, 240 - 32);
 
-        // Статус проверки
-        lv_obj_t *check_status = lv_label_create(content);
-        lv_obj_add_style(check_status, &style_detail_info, 0);
-        lv_label_set_text(check_status, "Проверка обновлений...");
-        lv_obj_set_width(check_status, 240 - 32);
+    // Статус проверки
+    lv_obj_t *check_status = lv_label_create(content);
+    lv_obj_add_style(check_status, &style_detail_info, 0);
+    lv_label_set_text(check_status, "Проверка обновлений...");
+    lv_obj_set_width(check_status, 240 - 32);
 
-        // Прогресс-бар для обновления
-        lv_obj_t *progress_bar = lv_bar_create(content);
-        lv_obj_set_size(progress_bar, 200, 20);
-        lv_bar_set_range(progress_bar, 0, 100);
-        lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
-        lv_obj_center(progress_bar);
+    // Прогресс-бар для обновления
+    lv_obj_t *progress_bar = lv_bar_create(content);
+    lv_obj_set_size(progress_bar, 200, 20);
+    lv_bar_set_range(progress_bar, 0, 100);
+    lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
+    lv_obj_center(progress_bar);
 
-        // Кнопки управления
-        lv_obj_t *btn_container = lv_obj_create(content);
-        lv_obj_set_width(btn_container, 240 - 32);
-        lv_obj_set_flex_flow(btn_container, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(btn_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    // Кнопки управления
+    lv_obj_t *btn_container = lv_obj_create(content);
+    lv_obj_set_width(btn_container, 240 - 32);
+    lv_obj_set_flex_flow(btn_container, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(btn_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-        lv_obj_t *check_btn = lv_btn_create(btn_container);
-        lv_obj_add_style(check_btn, &style_button, 0);
-        lv_obj_set_size(check_btn, 80, 35);
-        lv_obj_t *check_label = lv_label_create(check_btn);
-        lv_label_set_text(check_label, "Проверить");
-        lv_obj_center(check_label);
+    lv_obj_t *check_btn = lv_btn_create(btn_container);
+    lv_obj_add_style(check_btn, &style_button, 0);
+    lv_obj_set_size(check_btn, 80, 35);
+    lv_obj_t *check_label = lv_label_create(check_btn);
+    lv_label_set_text(check_label, "Проверить");
+    lv_obj_center(check_label);
 
-        lv_obj_t *update_btn = lv_btn_create(btn_container);
+    lv_obj_t *update_btn = lv_btn_create(btn_container);
         lv_obj_add_style(update_btn, &style_button, 0);
         lv_obj_set_size(update_btn, 80, 35);
         lv_obj_t *update_label = lv_label_create(update_btn);
@@ -2219,105 +2321,5 @@ static void encoder_event_cb(lv_event_t *e)
         lv_label_set_text(back_label, "Назад");
         lv_obj_center(back_label);
 
-        ESP_LOGI(TAG, "Экран OTA обновлений создан");
-    }
-
-    /**
-     * @brief Улучшенная функция обновления статусных индикаторов
-     */
-    void update_card_selection(void)
-    {
-        ESP_LOGI(TAG, "🎯 update_card_selection called: selected=%d, current_screen=%d", selected_card_index, current_screen);
-
-        if (current_screen != SCREEN_MAIN) {
-            ESP_LOGW(TAG, "Not on main screen, skipping card selection update");
-            return;
-        }
-
-        // Сбрасываем выделение всех карточек
-        for (int i = 0; i < SENSOR_COUNT; i++) {
-            if (sensor_containers[i]) {
-                lv_obj_clear_state(sensor_containers[i], LV_STATE_FOCUSED);
-                lv_obj_set_style_bg_color(sensor_containers[i], COLOR_CARD, 0);
-                lv_obj_set_style_border_color(sensor_containers[i], COLOR_ACCENT_SOFT, 0);
-                lv_obj_set_style_border_width(sensor_containers[i], 1, 0);
-                lv_obj_set_style_shadow_width(sensor_containers[i], 4, 0);
-                ESP_LOGI(TAG, "  Card %d: focus cleared", i);
-            } else {
-                ESP_LOGW(TAG, "  Card %d: NULL pointer!", i);
-            }
-        }
-
-        // Выделяем выбранную карточку
-        if (sensor_containers[selected_card_index]) {
-            lv_obj_add_state(sensor_containers[selected_card_index], LV_STATE_FOCUSED);
-            lv_obj_set_style_bg_color(sensor_containers[selected_card_index], COLOR_ACCENT, 0);
-            lv_obj_set_style_bg_opa(sensor_containers[selected_card_index], LV_OPA_20, 0);
-            lv_obj_set_style_border_color(sensor_containers[selected_card_index], COLOR_ACCENT, 0);
-            lv_obj_set_style_border_width(sensor_containers[selected_card_index], 2, 0);
-            lv_obj_set_style_shadow_width(sensor_containers[selected_card_index], 8, 0);
-            lv_obj_set_style_shadow_color(sensor_containers[selected_card_index], COLOR_ACCENT, 0);
-            ESP_LOGI(TAG, "  Card %d: focus applied", selected_card_index);
-        }
-
-        // Обновляем фокус энкодера
-        if (encoder_group) {
-            lv_group_focus_obj(sensor_containers[selected_card_index]);
-        }
-    }
-
-    /**
-     * @brief Улучшенная функция обновления дисплея датчиков
-     */
-    void update_sensor_display(sensor_data_t *data)
-    {
-        if (!data) {
-            ESP_LOGW(TAG, "update_sensor_display: data is NULL");
-            return;
-        }
-
-        ESP_LOGV(TAG, "Обновление дисплея датчиков: pH=%.2f, EC=%.2f, T=%.1f°C",
-                 data->ph, data->ec, data->temperature);
-
-        // Обновляем значения на карточках
-        for (int i = 0; i < SENSOR_COUNT; i++) {
-            if (value_labels[i]) {
-                float value = get_sensor_value_by_index(data, i);
-                char buffer[16];
-                char format[8];
-
-                const sensor_meta_t *meta = &SENSOR_META[i];
-                snprintf(format, sizeof(format), "%%.%df", meta->decimals);
-                snprintf(buffer, sizeof(buffer), format, value);
-
-                lv_label_set_text(value_labels[i], buffer);
-
-                // Обновляем цвет текста в зависимости от значения
-                lv_color_t text_color = COLOR_ACCENT_SOFT;
-                if (threshold_defined(meta->danger_low) && value < meta->danger_low) {
-                    text_color = COLOR_DANGER;
-                } else if (threshold_defined(meta->danger_high) && value > meta->danger_high) {
-                    text_color = COLOR_DANGER;
-                } else if (threshold_defined(meta->warn_low) && value < meta->warn_low) {
-                    text_color = COLOR_WARNING;
-                } else if (threshold_defined(meta->warn_high) && value > meta->warn_high) {
-                    text_color = COLOR_WARNING;
-                }
-
-                lv_obj_set_style_text_color(value_labels[i], text_color, 0);
-
-                // Обновляем статусные индикаторы
-                if (status_labels[i]) {
-                    lv_label_set_text(status_labels[i], "Норма");
-                    lv_obj_set_style_text_color(status_labels[i], COLOR_TEXT_MUTED, 0);
-                }
-            }
-        }
-
-        // Сохраняем данные для истории
-        last_sensor_data = *data;
-        sensor_snapshot_valid = true;
-
-        ESP_LOGV(TAG, "Дисплей датчиков обновлен");
-    }
+    ESP_LOGI(TAG, "Экран OTA обновлений создан");
 }

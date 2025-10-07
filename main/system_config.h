@@ -54,7 +54,7 @@ extern "C" {
 #define I2C_ADDR_SHT3X          0x44        // Датчик температуры/влажности
 #define I2C_ADDR_CCS811         0x5A        // Датчик CO2/VOC
 #define I2C_ADDR_TREMA_PH       0x48        // Датчик pH
-#define I2C_ADDR_TREMA_EC       0x49        // Датчик EC (электропроводность)
+#define I2C_ADDR_TREMA_EC       0x08        // Датчик EC (электропроводность)
 #define I2C_ADDR_TREMA_LUX      0x12        // Датчик освещенности
 
 /*******************************************************************************
@@ -125,7 +125,7 @@ extern "C" {
 #define TASK_STACK_SIZE_SENSOR      5120    // Задача чтения датчиков (20KB) - увеличен для предотвращения stack overflow
 #define TASK_STACK_SIZE_DISPLAY     3072    // Задача обновления дисплея (12KB)
 #define TASK_STACK_SIZE_NOTIFICATION 2560   // Задача уведомлений (10KB) - увеличен для форматирования
-#define TASK_STACK_SIZE_DATALOGGER  2048    // Задача логирования (8KB) - увеличен для NVS операций
+#define TASK_STACK_SIZE_DATALOGGER  4096    // Задача логирования (16KB) - увеличен для NVS операций и буферов
 #define TASK_STACK_SIZE_SCHEDULER   2048    // Задача планировщика (8KB) - увеличен для обработки задач
 #define TASK_STACK_SIZE_PH_EC       2048    // Задача pH/EC контроля (8KB) - увеличен для вычислений
 #define TASK_STACK_SIZE_ENCODER     2048    // Задача энкодера (8KB) - увеличен для обработки событий
@@ -150,7 +150,7 @@ extern "C" {
 /*******************************************************************************
  * РАЗМЕРЫ ОЧЕРЕДЕЙ FREERTOS (оптимизированы)
  ******************************************************************************/
-#define QUEUE_SIZE_SENSOR_DATA      5       // Очередь данных датчиков
+#define QUEUE_SIZE_SENSOR_DATA      3       // Очередь данных датчиков (малая для предотвращения переполнения)
 #define QUEUE_SIZE_ENCODER          10      // Очередь событий энкодера
 #define QUEUE_SIZE_NOTIFICATIONS    10      // Очередь уведомлений
 

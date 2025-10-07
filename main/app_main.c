@@ -533,7 +533,10 @@ static esp_err_t init_system_components(void)
         return ret;
     }
     data_logger_set_callback(log_callback);
-    data_logger_set_auto_cleanup(true, LOG_AUTO_CLEANUP_DAYS);
+    
+    // Включаем автоматическую очистку старых записей (3 дня)
+    data_logger_set_auto_cleanup(true, 3);
+    ESP_LOGI(TAG, "Data logger auto-cleanup enabled (keep last 3 days)");
     ret = data_logger_load_from_nvs();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "  ! Failed to restore logs from NVS: %s", esp_err_to_name(ret));
