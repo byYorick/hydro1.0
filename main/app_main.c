@@ -212,11 +212,10 @@ void app_main(void)
         return;
     }
 
-    if (g_config_loaded) {
-        esp_err_t cfg_ret = system_tasks_set_config(&g_system_config);
-        if (cfg_ret != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to share configuration with tasks: %s", esp_err_to_name(cfg_ret));
-        }
+    // Передаем конфигурацию в контекст задач
+    esp_err_t cfg_ret = system_tasks_set_config(&g_system_config);
+    if (cfg_ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to share configuration with tasks: %s", esp_err_to_name(cfg_ret));
     }
 
     // ========== ЭТАП 6.1: Создание FreeRTOS задач ==========
@@ -481,12 +480,6 @@ static esp_err_t init_system_components(void)
 {
     esp_err_t ret;
 
-    ret = system_interfaces_init_defaults();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize system interfaces: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
     ret = config_manager_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize config manager: %s", esp_err_to_name(ret));
@@ -621,17 +614,6 @@ static void correction_event_callback(const char *type, float current, float tar
              type,
              current,
              target);
-}
-
-static void log_callback(const data_logger_entry_t *entry)
-{
-    if (entry == NULL) {
-        return;
-    }
-    ESP_LOGD(TAG, "Log[%lu] %s: %s",
-             (unsigned long)entry->id,
-             data_logger_type_to_string(entry->type),
-             entry->message);
 }
 
 /*******************************************************************************

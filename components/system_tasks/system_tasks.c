@@ -36,6 +36,15 @@ static const char *SENSOR_NAMES[SENSOR_INDEX_COUNT] = {
     "CO2",
 };
 
+static const char *SENSOR_UNITS[SENSOR_INDEX_COUNT] = {
+    "",
+    "mS/cm",
+    "°C",
+    "%",
+    "lux",
+    "ppm",
+};
+
 typedef struct {
     uint32_t total_cycles;
     uint32_t successful_cycles;
@@ -73,6 +82,10 @@ static void ph_ec_task(void *pvParameters);
 static esp_err_t read_all_sensors(sensor_data_t *data);
 static void register_sensor_failure(sensor_index_t index, const char *details);
 static void register_sensor_recovery(sensor_index_t index);
+static float get_sensor_fallback(sensor_index_t index);
+static float get_last_sensor_value(sensor_index_t index);
+static void sensor_update_success(sensor_index_t index, float value);
+static void sensor_update_failure(sensor_index_t index, const char *reason, float fallback);
 
 static void register_sensor_failure(sensor_index_t index, const char *details)
 {
@@ -116,14 +129,6 @@ static void register_sensor_recovery(sensor_index_t index)
     sensor_failure_active[index] = false;
     sensor_failure_counters[index] = 0;
 }
-
-static const char *SENSOR_NAMES[SENSOR_COUNT] = {
-    "pH", "EC", "Temperature", "Humidity", "Light", "CO2"
-};
-
-static const char *SENSOR_UNITS[SENSOR_COUNT] = {
-    "", "mS/cm", "°C", "%", "lux", "ppm"
-};
 
 esp_err_t system_tasks_init_context(void)
 {
@@ -290,7 +295,7 @@ static void sensor_task(void *pvParameters)
             task_context.sensor_stats.failure_count++;
         }
 
-        uint32_t duration_ms = (uint32_t)((esp_timer_get_time() - start_us) / 1000ULL);
+        uint32_t duration_ms = (uint32_t)((esp_timer_get_time() - cycle_start_us) / 1000ULL);
         task_context.sensor_stats.last_duration_ms = duration_ms;
         if (duration_ms > task_context.sensor_stats.max_duration_ms) {
             task_context.sensor_stats.max_duration_ms = duration_ms;
@@ -533,8 +538,8 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
     } else {
         data->temperature = TEMP_TARGET_DEFAULT;
         data->humidity = HUMIDITY_TARGET_DEFAULT;
-        char temp_msg[64];
-        char hum_msg[64];
+        char temp_msg[128];
+        char hum_msg[128];
         snprintf(temp_msg, sizeof(temp_msg), "используется значение %.1f°C по умолчанию", TEMP_TARGET_DEFAULT);
         snprintf(hum_msg, sizeof(hum_msg), "используется значение %.1f%% по умолчанию", HUMIDITY_TARGET_DEFAULT);
         register_sensor_failure(SENSOR_INDEX_TEMPERATURE, temp_msg);
@@ -657,13 +662,13 @@ esp_err_t system_tasks_get_stats(char *buffer, size_t size)
 
     remaining = (int)(size - (size_t)written);
     snprintf(buffer + written, remaining,
-             "Sensor fault events: pH=%u EC=%u T=%u H=%u Lux=%u CO2=%u\n",
-             sensor_failure_events[SENSOR_INDEX_PH],
-             sensor_failure_events[SENSOR_INDEX_EC],
-             sensor_failure_events[SENSOR_INDEX_TEMPERATURE],
-             sensor_failure_events[SENSOR_INDEX_HUMIDITY],
-             sensor_failure_events[SENSOR_INDEX_LUX],
-             sensor_failure_events[SENSOR_INDEX_CO2]);
+             "Sensor fault events: pH=%lu EC=%lu T=%lu H=%lu Lux=%lu CO2=%lu\n",
+             (unsigned long)sensor_failure_events[SENSOR_INDEX_PH],
+             (unsigned long)sensor_failure_events[SENSOR_INDEX_EC],
+             (unsigned long)sensor_failure_events[SENSOR_INDEX_TEMPERATURE],
+             (unsigned long)sensor_failure_events[SENSOR_INDEX_HUMIDITY],
+             (unsigned long)sensor_failure_events[SENSOR_INDEX_LUX],
+             (unsigned long)sensor_failure_events[SENSOR_INDEX_CO2]);
 
     return ESP_OK;
 }

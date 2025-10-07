@@ -383,47 +383,7 @@ esp_err_t data_logger_clear(void)
 
     xSemaphoreGive(g_mutex);
     ESP_LOGI(TAG, "All log entries cleared");
-    return err;
-}
-
-static esp_err_t data_logger_save_locked(void)
-{
-    if (!g_nvs_open) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    size_t blob_size = sizeof(data_logger_nvs_header_t) + g_entry_count * sizeof(log_entry_t);
-    uint8_t *blob = malloc(blob_size);
-    if (blob == NULL) {
-        return ESP_ERR_NO_MEM;
-    }
-
-    data_logger_nvs_header_t *header = (data_logger_nvs_header_t *)blob;
-    header->version = DATA_LOGGER_VERSION;
-    header->count = g_entry_count;
-    header->next_id = g_next_id;
-
-    if (g_entry_count > 0) {
-        memcpy(blob + sizeof(data_logger_nvs_header_t), g_log_entries,
-               g_entry_count * sizeof(log_entry_t));
-    }
-
-    esp_err_t err = nvs_set_blob(g_nvs_handle, DATA_LOGGER_KEY, blob, blob_size);
-    if (err == ESP_OK) {
-        err = nvs_set_u16(g_nvs_handle, DATA_LOGGER_VERSION_KEY, DATA_LOGGER_VERSION);
-    }
-
-    if (err == ESP_OK) {
-        err = nvs_commit(g_nvs_handle);
-    }
-
-    free(blob);
-
-    if (err == ESP_OK) {
-        g_dirty = false;
-    }
-
-    return err;
+    return ESP_OK;
 }
 
 esp_err_t data_logger_save_to_nvs(void)

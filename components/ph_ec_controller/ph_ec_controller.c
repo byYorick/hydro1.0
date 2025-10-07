@@ -81,17 +81,8 @@ esp_err_t ph_ec_controller_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    const actuator_provider_t *actuators = system_interfaces_get_actuator_provider();
     g_pump_init_fn = pump_init;
     g_pump_run_fn = pump_run_ms;
-    if (actuators != NULL) {
-        if (actuators->pump_init != NULL) {
-            g_pump_init_fn = actuators->pump_init;
-        }
-        if (actuators->pump_run_ms != NULL) {
-            g_pump_run_fn = actuators->pump_run_ms;
-        }
-    }
 
     // Инициализируем все насосы
     for (int i = 0; i < PUMP_INDEX_COUNT; i++) {

@@ -122,7 +122,7 @@ extern "C" {
 
 // Размеры стека задач (в словах, 1 слово = 4 байта)
 // Оптимизированы для экономии памяти с запасом безопасности
-#define TASK_STACK_SIZE_SENSOR      3072    // Задача чтения датчиков (12KB)
+#define TASK_STACK_SIZE_SENSOR      5120    // Задача чтения датчиков (20KB) - увеличен для предотвращения stack overflow
 #define TASK_STACK_SIZE_DISPLAY     3072    // Задача обновления дисплея (12KB)
 #define TASK_STACK_SIZE_NOTIFICATION 2560   // Задача уведомлений (10KB) - увеличен для форматирования
 #define TASK_STACK_SIZE_DATALOGGER  2048    // Задача логирования (8KB) - увеличен для NVS операций
