@@ -766,10 +766,8 @@ static lv_obj_t *create_sensor_card(lv_obj_t *parent, int index)
     // =============================================
 
     // Добавляем обработчик событий для перехода к детализации
-    ESP_LOGI(TAG, "Adding click handler to card %d", index);
     lv_obj_add_event_cb(card, sensor_card_event_cb, LV_EVENT_CLICKED, (void*)(intptr_t)index);
     lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
-    ESP_LOGI(TAG, "Card %d is now clickable", index);
 
     // Сохраняем ссылку на карточку для навигации энкодером
     sensor_cards[index] = card;
@@ -785,9 +783,6 @@ static lv_obj_t *create_sensor_card(lv_obj_t *parent, int index)
 
     // Сохраняем ссылки на элементы для обновления
     sensor_containers[index] = card;
-
-    ESP_LOGI(TAG, "Created enhanced sensor card %d: %s (%dx%d)",
-             index, meta->title, card_width, card_height);
 
     return card;
 }
@@ -1203,7 +1198,10 @@ static void set_encoder_group(lv_group_t *group)
     lv_indev_t *encoder_indev = lcd_ili9341_get_encoder_indev();
     if (encoder_indev && group) {
         lv_indev_set_group(encoder_indev, group);
-        ESP_LOGI(TAG, "Encoder group switched");
+        // Устанавливаем фокус на первый объект в группе
+        if (lv_group_get_obj_count(group) > 0) {
+            lv_group_focus_next(group);
+        }
     }
 }
 
@@ -1213,14 +1211,11 @@ static void switch_to_screen(lv_obj_t *screen, screen_type_t screen_type, lv_gro
 {
     if (screen) {
         // Если уходим с экрана детализации, очищаем указатели на старые графики
-        // чтобы предотвратить обновление скрытых графиков
         if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
             if (screen_type < SCREEN_DETAIL_PH || screen_type > SCREEN_DETAIL_CO2) {
-                // Уходим с экрана детализации на не-детализацию
                 detail_chart = NULL;
                 detail_series = NULL;
                 detail_current_index = -1;
-                ESP_LOGI(TAG, "Cleared detail screen chart references");
             }
         }
         
@@ -1237,16 +1232,11 @@ static void switch_to_screen(lv_obj_t *screen, screen_type_t screen_type, lv_gro
  * ============================= */
 static void update_sensor_display(sensor_data_t *data)
 {
-    ESP_LOGI(TAG, "=== UPDATE_SENSOR_DISPLAY CALLED ===");
-    ESP_LOGI(TAG, "Data: pH=%.2f, EC=%.2f, Temp=%.1f, Hum=%.1f, Lux=%.0f, CO2=%.0f",
-             data->ph, data->ec, data->temperature, data->humidity, data->lux, data->co2);
-    
     last_sensor_data = *data;
     sensor_snapshot_valid = true;
 
     for (int i = 0; i < SENSOR_COUNT; ++i) {
         if (!value_labels[i]) {
-            ESP_LOGW(TAG, "value_labels[%d] is NULL!", i);
             continue;
         }
 
@@ -1257,7 +1247,6 @@ static void update_sensor_display(sensor_data_t *data)
         char format[8];
         snprintf(format, sizeof(format), "%%.%df", meta->decimals);
         snprintf(buffer, sizeof(buffer), format, value);
-        ESP_LOGI(TAG, "Updating label %d (%s): %s", i, meta->title, buffer);
         lv_label_set_text(value_labels[i], buffer);
 
         update_status_badge(i, value);
@@ -1289,33 +1278,24 @@ static void update_sensor_display(sensor_data_t *data)
 static void display_update_task(void *pvParameters)
 {
     LV_UNUSED(pvParameters);
-
-    ESP_LOGI(TAG, "=== DISPLAY_UPDATE_TASK STARTED ===");
     
     sensor_data_t sensor_data;
-    uint32_t receive_count = 0;
     while (1) {
         // Обрабатываем все данные из очереди за один цикл
         bool data_processed = false;
         while (xQueueReceive(sensor_data_queue, &sensor_data, 0) == pdTRUE) {
-            receive_count++;
             data_processed = true;
             // Берем только последнее значение из очереди, игнорируя промежуточные
         }
         
         if (data_processed) {
-            ESP_LOGI(TAG, "Processing latest data from queue (count: %lu)", (unsigned long)receive_count);
-            
             if (!lvgl_lock(100)) {
-                ESP_LOGW(TAG, "Failed to acquire LVGL lock, skipping update");
                 vTaskDelay(pdMS_TO_TICKS(100));
                 continue;
             }
             
             if (lv_is_initialized()) {
                 update_sensor_display(&sensor_data);
-            } else {
-                ESP_LOGW(TAG, "LVGL not initialized yet!");
             }
             lvgl_unlock();
         }
@@ -1377,9 +1357,9 @@ void lvgl_main_init(void)
     TaskHandle_t encoder_task_handle = NULL;
     BaseType_t task_created = xTaskCreate(encoder_task, "lvgl_encoder", 4096, NULL, 5, &encoder_task_handle);
     if (task_created == pdPASS && encoder_task_handle != NULL) {
-        ESP_LOGI(TAG, "✓ Encoder task created successfully");
+        ESP_LOGI(TAG, "Encoder task created successfully");
     } else {
-        ESP_LOGE(TAG, "❌ FAILED to create encoder task!");
+        ESP_LOGE(TAG, "FAILED to create encoder task!");
     }
     
     // Добавляем обработчик событий энкодера
@@ -1389,36 +1369,26 @@ void lvgl_main_init(void)
 
 void lvgl_update_sensor_values(float ph, float ec, float temp, float hum, float lux, float co2)
 {
-    ESP_LOGI(TAG, "=== LVGL_UPDATE_SENSOR_VALUES ===");
-    ESP_LOGI(TAG, "Values: pH=%.2f, EC=%.2f, Temp=%.1f, Hum=%.1f, Lux=%.0f, CO2=%.0f",
-             ph, ec, temp, hum, lux, co2);
-    
     if (sensor_data_queue == NULL) {
-        ESP_LOGE(TAG, "sensor_data_queue is NULL!");
         return;
     }
     
     sensor_data_t sensor_data = {
         .ph = ph,
         .ec = ec,
-        .temperature = temp,  // Заполняем основное поле
-        .humidity = hum,      // Заполняем основное поле
-        .temp = temp,         // Заполняем алиас
-        .hum = hum,           // Заполняем алиас
+        .temperature = temp,
+        .humidity = hum,
+        .temp = temp,
+        .hum = hum,
         .lux = lux,
         .co2 = co2,
     };
 
     if (xQueueSend(sensor_data_queue, &sensor_data, 0) != pdTRUE) {
-        ESP_LOGW(TAG, "Queue full, replacing oldest data");
         sensor_data_t oldest;
         xQueueReceive(sensor_data_queue, &oldest, 0);
         xQueueSend(sensor_data_queue, &sensor_data, 0);
-    } else {
-        ESP_LOGI(TAG, "Data sent to queue successfully");
     }
-    
-    // Данные обновляются через систему очередей и display_update_task
 }
 
 void lvgl_update_sensor_values_from_queue(sensor_data_t *data)
@@ -1442,23 +1412,14 @@ static void sensor_card_event_cb(lv_event_t *e)
 {
     uint8_t sensor_index = (uint8_t)(intptr_t)lv_event_get_user_data(e);
     
-    ESP_LOGI(TAG, "=== SENSOR CARD CLICKED: %d ===", sensor_index);
-    ESP_LOGI(TAG, "Current screen: %d", current_screen);
-    ESP_LOGI(TAG, "Encoder navigation enabled: %s", encoder_navigation_enabled ? "true" : "false");
-    
     // Создаем экран детализации если еще не создан
     if (detail_screens[sensor_index].screen == NULL) {
-        ESP_LOGI(TAG, "Creating detail screen for sensor %d", sensor_index);
         create_detail_screen(sensor_index);
-    } else {
-        ESP_LOGI(TAG, "Detail screen for sensor %d already exists", sensor_index);
     }
     
     // Переключаемся на экран детализации
     screen_type_t detail_screen = SCREEN_DETAIL_PH + sensor_index;
-    ESP_LOGI(TAG, "Switching to detail screen: %d", detail_screen);
     show_screen(detail_screen);
-    ESP_LOGI(TAG, "Screen switch completed");
 }
 
 // Создание экрана детализации для сенсора
@@ -1466,18 +1427,24 @@ static void create_detail_screen(uint8_t sensor_index)
 {
     // Для pH используем специальный детализированный экран
     if (sensor_index == 0) {
-        ESP_LOGI(TAG, "Используется специальный экран pH");
         ph_show_detail_screen();
         return;
     }
     
     const sensor_meta_t *meta = &SENSOR_META[sensor_index];
     detail_screen_t *detail = &detail_screens[sensor_index];
+    lv_group_t *detail_group = detail_screen_groups[sensor_index];
+    if (detail_group == NULL) {
+        detail_group = lv_group_create();
+        lv_group_set_wrap(detail_group, true);
+        detail_screen_groups[sensor_index] = detail_group;
+    } else {
+        lv_group_remove_all_objs(detail_group);
+    }
     
     // Создаем экран
     detail->screen = lv_obj_create(NULL);
-    detail->sensor_index = sensor_index;
-    lv_obj_clean(detail->screen);
+    lv_obj_remove_style_all(detail->screen);
     lv_obj_add_style(detail->screen, &style_bg, 0);
     lv_obj_set_style_pad_all(detail->screen, 16, 0);
     
@@ -1493,6 +1460,7 @@ static void create_detail_screen(uint8_t sensor_index)
     lv_obj_set_size(detail->back_btn, 60, 30);
     lv_obj_align(detail->back_btn, LV_ALIGN_TOP_RIGHT, 0, 0);
     lv_obj_add_event_cb(detail->back_btn, back_button_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_group_add_obj(detail_group, detail->back_btn);
     
     lv_obj_t *back_label = lv_label_create(detail->back_btn);
     lv_label_set_text(back_label, "←");
@@ -1546,12 +1514,11 @@ static void create_detail_screen(uint8_t sensor_index)
     lv_obj_set_size(detail->settings_btn, 120, 40);
     lv_obj_align(detail->settings_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
     lv_obj_add_event_cb(detail->settings_btn, settings_button_event_cb, LV_EVENT_CLICKED, (void*)(intptr_t)sensor_index);
+    lv_group_add_obj(detail_group, detail->settings_btn);
     
     lv_obj_t *settings_label = lv_label_create(detail->settings_btn);
     lv_label_set_text(settings_label, "Settings");
     lv_obj_center(settings_label);
-    
-    ESP_LOGI(TAG, "Detail screen created for sensor %d", sensor_index);
 }
 
 // Создание экрана настроек для сенсора
@@ -1620,90 +1587,79 @@ static void create_settings_screen(uint8_t sensor_index)
         lv_label_set_text(placeholder, "→");
         lv_obj_align(placeholder, LV_ALIGN_RIGHT_MID, -10, 0);
     }
-    
-    ESP_LOGI(TAG, "Settings screen created for sensor %d", sensor_index);
 }
 
 // Переключение экранов
 static void show_screen(screen_type_t screen)
 {
-    ESP_LOGI(TAG, "=== SHOW_SCREEN: %d ===", screen);
-    
-    // Если уходим с экрана детализации, очищаем указатели на старые графики
-    // чтобы предотвратить обновление скрытых графиков
     if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
         if (screen < SCREEN_DETAIL_PH || screen > SCREEN_DETAIL_CO2) {
-            // Уходим с экрана детализации на не-детализацию
             detail_chart = NULL;
             detail_series = NULL;
             detail_current_index = -1;
-            ESP_LOGI(TAG, "Cleared detail screen chart references (old path)");
         }
     }
-    
+ 
     current_screen = screen;
-    
-    // Скрываем все экраны
-    ESP_LOGI(TAG, "Hiding all screens");
-    lv_obj_add_flag(main_screen, LV_OBJ_FLAG_HIDDEN);
-    for (int i = 0; i < SENSOR_COUNT; i++) {
-        if (detail_screens[i].screen) {
-            lv_obj_add_flag(detail_screens[i].screen, LV_OBJ_FLAG_HIDDEN);
-            ESP_LOGI(TAG, "Hidden detail screen %d", i);
-        }
-        if (settings_screens[i].screen) {
-            lv_obj_add_flag(settings_screens[i].screen, LV_OBJ_FLAG_HIDDEN);
-            ESP_LOGI(TAG, "Hidden settings screen %d", i);
-        }
-    }
-    
-    // Показываем нужный экран
+    lv_group_t *target_group = NULL;
+    lv_obj_t *target_screen_obj = NULL;
+
     switch (screen) {
         case SCREEN_MAIN:
-            ESP_LOGI(TAG, "Showing main screen");
-            lv_obj_clear_flag(main_screen, LV_OBJ_FLAG_HIDDEN);
-            lv_screen_load(main_screen);
+            target_screen_obj = main_screen;
+            target_group = encoder_group;
             break;
-            
         case SCREEN_DETAIL_PH:
+            ph_show_detail_screen();
+            target_group = ph_get_detail_group();
+            target_screen_obj = ph_get_detail_screen();
+            break;
         case SCREEN_DETAIL_EC:
         case SCREEN_DETAIL_TEMP:
         case SCREEN_DETAIL_HUMIDITY:
         case SCREEN_DETAIL_LUX:
         case SCREEN_DETAIL_CO2: {
             uint8_t sensor_index = screen - SCREEN_DETAIL_PH;
-            ESP_LOGI(TAG, "Showing detail screen for sensor %d", sensor_index);
-            if (detail_screens[sensor_index].screen) {
-                lv_obj_clear_flag(detail_screens[sensor_index].screen, LV_OBJ_FLAG_HIDDEN);
-                lv_screen_load(detail_screens[sensor_index].screen);
-                ESP_LOGI(TAG, "Detail screen %d loaded successfully", sensor_index);
-            } else {
-                ESP_LOGE(TAG, "Detail screen %d is NULL!", sensor_index);
+            detail_screen_t *detail = &detail_screens[sensor_index];
+            if (detail->screen == NULL) {
+                create_detail_screen(sensor_index);
             }
+            target_screen_obj = detail->screen;
+            target_group = detail_screen_groups[sensor_index];
             break;
         }
-        
         case SCREEN_SETTINGS_PH:
+            ph_show_settings_screen();
+            target_group = ph_get_settings_group();
+            target_screen_obj = ph_get_settings_screen();
+            break;
         case SCREEN_SETTINGS_EC:
         case SCREEN_SETTINGS_TEMP:
         case SCREEN_SETTINGS_HUMIDITY:
         case SCREEN_SETTINGS_LUX:
         case SCREEN_SETTINGS_CO2: {
             uint8_t sensor_index = screen - SCREEN_SETTINGS_PH;
-            if (settings_screens[sensor_index].screen) {
-                lv_obj_clear_flag(settings_screens[sensor_index].screen, LV_OBJ_FLAG_HIDDEN);
-                lv_screen_load(settings_screens[sensor_index].screen);
+            settings_screen_t *settings = &settings_screens[sensor_index];
+            if (settings->screen == NULL) {
+                create_settings_screen(sensor_index);
             }
+            target_screen_obj = settings->screen;
+            target_group = settings_screen_groups[sensor_index];
             break;
         }
-        
+        case SCREEN_CALIBRATION:
+            ph_show_calibration_screen();
+            target_group = ph_get_calibration_group();
+            target_screen_obj = ph_get_calibration_screen();
+            break;
         default:
             break;
     }
-    
-    ESP_LOGI(TAG, "Switched to screen %d", screen);
-    
-    // Обновляем выделение в зависимости от экрана
+
+    if (target_screen_obj) {
+        switch_to_screen(target_screen_obj, screen, target_group);
+    }
+
     if (screen == SCREEN_MAIN) {
         update_card_selection();
     } else if (screen >= SCREEN_SETTINGS_PH && screen <= SCREEN_SETTINGS_CO2) {
@@ -1787,20 +1743,17 @@ static void encoder_task(void *pvParameters)
         }
     }
     
-    ESP_LOGI(TAG, "✓ Encoder queue ready, starting event processing...");
+    ESP_LOGI(TAG, "Encoder queue ready, starting event processing...");
     
     encoder_event_t event;
     while (1) {
         if (xQueueReceive(encoder_queue, &event, pdMS_TO_TICKS(100)) == pdTRUE) {
-            ESP_LOGI(TAG, "⚡ Encoder event received: type=%d, value=%d", event.type, event.value);
-            
             if (!lvgl_lock(100)) {
                 ESP_LOGW(TAG, "Failed to acquire LVGL lock for encoder event");
                 continue;
             }
             
             if (lv_is_initialized()) {
-                ESP_LOGI(TAG, "📍 Current screen: %d, nav_enabled: %d", current_screen, encoder_navigation_enabled);
                 handle_encoder_event(&event);
             }
             lvgl_unlock();
@@ -1820,29 +1773,34 @@ static void handle_encoder_event(encoder_event_t *event)
     
     switch (event->type) {
         case ENCODER_EVENT_ROTATE_CW:
-            ESP_LOGI(TAG, "Encoder CW rotation");
             if (current_screen == SCREEN_MAIN) {
                 selected_card_index = (selected_card_index + 1) % SENSOR_COUNT;
                 update_card_selection();
             } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
-                selected_settings_item = (selected_settings_item + 1) % 5; // 5 пунктов настроек
+                selected_settings_item = (selected_settings_item + 1) % 5;
                 update_settings_selection();
+            } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
+                lcd_ili9341_set_encoder_diff(1);
+            } else if (current_screen == SCREEN_CALIBRATION) {
+                lcd_ili9341_set_encoder_diff(1);
             }
             break;
             
         case ENCODER_EVENT_ROTATE_CCW:
-            ESP_LOGI(TAG, "Encoder CCW rotation");
             if (current_screen == SCREEN_MAIN) {
                 selected_card_index = (selected_card_index - 1 + SENSOR_COUNT) % SENSOR_COUNT;
                 update_card_selection();
             } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
                 selected_settings_item = (selected_settings_item - 1 + 5) % 5;
                 update_settings_selection();
+            } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
+                lcd_ili9341_set_encoder_diff(-1);
+            } else if (current_screen == SCREEN_CALIBRATION) {
+                lcd_ili9341_set_encoder_diff(-1);
             }
             break;
             
         case ENCODER_EVENT_BUTTON_PRESS:
-            ESP_LOGI(TAG, "Encoder button press");
             if (current_screen == SCREEN_MAIN) {
                 // С главного экрана → переходим к экрану детализации выбранной карточки
                 if (detail_screens[selected_card_index].screen == NULL) {
@@ -1851,20 +1809,39 @@ static void handle_encoder_event(encoder_event_t *event)
                 screen_type_t detail_screen = SCREEN_DETAIL_PH + selected_card_index;
                 show_screen(detail_screen);
             } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
-                // С экрана детализации → возврат на главный экран
-                show_screen(SCREEN_MAIN);
+                // На экране детализации - активируем кнопку с фокусом
+                lv_indev_t *indev = lcd_ili9341_get_encoder_indev();
+                if (indev) {
+                    lv_group_t *group = lv_indev_get_group(indev);
+                    if (group) {
+                        lv_group_send_data(group, LV_KEY_ENTER);
+                    }
+                }
             } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
-                // С экрана настроек → возврат к детализации
-                uint8_t sensor_index = current_screen - SCREEN_SETTINGS_PH;
-                screen_type_t detail_screen = SCREEN_DETAIL_PH + sensor_index;
-                show_screen(detail_screen);
+                // На экране настроек - активируем элемент с фокусом
+                lv_indev_t *indev = lcd_ili9341_get_encoder_indev();
+                if (indev) {
+                    lv_group_t *group = lv_indev_get_group(indev);
+                    if (group) {
+                        lv_group_send_data(group, LV_KEY_ENTER);
+                    }
+                }
+            } else if (current_screen == SCREEN_CALIBRATION) {
+                // На экране калибровки - активируем кнопку с фокусом
+                lv_indev_t *indev = lcd_ili9341_get_encoder_indev();
+                if (indev) {
+                    lv_group_t *group = lv_indev_get_group(indev);
+                    if (group) {
+                        lv_group_send_data(group, LV_KEY_ENTER);
+                    }
+                }
             }
             break;
             
         case ENCODER_EVENT_BUTTON_LONG_PRESS:
-            ESP_LOGI(TAG, "Encoder button long press - going back to main");
-            // Длинное нажатие - всегда возврат на главный экран
-            show_screen(SCREEN_MAIN);
+            ESP_LOGI(TAG, "Encoder button long press detected (disabled)");
+            // Заглушка - длинное нажатие пока отключено
+            // TODO: можно использовать для быстрого возврата на главный экран
             break;
             
         case ENCODER_EVENT_BUTTON_RELEASE:
@@ -1879,16 +1856,12 @@ static void handle_encoder_event(encoder_event_t *event)
 // Обновление выделения карточек на главном экране
 static void update_card_selection(void)
 {
-    ESP_LOGI(TAG, "🎯 update_card_selection called: selected=%d, current_screen=%d", selected_card_index, current_screen);
-    
     if (current_screen != SCREEN_MAIN) {
-        ESP_LOGW(TAG, "Not on main screen, skipping card selection update");
         return;
     }
     
     // Используем систему фокуса с рамкой вместо изменения цвета фона
     lvgl_set_focus(selected_card_index);
-    ESP_LOGI(TAG, "✅ Focus set to card %d using border style", selected_card_index);
 }
 
 // Обновление выделения пунктов настроек
@@ -1925,8 +1898,6 @@ static void update_settings_selection(void)
         lv_obj_set_style_border_color(child, COLOR_ACCENT, 0);
         lv_obj_set_style_border_width(child, 2, 0);
     }
-    
-    ESP_LOGI(TAG, "Selected settings item: %d", selected_settings_item);
 }
 
 // Обработчик событий энкодера
@@ -1939,13 +1910,10 @@ static void encoder_event_cb(lv_event_t *e)
     if (code == LV_EVENT_KEY) {
         switch (key) {
             case LV_KEY_ENTER:
-                ESP_LOGI(TAG, "ENTER key pressed");
                 if (current_screen == SCREEN_MAIN) {
-                    // Переходим к экрану детализации через обработчик карточки
                     screen_type_t detail_screen_type = SCREEN_DETAIL_PH + selected_card_index;
                     show_screen(detail_screen_type);
                 } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
-                    // На экране детализации - переходим к настройкам
                     int sensor_index = current_screen - SCREEN_DETAIL_PH;
                     screen_type_t settings_screen_type = SCREEN_SETTINGS_PH + sensor_index;
                     show_screen(settings_screen_type);
@@ -1953,14 +1921,9 @@ static void encoder_event_cb(lv_event_t *e)
                 break;
                 
             case LV_KEY_ESC:
-                ESP_LOGI(TAG, "ESC key pressed - going back");
-                if (current_screen == SCREEN_MAIN) {
-                    // Уже на главном экране
-                } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
-                    // Возвращаемся к главному экрану
+                if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
                     show_screen(SCREEN_MAIN);
                 } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
-                    // Возвращаемся к экрану детализации
                     int sensor_index = current_screen - SCREEN_SETTINGS_PH;
                     screen_type_t detail_screen_type = SCREEN_DETAIL_PH + sensor_index;
                     show_screen(detail_screen_type);
@@ -1971,11 +1934,7 @@ static void encoder_event_cb(lv_event_t *e)
     
     // Обрабатываем события вращения энкодера
     if (code == LV_EVENT_VALUE_CHANGED) {
-        ESP_LOGI(TAG, "Encoder value changed event");
-        
-        // Используем глобальную переменную для отслеживания вращения
         if (last_encoder_diff > 0) {
-            ESP_LOGI(TAG, "CW rotation");
             if (current_screen == SCREEN_MAIN) {
                 selected_card_index = (selected_card_index + 1) % SENSOR_COUNT;
                 update_card_selection();
@@ -1983,9 +1942,8 @@ static void encoder_event_cb(lv_event_t *e)
                 selected_settings_item = (selected_settings_item + 1) % 5;
                 update_settings_selection();
             }
-            last_encoder_diff = 0; // Сбрасываем после обработки
+            last_encoder_diff = 0;
         } else if (last_encoder_diff < 0) {
-            ESP_LOGI(TAG, "CCW rotation");
             if (current_screen == SCREEN_MAIN) {
                 selected_card_index = (selected_card_index - 1 + SENSOR_COUNT) % SENSOR_COUNT;
                 update_card_selection();
@@ -1993,7 +1951,7 @@ static void encoder_event_cb(lv_event_t *e)
                 selected_settings_item = (selected_settings_item - 1 + 5) % 5;
                 update_settings_selection();
             }
-            last_encoder_diff = 0; // Сбрасываем после обработки
+            last_encoder_diff = 0;
         }
     }
 }
@@ -2005,7 +1963,7 @@ static void encoder_event_cb(lv_event_t *e)
 /**
  * @brief Создание экрана подключения к мобильному приложению
  */
-static void create_mobile_connect_screen(void)
+static void __attribute__((unused)) create_mobile_connect_screen(void)
 {
     static lv_obj_t *mobile_screen = NULL;
 
@@ -2064,7 +2022,7 @@ static void create_mobile_connect_screen(void)
 /**
  * @brief Создание экрана сетевых настроек
  */
-static void create_network_settings_screen(void)
+static void __attribute__((unused)) create_network_settings_screen(void)
 {
     static lv_obj_t *network_screen = NULL;
 
@@ -2124,7 +2082,7 @@ static void create_network_settings_screen(void)
 /**
  * @brief Создание экрана статуса системы
  */
-static void create_system_status_screen(void)
+static void __attribute__((unused)) create_system_status_screen(void)
 {
     static lv_obj_t *status_screen = NULL;
 
@@ -2190,7 +2148,7 @@ static void create_system_status_screen(void)
 /**
  * @brief Создание экрана OTA обновлений
  */
-static void create_ota_update_screen(void)
+static void __attribute__((unused)) create_ota_update_screen(void)
 {
     static lv_obj_t *ota_screen = NULL;
 
@@ -2267,3 +2225,4 @@ static void create_ota_update_screen(void)
 
     ESP_LOGI(TAG, "Экран OTA обновлений создан");
 }
+

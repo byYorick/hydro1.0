@@ -1,5 +1,6 @@
 #include "ph_screen.h"
 #include "lvgl.h"
+#include "lvgl_ui.h" // Подключаем заголовок, определяющий типы LVGL и функции работы с группами
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "nvs.h"
@@ -12,7 +13,7 @@ LV_FONT_DECLARE(montserrat_ru)
 static const char *TAG = "PH_SCREEN";
 
 // NVS ключи для параметров pH
-#define NVS_NAMESPACE "ph_params"
+#define PH_NVS_NAMESPACE "ph_params"
 #define NVS_KEY_TARGET "target"
 #define NVS_KEY_NOTIF_HIGH "notif_hi"
 #define NVS_KEY_NOTIF_LOW "notif_lo"
@@ -58,9 +59,9 @@ static lv_obj_t *settings_screen = NULL;
 static lv_obj_t *calibration_screen = NULL;
 
 // Группы для навигации энкодером
-static lv_group_t *detail_group = NULL;
-static lv_group_t *settings_group = NULL;
-static lv_group_t *calibration_group = NULL;
+static lv_group_t *ph_detail_group = NULL;
+static lv_group_t *ph_settings_group = NULL;
+static lv_group_t *ph_calibration_group = NULL;
 
 // Callback для возврата на главный экран
 static ph_close_callback_t close_callback = NULL;
@@ -83,7 +84,7 @@ static lv_obj_t *cal_value_label = NULL;
 esp_err_t ph_save_to_nvs(void)
 {
     nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    esp_err_t err = nvs_open(PH_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Ошибка открытия NVS: %s", esp_err_to_name(err));
         return err;
@@ -120,7 +121,7 @@ esp_err_t ph_save_to_nvs(void)
 esp_err_t ph_load_from_nvs(void)
 {
     nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    esp_err_t err = nvs_open(PH_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "NVS не открыт (возможно первый запуск): %s", esp_err_to_name(err));
         return err;
@@ -200,10 +201,13 @@ esp_err_t ph_update_current_value(float value)
 static void btn_back_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
-    // Обрабатываем как клик мыши, так и энкодер (KEY_ENTER)
     if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
-        ESP_LOGI(TAG, "Кнопка Назад нажата");
         ph_close_screen();
+    } else if (code == LV_EVENT_KEY) {
+        uint32_t key = lv_event_get_key(e);
+        if (key == LV_KEY_ENTER) {
+            ph_close_screen();
+        }
     }
 }
 
@@ -211,8 +215,12 @@ static void btn_settings_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
-        ESP_LOGI(TAG, "Кнопка Настройки нажата");
         ph_show_settings_screen();
+    } else if (code == LV_EVENT_KEY) {
+        uint32_t key = lv_event_get_key(e);
+        if (key == LV_KEY_ENTER) {
+            ph_show_settings_screen();
+        }
     }
 }
 
@@ -220,8 +228,12 @@ static void btn_calibration_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
-        ESP_LOGI(TAG, "Кнопка Калибровка нажата");
         ph_show_calibration_screen();
+    } else if (code == LV_EVENT_KEY) {
+        uint32_t key = lv_event_get_key(e);
+        if (key == LV_KEY_ENTER) {
+            ph_show_calibration_screen();
+        }
     }
 }
 
@@ -229,17 +241,22 @@ static void btn_save_settings_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
-        ESP_LOGI(TAG, "Кнопка Сохранить нажата");
         ph_save_to_nvs();
-        ph_show_detail_screen(); // Возврат на детальный экран
+        ph_show_detail_screen();
+    } else if (code == LV_EVENT_KEY) {
+        uint32_t key = lv_event_get_key(e);
+        if (key == LV_KEY_ENTER) {
+            ph_save_to_nvs();
+            ph_show_detail_screen();
+        }
     }
 }
 
 static void btn_cal_next_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
-        ESP_LOGI(TAG, "Кнопка Далее нажата, шаг %d", calibration_step);
+    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED || 
+        (code == LV_EVENT_KEY && lv_event_get_key(e) == LV_KEY_ENTER)) {
         
         // Сохраняем текущую точку
         float ref_val = calibration_step == 1 ? 4.0f : (calibration_step == 2 ? 7.0f : 10.0f);
@@ -274,10 +291,11 @@ static void create_detail_screen(void)
     }
 
     // Создаем группу для энкодера
-    if (detail_group) {
-        lv_group_del(detail_group);
+    if (ph_detail_group == NULL) {
+        ph_detail_group = lv_group_create();
+        lv_group_set_wrap(ph_detail_group, true);
     }
-    detail_group = lv_group_create();
+    lv_group_remove_all_objs(ph_detail_group);
 
     detail_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(detail_screen, COLOR_BG, 0);
@@ -304,7 +322,7 @@ static void create_detail_screen(void)
     lv_obj_set_style_outline_width(btn_back, 2, LV_STATE_FOCUSED);
     lv_obj_set_style_outline_color(btn_back, lv_color_hex(0xFFFFFF), LV_STATE_FOCUSED);
     lv_obj_add_event_cb(btn_back, btn_back_event_cb, LV_EVENT_ALL, NULL);
-    lv_group_add_obj(detail_group, btn_back); // Добавляем в группу для энкодера
+    lv_group_add_obj(ph_detail_group, btn_back); // Добавляем в группу для энкодера
     
     lv_obj_t *back_label = lv_label_create(btn_back);
     lv_label_set_text(back_label, LV_SYMBOL_LEFT);
@@ -361,6 +379,9 @@ static void create_detail_screen(void)
     // Компактные кнопки внизу
     lv_obj_t *btn_settings = lv_btn_create(detail_screen);
     lv_obj_set_size(btn_settings, 100, 32);
+    lv_obj_set_style_outline_width(btn_settings, 2, LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_color(btn_settings, lv_color_hex(0xFFFFFF), LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_pad(btn_settings, 2, LV_STATE_FOCUSED);
     lv_obj_set_pos(btn_settings, 8, 186);
     lv_obj_set_style_bg_color(btn_settings, COLOR_ACCENT, 0);
     lv_obj_set_style_radius(btn_settings, 4, 0);
@@ -369,7 +390,7 @@ static void create_detail_screen(void)
     lv_obj_set_style_outline_color(btn_settings, lv_color_hex(0xFFFFFF), LV_STATE_FOCUSED);
     lv_obj_set_style_outline_pad(btn_settings, 2, LV_STATE_FOCUSED);
     lv_obj_add_event_cb(btn_settings, btn_settings_event_cb, LV_EVENT_ALL, NULL);
-    lv_group_add_obj(detail_group, btn_settings);
+    lv_group_add_obj(ph_detail_group, btn_settings);
     
     lv_obj_t *lbl_btn1 = lv_label_create(btn_settings);
     lv_label_set_text(lbl_btn1, "Настр.");
@@ -378,22 +399,19 @@ static void create_detail_screen(void)
 
     lv_obj_t *btn_cal = lv_btn_create(detail_screen);
     lv_obj_set_size(btn_cal, 100, 32);
-    lv_obj_set_pos(btn_cal, 114, 186);
-    lv_obj_set_style_bg_color(btn_cal, COLOR_WARNING, 0);
-    lv_obj_set_style_radius(btn_cal, 4, 0);
-    // Визуальный эффект фокуса
     lv_obj_set_style_outline_width(btn_cal, 2, LV_STATE_FOCUSED);
     lv_obj_set_style_outline_color(btn_cal, lv_color_hex(0xFFFFFF), LV_STATE_FOCUSED);
     lv_obj_set_style_outline_pad(btn_cal, 2, LV_STATE_FOCUSED);
+    lv_obj_set_pos(btn_cal, 114, 186);
+    lv_obj_set_style_bg_color(btn_cal, COLOR_WARNING, 0);
+    lv_obj_set_style_radius(btn_cal, 4, 0);
     lv_obj_add_event_cb(btn_cal, btn_calibration_event_cb, LV_EVENT_ALL, NULL);
-    lv_group_add_obj(detail_group, btn_cal);
+    lv_group_add_obj(ph_detail_group, btn_cal);
     
     lv_obj_t *lbl_btn2 = lv_label_create(btn_cal);
     lv_label_set_text(lbl_btn2, "Калибр.");
     lv_obj_set_style_text_font(lbl_btn2, &montserrat_ru, 0);
     lv_obj_center(lbl_btn2);
-
-    ESP_LOGI(TAG, "Детальный экран pH создан");
 }
 
 static void create_settings_screen(void)
@@ -404,10 +422,11 @@ static void create_settings_screen(void)
     }
 
     // Создаем группу для энкодера
-    if (settings_group) {
-        lv_group_del(settings_group);
+    if (ph_settings_group == NULL) {
+        ph_settings_group = lv_group_create();
+        lv_group_set_wrap(ph_settings_group, true);
     }
-    settings_group = lv_group_create();
+    lv_group_remove_all_objs(ph_settings_group);
 
     settings_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(settings_screen, COLOR_BG, 0);
@@ -434,7 +453,7 @@ static void create_settings_screen(void)
     lv_obj_set_style_outline_width(btn_back, 2, LV_STATE_FOCUSED);
     lv_obj_set_style_outline_color(btn_back, lv_color_hex(0xFFFFFF), LV_STATE_FOCUSED);
     lv_obj_add_event_cb(btn_back, btn_back_event_cb, LV_EVENT_ALL, NULL);
-    lv_group_add_obj(settings_group, btn_back);
+    lv_group_add_obj(ph_settings_group, btn_back);
     
     lv_obj_t *back_label = lv_label_create(btn_back);
     lv_label_set_text(back_label, LV_SYMBOL_LEFT);
@@ -468,12 +487,29 @@ static void create_settings_screen(void)
     };
 
     for (int i = 0; i < 5; i++) {
-        lv_obj_t *item = lv_label_create(content);
-        char buf[48];
-        snprintf(buf, sizeof(buf), items[i], values[i]);
-        lv_label_set_text(item, buf);
-        lv_obj_set_style_text_color(item, COLOR_TEXT, 0);
-        lv_obj_set_style_text_font(item, &montserrat_ru, 0);
+        lv_obj_t *row = lv_btn_create(content);
+        lv_obj_set_size(row, lv_pct(100), 32);
+        lv_obj_set_style_bg_color(row, COLOR_CARD, 0);
+        lv_obj_set_style_radius(row, 4, 0);
+        lv_obj_set_style_outline_width(row, 2, LV_STATE_FOCUSED);
+        lv_obj_set_style_outline_color(row, lv_color_hex(0xFFFFFF), LV_STATE_FOCUSED);
+        lv_obj_set_style_outline_pad(row, 2, LV_STATE_FOCUSED);
+        lv_obj_set_style_pad_all(row, 4, 0);
+        lv_obj_set_layout(row, LV_LAYOUT_FLEX);
+        lv_obj_set_style_flex_flow(row, LV_FLEX_FLOW_ROW, 0);
+        lv_obj_set_style_flex_main_place(row, LV_FLEX_ALIGN_SPACE_BETWEEN, 0);
+        lv_obj_set_style_flex_cross_place(row, LV_FLEX_ALIGN_CENTER, 0);
+        lv_group_add_obj(ph_settings_group, row);
+
+        lv_obj_t *title_label = lv_label_create(row);
+        lv_obj_set_style_text_color(title_label, COLOR_TEXT_MUTED, 0);
+        lv_obj_set_style_text_font(title_label, &montserrat_ru, 0);
+        lv_label_set_text_fmt(title_label, "%s", items[i]);
+
+        lv_obj_t *value_label = lv_label_create(row);
+        lv_obj_set_style_text_color(value_label, COLOR_TEXT, 0);
+        lv_obj_set_style_text_font(value_label, &montserrat_ru, 0);
+        lv_label_set_text_fmt(value_label, "%.1f", values[i]);
     }
 
     // Кнопка сохранения
@@ -486,14 +522,12 @@ static void create_settings_screen(void)
     lv_obj_set_style_outline_color(btn_save, lv_color_hex(0xFFFFFF), LV_STATE_FOCUSED);
     lv_obj_set_style_outline_pad(btn_save, 2, LV_STATE_FOCUSED);
     lv_obj_add_event_cb(btn_save, btn_save_settings_event_cb, LV_EVENT_ALL, NULL);
-    lv_group_add_obj(settings_group, btn_save);
+    lv_group_add_obj(ph_settings_group, btn_save);
     
     lv_obj_t *lbl_save = lv_label_create(btn_save);
     lv_label_set_text(lbl_save, "Сохранить");
     lv_obj_set_style_text_font(lbl_save, &montserrat_ru, 0);
     lv_obj_center(lbl_save);
-
-    ESP_LOGI(TAG, "Экран настроек pH создан");
 }
 
 static void create_calibration_screen(void)
@@ -504,10 +538,11 @@ static void create_calibration_screen(void)
     }
 
     // Создаем группу для энкодера
-    if (calibration_group) {
-        lv_group_del(calibration_group);
+    if (ph_calibration_group == NULL) {
+        ph_calibration_group = lv_group_create();
+        lv_group_set_wrap(ph_calibration_group, true);
     }
-    calibration_group = lv_group_create();
+    lv_group_remove_all_objs(ph_calibration_group);
 
     calibration_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(calibration_screen, COLOR_BG, 0);
@@ -534,7 +569,7 @@ static void create_calibration_screen(void)
     lv_obj_set_style_outline_width(btn_back, 2, LV_STATE_FOCUSED);
     lv_obj_set_style_outline_color(btn_back, lv_color_hex(0xFFFFFF), LV_STATE_FOCUSED);
     lv_obj_add_event_cb(btn_back, btn_back_event_cb, LV_EVENT_ALL, NULL);
-    lv_group_add_obj(calibration_group, btn_back);
+    lv_group_add_obj(ph_calibration_group, btn_back);
     
     lv_obj_t *back_label = lv_label_create(btn_back);
     lv_label_set_text(back_label, LV_SYMBOL_LEFT);
@@ -584,7 +619,7 @@ static void create_calibration_screen(void)
     lv_obj_set_style_outline_color(btn_next, lv_color_hex(0xFFFFFF), LV_STATE_FOCUSED);
     lv_obj_set_style_outline_pad(btn_next, 2, LV_STATE_FOCUSED);
     lv_obj_add_event_cb(btn_next, btn_cal_next_event_cb, LV_EVENT_ALL, NULL);
-    lv_group_add_obj(calibration_group, btn_next);
+    lv_group_add_obj(ph_calibration_group, btn_next);
     
     lv_obj_t *lbl_next = lv_label_create(btn_next);
     lv_label_set_text(lbl_next, "Далее");
@@ -592,7 +627,6 @@ static void create_calibration_screen(void)
     lv_obj_center(lbl_next);
 
     calibration_step = 1;
-    ESP_LOGI(TAG, "Экран калибровки pH создан");
 }
 
 /* =============================
@@ -604,20 +638,22 @@ esp_err_t ph_show_detail_screen(void)
     if (!detail_screen) {
         create_detail_screen();
     }
-    
+
     lv_screen_load_anim(detail_screen, LV_SCR_LOAD_ANIM_MOVE_LEFT, 200, 0, false);
-    
-    // Устанавливаем группу для энкодера
+
     lv_indev_t *indev = lv_indev_get_next(NULL);
     while (indev) {
         if (lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
-            lv_indev_set_group(indev, detail_group);
+            lv_indev_set_group(indev, ph_detail_group);
+            // Устанавливаем фокус на первый объект в группе
+            if (ph_detail_group && lv_group_get_obj_count(ph_detail_group) > 0) {
+                lv_group_focus_next(ph_detail_group);
+            }
             break;
         }
         indev = lv_indev_get_next(indev);
     }
-    
-    ESP_LOGI(TAG, "Показан детальный экран pH");
+ 
     return ESP_OK;
 }
 
@@ -633,13 +669,16 @@ esp_err_t ph_show_settings_screen(void)
     lv_indev_t *indev = lv_indev_get_next(NULL);
     while (indev) {
         if (lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
-            lv_indev_set_group(indev, settings_group);
+            lv_indev_set_group(indev, ph_settings_group);
+            // Устанавливаем фокус на первый объект в группе
+            if (ph_settings_group && lv_group_get_obj_count(ph_settings_group) > 0) {
+                lv_group_focus_next(ph_settings_group);
+            }
             break;
         }
         indev = lv_indev_get_next(indev);
     }
-    
-    ESP_LOGI(TAG, "Показан экран настроек pH");
+ 
     return ESP_OK;
 }
 
@@ -656,20 +695,21 @@ esp_err_t ph_show_calibration_screen(void)
     lv_indev_t *indev = lv_indev_get_next(NULL);
     while (indev) {
         if (lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
-            lv_indev_set_group(indev, calibration_group);
+            lv_indev_set_group(indev, ph_calibration_group);
+            // Устанавливаем фокус на первый объект в группе
+            if (ph_calibration_group && lv_group_get_obj_count(ph_calibration_group) > 0) {
+                lv_group_focus_next(ph_calibration_group);
+            }
             break;
         }
         indev = lv_indev_get_next(indev);
     }
-    
-    ESP_LOGI(TAG, "Показан экран калибровки pH");
+ 
     return ESP_OK;
 }
 
 esp_err_t ph_close_screen(void)
 {
-    ESP_LOGI(TAG, "Закрытие экрана pH");
-    
     // Вызываем callback для возврата на главный экран
     if (close_callback) {
         close_callback();
@@ -741,6 +781,36 @@ esp_err_t ph_calibration_cancel(void)
     calibration_step = 0;
     ESP_LOGI(TAG, "Калибровка pH отменена");
     return ESP_OK;
+}
+
+lv_group_t *ph_get_detail_group(void)
+{
+    return ph_detail_group;
+}
+
+lv_obj_t *ph_get_detail_screen(void)
+{
+    return detail_screen;
+}
+
+lv_group_t *ph_get_settings_group(void)
+{
+    return ph_settings_group;
+}
+
+lv_obj_t *ph_get_settings_screen(void)
+{
+    return settings_screen;
+}
+
+lv_group_t *ph_get_calibration_group(void)
+{
+    return ph_calibration_group;
+}
+
+lv_obj_t *ph_get_calibration_screen(void)
+{
+    return calibration_screen;
 }
 
 /* =============================

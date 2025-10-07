@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "lvgl.h"
 #include "esp_err.h"
 
 #ifdef __cplusplus
@@ -60,6 +61,13 @@ esp_err_t ph_calibration_start(void);
 esp_err_t ph_calibration_set_point(uint8_t point_num, float reference_value);
 esp_err_t ph_calibration_finish(void);
 esp_err_t ph_calibration_cancel(void);
+
+lv_group_t *ph_get_detail_group(void);
+lv_obj_t *ph_get_detail_screen(void);
+lv_group_t *ph_get_settings_group(void);
+lv_obj_t *ph_get_settings_screen(void);
+lv_group_t *ph_get_calibration_group(void);
+lv_obj_t *ph_get_calibration_screen(void);
 
 #ifdef __cplusplus
 }
