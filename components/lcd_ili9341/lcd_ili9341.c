@@ -23,8 +23,8 @@
 #include "lvgl.h"
 
 #include "lcd_ili9341.h"
-// Используем правильный путь к заголовочному файлу lvgl_main
-#include "../lvgl_main/lvgl_main.h"
+// Используем правильный путь к заголовочному файлу lvgl_ui
+#include "../lvgl_ui/lvgl_ui.h"
 #include "../encoder/encoder.h"
 
 // Используем SPI2 для подключения дисплея

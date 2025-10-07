@@ -70,7 +70,7 @@
 #include "lcd_ili9341.h"
 #include "encoder.h"
 #include "i2c_bus.h"
-#include "lvgl_main.h"
+#include "lvgl_ui.h"
 
 // Объявление русского шрифта (после включения lvgl)
 #include "lvgl.h"

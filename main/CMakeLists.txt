@@ -6,7 +6,8 @@ idf_component_register(
         freertos
         nvs_flash
         spi_flash
-        lvgl
+        lvgl__lvgl
+        lvgl_ui
         system_tasks
         i2c_bus
         sht3x
@@ -14,13 +15,10 @@ idf_component_register(
         trema_ph
         trema_ec
         trema_lux
-        lvgl_main
         encoder
         peristaltic_pump
         lcd_ili9341
         trema_relay
-        sensor_screens
-        ui_manager
         config_manager
         notification_system
         error_handler
@@ -28,5 +26,4 @@ idf_component_register(
         task_scheduler
         system_interfaces
         ph_ec_controller
-        system_interfaces
 )

@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include "system_config.h"
 
+// Примечание: этот файл был переименован из lvgl_main.h в lvgl_ui.h
+// в рамках рефакторинга компонента lvgl
+
 /**
  * @brief Инициализация пользовательского интерфейса LVGL
  * 

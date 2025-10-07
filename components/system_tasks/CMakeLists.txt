@@ -17,7 +17,7 @@ idf_component_register(
         ph_ec_controller
         config_manager
         system_interfaces
-        lvgl_main
+        lvgl_ui
         encoder
 )
 

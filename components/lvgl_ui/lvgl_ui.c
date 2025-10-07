@@ -1,12 +1,10 @@
-#include "lvgl_main.h"
+#include "lvgl_ui.h"
 #include "lvgl.h"
 #include "lcd_ili9341.h"
 #include "encoder.h"
-#include "sensor_screens.h"
+#include "ph_screen.h"
 #include <inttypes.h>
-LV_FONT_DECLARE(lv_font_montserrat_14)
-LV_FONT_DECLARE(lv_font_montserrat_16)
-LV_FONT_DECLARE(lv_font_montserrat_18)
+// Используем только встроенные шрифты LVGL
 
 #include <math.h>
 #include <stdio.h>
@@ -350,7 +348,7 @@ static void init_styles(void)
     // Стиль основного заголовка - крупный и четкий
     lv_style_init(&style_title);
     lv_style_set_text_color(&style_title, COLOR_TEXT);
-    lv_style_set_text_font(&style_title, &lv_font_montserrat_16);
+    lv_style_set_text_font(&style_title, &lv_font_montserrat_14);
     lv_style_set_text_opa(&style_title, LV_OPA_COVER);
     lv_style_set_pad_ver(&style_title, 8);
 
@@ -385,20 +383,20 @@ static void init_styles(void)
     // Стиль больших значений датчиков - яркий и читаемый
     lv_style_init(&style_value_large);
     lv_style_set_text_color(&style_value_large, COLOR_ACCENT_SOFT);
-    lv_style_set_text_font(&style_value_large, &lv_font_montserrat_16);
+    lv_style_set_text_font(&style_value_large, &lv_font_montserrat_14);
     lv_style_set_text_opa(&style_value_large, LV_OPA_COVER);
     lv_style_set_pad_ver(&style_value_large, 4);
 
     // Стиль единиц измерения - компактный
     lv_style_init(&style_unit);
     lv_style_set_text_color(&style_unit, COLOR_TEXT_MUTED);
-    lv_style_set_text_font(&style_unit, &lv_font_montserrat_12);
+    lv_style_set_text_font(&style_unit, &lv_font_montserrat_14); // Используем доступный шрифт
     lv_style_set_text_opa(&style_unit, LV_OPA_COVER);
 
     // Стиль названий датчиков - читаемый шрифт
     lv_style_init(&style_label);
     lv_style_set_text_color(&style_label, COLOR_TEXT);
-    lv_style_set_text_font(&style_label, &lv_font_montserrat_14);
+    lv_style_set_text_font(&style_label, &lv_font_montserrat_14); // Используется из LVGL
     lv_style_set_text_opa(&style_label, LV_OPA_COVER);
 
     // Стиль статусных индикаторов
@@ -486,21 +484,21 @@ static void init_styles(void)
     // Стиль заголовка детализации
     lv_style_init(&style_detail_title);
     lv_style_set_text_color(&style_detail_title, COLOR_TEXT);
-    lv_style_set_text_font(&style_detail_title, &lv_font_montserrat_18);
+    lv_style_set_text_font(&style_detail_title, &lv_font_montserrat_14);
     lv_style_set_text_opa(&style_detail_title, LV_OPA_COVER);
     lv_style_set_pad_ver(&style_detail_title, 8);
 
     // Стиль значения в детализации - очень крупный
     lv_style_init(&style_detail_value);
     lv_style_set_text_color(&style_detail_value, COLOR_ACCENT_SOFT);
-    lv_style_set_text_font(&style_detail_value, &lv_font_montserrat_18);
+    lv_style_set_text_font(&style_detail_value, &lv_font_montserrat_14);
     lv_style_set_text_opa(&style_detail_value, LV_OPA_COVER);
     lv_style_set_pad_ver(&style_detail_value, 8);
 
     // Стиль дополнительной информации
     lv_style_init(&style_detail_info);
     lv_style_set_text_color(&style_detail_info, COLOR_TEXT_MUTED);
-    lv_style_set_text_font(&style_detail_info, &lv_font_montserrat_12);
+    lv_style_set_text_font(&style_detail_info, &lv_font_montserrat_14);
     lv_style_set_text_opa(&style_detail_info, LV_OPA_COVER);
 
     // =============================================
@@ -993,7 +991,7 @@ static void create_detail_ui(int index)
     
     lv_obj_t *settings_label = lv_label_create(settings_btn);
     lv_obj_set_style_text_color(settings_label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(settings_label, &lv_font_montserrat_12, 0);  // Уменьшили шрифт с 14 до 12
+    lv_obj_set_style_text_font(settings_label, &lv_font_montserrat_14, 0);  // Используем доступный шрифт
     lv_label_set_text(settings_label, "Settings");
     lv_obj_center(settings_label);
     
@@ -1004,7 +1002,7 @@ static void create_detail_ui(int index)
     // Компактная подсказка
     lv_obj_t *hint = lv_label_create(body);
     lv_obj_add_style(hint, &style_label, 0);
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);  // Уменьшили шрифт
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);  // Используем доступный шрифт
     lv_label_set_text(hint, "Press: back | Long: home");
 
     detail_current_index = index;
@@ -1209,35 +1207,7 @@ static void set_encoder_group(lv_group_t *group)
     }
 }
 
-// Ленивая инициализация экранов датчиков
-static void ensure_screen_initialized(int sensor_index, bool is_settings)
-{
-    if (sensor_index < 0 || sensor_index >= SENSOR_COUNT) return;
-    
-    if (!is_settings) {
-        // Инициализируем экран детализации если еще не инициализирован
-        sensor_screen_t *screen = NULL;
-        switch (sensor_index) {
-            case 0: screen = &ph_detail_screen; if (!screen->is_initialized) ph_detail_screen_init(); break;
-            case 1: screen = &ec_detail_screen; if (!screen->is_initialized) ec_detail_screen_init(); break;
-            case 2: screen = &temp_detail_screen; if (!screen->is_initialized) temp_detail_screen_init(); break;
-            case 3: screen = &humidity_detail_screen; if (!screen->is_initialized) humidity_detail_screen_init(); break;
-            case 4: screen = &lux_detail_screen; if (!screen->is_initialized) lux_detail_screen_init(); break;
-            case 5: screen = &co2_detail_screen; if (!screen->is_initialized) co2_detail_screen_init(); break;
-        }
-    } else {
-        // Инициализируем экран настроек если еще не инициализирован
-        sensor_screen_t *screen = NULL;
-        switch (sensor_index) {
-            case 0: screen = &ph_settings_screen; if (!screen->is_initialized) ph_settings_screen_init(); break;
-            case 1: screen = &ec_settings_screen; if (!screen->is_initialized) ec_settings_screen_init(); break;
-            case 2: screen = &temp_settings_screen; if (!screen->is_initialized) temp_settings_screen_init(); break;
-            case 3: screen = &humidity_settings_screen; if (!screen->is_initialized) humidity_settings_screen_init(); break;
-            case 4: screen = &lux_settings_screen; if (!screen->is_initialized) lux_settings_screen_init(); break;
-            case 5: screen = &co2_settings_screen; if (!screen->is_initialized) co2_settings_screen_init(); break;
-        }
-    }
-}
+// Ленивая инициализация экранов датчиков убрана - используем detail_screens[] и settings_screens[]
 
 static void switch_to_screen(lv_obj_t *screen, screen_type_t screen_type, lv_group_t *group)
 {
@@ -1356,10 +1326,27 @@ static void display_update_task(void *pvParameters)
 }
 
 /* =============================
+ *  CALLBACK ДЛЯ pH ЭКРАНОВ
+ * ============================= */
+
+// Callback для возврата из pH экранов на главный
+static void ph_return_to_main(void)
+{
+    ESP_LOGI(TAG, "Возврат из pH экранов на главный");
+    switch_to_screen(main_screen, SCREEN_MAIN, encoder_group);
+}
+
+/* =============================
  *  PUBLIC API
  * ============================= */
 void lvgl_main_init(void)
 {
+    // Инициализируем экраны pH
+    ph_screen_init();
+    
+    // Устанавливаем callback для возврата из pH экранов
+    ph_set_close_callback(ph_return_to_main);
+    
     vTaskDelay(pdMS_TO_TICKS(100));
     if (lvgl_lock(1000)) {
         create_main_ui();
@@ -1431,13 +1418,7 @@ void lvgl_update_sensor_values(float ph, float ec, float temp, float hum, float 
         ESP_LOGI(TAG, "Data sent to queue successfully");
     }
     
-    // Обновляем данные в экранах датчиков
-    ph_update_data(ph, 6.8f);  // Целевое значение pH
-    ec_update_data(ec, 1.5f);  // Целевое значение EC
-    temp_update_data(temp, 24.0f);  // Целевое значение температуры
-    humidity_update_data(hum, 70.0f);  // Целевое значение влажности
-    lux_update_data(lux, 500.0f);  // Целевое значение освещенности
-    co2_update_data(co2, 450.0f);  // Целевое значение CO2
+    // Данные обновляются через систему очередей и display_update_task
 }
 
 void lvgl_update_sensor_values_from_queue(sensor_data_t *data)
@@ -1483,6 +1464,13 @@ static void sensor_card_event_cb(lv_event_t *e)
 // Создание экрана детализации для сенсора
 static void create_detail_screen(uint8_t sensor_index)
 {
+    // Для pH используем специальный детализированный экран
+    if (sensor_index == 0) {
+        ESP_LOGI(TAG, "Используется специальный экран pH");
+        ph_show_detail_screen();
+        return;
+    }
+    
     const sensor_meta_t *meta = &SENSOR_META[sensor_index];
     detail_screen_t *detail = &detail_screens[sensor_index];
     
@@ -1953,45 +1941,14 @@ static void encoder_event_cb(lv_event_t *e)
             case LV_KEY_ENTER:
                 ESP_LOGI(TAG, "ENTER key pressed");
                 if (current_screen == SCREEN_MAIN) {
-                    // Инициализируем экран детализации если нужно
-                    ensure_screen_initialized(selected_card_index, false);
-                    
-                    // Переходим к экрану детализации выбранной карточки
-                    sensor_screen_t *detail_screen = NULL;
-                    screen_type_t new_screen_type = SCREEN_MAIN;
-                    
-                    switch (selected_card_index) {
-                        case 0: detail_screen = &ph_detail_screen; new_screen_type = SCREEN_DETAIL_PH; break;
-                        case 1: detail_screen = &ec_detail_screen; new_screen_type = SCREEN_DETAIL_EC; break;
-                        case 2: detail_screen = &temp_detail_screen; new_screen_type = SCREEN_DETAIL_TEMP; break;
-                        case 3: detail_screen = &humidity_detail_screen; new_screen_type = SCREEN_DETAIL_HUMIDITY; break;
-                        case 4: detail_screen = &lux_detail_screen; new_screen_type = SCREEN_DETAIL_LUX; break;
-                        case 5: detail_screen = &co2_detail_screen; new_screen_type = SCREEN_DETAIL_CO2; break;
-                    }
-                    
-                    if (detail_screen && detail_screen->screen) {
-                        switch_to_screen(detail_screen->screen, new_screen_type, detail_screen_groups[selected_card_index]);
-                    }
+                    // Переходим к экрану детализации через обработчик карточки
+                    screen_type_t detail_screen_type = SCREEN_DETAIL_PH + selected_card_index;
+                    show_screen(detail_screen_type);
                 } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
                     // На экране детализации - переходим к настройкам
                     int sensor_index = current_screen - SCREEN_DETAIL_PH;
-                    ensure_screen_initialized(sensor_index, true);
-                    
-                    sensor_screen_t *settings_screen = NULL;
-                    screen_type_t new_screen_type = SCREEN_MAIN;
-                    
-                    switch (sensor_index) {
-                        case 0: settings_screen = &ph_settings_screen; new_screen_type = SCREEN_SETTINGS_PH; break;
-                        case 1: settings_screen = &ec_settings_screen; new_screen_type = SCREEN_SETTINGS_EC; break;
-                        case 2: settings_screen = &temp_settings_screen; new_screen_type = SCREEN_SETTINGS_TEMP; break;
-                        case 3: settings_screen = &humidity_settings_screen; new_screen_type = SCREEN_SETTINGS_HUMIDITY; break;
-                        case 4: settings_screen = &lux_settings_screen; new_screen_type = SCREEN_SETTINGS_LUX; break;
-                        case 5: settings_screen = &co2_settings_screen; new_screen_type = SCREEN_SETTINGS_CO2; break;
-                    }
-                    
-                    if (settings_screen && settings_screen->screen) {
-                        switch_to_screen(settings_screen->screen, new_screen_type, settings_screen_groups[sensor_index]);
-                    }
+                    screen_type_t settings_screen_type = SCREEN_SETTINGS_PH + sensor_index;
+                    show_screen(settings_screen_type);
                 }
                 break;
                 
@@ -2001,25 +1958,12 @@ static void encoder_event_cb(lv_event_t *e)
                     // Уже на главном экране
                 } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
                     // Возвращаемся к главному экрану
-                    switch_to_screen(main_screen, SCREEN_MAIN, encoder_group);
+                    show_screen(SCREEN_MAIN);
                 } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
                     // Возвращаемся к экрану детализации
                     int sensor_index = current_screen - SCREEN_SETTINGS_PH;
-                    sensor_screen_t *detail_screen = NULL;
-                    screen_type_t new_screen_type = SCREEN_MAIN;
-                    
-                    switch (sensor_index) {
-                        case 0: detail_screen = &ph_detail_screen; new_screen_type = SCREEN_DETAIL_PH; break;
-                        case 1: detail_screen = &ec_detail_screen; new_screen_type = SCREEN_DETAIL_EC; break;
-                        case 2: detail_screen = &temp_detail_screen; new_screen_type = SCREEN_DETAIL_TEMP; break;
-                        case 3: detail_screen = &humidity_detail_screen; new_screen_type = SCREEN_DETAIL_HUMIDITY; break;
-                        case 4: detail_screen = &lux_detail_screen; new_screen_type = SCREEN_DETAIL_LUX; break;
-                        case 5: detail_screen = &co2_detail_screen; new_screen_type = SCREEN_DETAIL_CO2; break;
-                    }
-                    
-                    if (detail_screen && detail_screen->screen) {
-                        switch_to_screen(detail_screen->screen, new_screen_type, detail_screen_groups[sensor_index]);
-                    }
+                    screen_type_t detail_screen_type = SCREEN_DETAIL_PH + sensor_index;
+                    show_screen(detail_screen_type);
                 }
                 break;
         }

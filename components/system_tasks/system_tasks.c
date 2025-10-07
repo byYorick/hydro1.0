@@ -21,7 +21,7 @@
 #include "error_handler.h"
 #include "trema_ec.h"
 
-#include "lvgl_main.h"
+#include "lvgl_ui.h"
 #include "encoder.h"
 
 static const char *TAG = "SYS_TASKS";
