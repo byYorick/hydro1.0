@@ -293,6 +293,17 @@ static void sensor_task(void *pvParameters)
         task_context.sensor_stats.execution_count++;
         if (ret != ESP_OK) {
             task_context.sensor_stats.failure_count++;
+            ERROR_WARN(ERROR_CATEGORY_SENSOR, TAG,
+                      "Ошибка чтения датчиков (цикл #%lu)",
+                      task_context.sensor_stats.execution_count);
+        } else {
+            // Отладочная информация раз в 30 циклов (~1 минута при интервале 2 сек)
+            if (task_context.sensor_stats.execution_count % 30 == 0) {
+                ERROR_DEBUG(TAG,
+                           "Датчики OK: pH=%.2f EC=%.2f T=%.1f H=%.1f Lux=%.0f CO2=%.0f",
+                           sensor_data.ph, sensor_data.ec, sensor_data.temperature,
+                           sensor_data.humidity, sensor_data.lux, sensor_data.co2);
+            }
         }
 
         uint32_t duration_ms = (uint32_t)((esp_timer_get_time() - cycle_start_us) / 1000ULL);
@@ -512,6 +523,8 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
 
     const sensor_interface_t *sensor_if = system_interfaces_get_sensor_interface();
     if (sensor_if == NULL) {
+        ERROR_CRITICAL(ERROR_CATEGORY_SENSOR, ESP_ERR_INVALID_STATE, TAG,
+                      "Интерфейс датчиков не инициализирован!");
         ESP_LOGE(TAG, "Sensor interface not initialized");
         return ESP_ERR_INVALID_STATE;
     }

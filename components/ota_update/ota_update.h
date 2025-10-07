@@ -21,7 +21,6 @@
 #include <stdint.h>
 #include "esp_err.h"
 #include "esp_ota_ops.h"
-// #include "network_manager.h" // TODO: Implement network functionality or remove
 
 /**
  * @brief Режимы OTA обновления

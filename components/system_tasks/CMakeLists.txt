@@ -11,6 +11,7 @@ idf_component_register(
         trema_ec
         trema_lux
         notification_system
+        error_handler
         data_logger
         task_scheduler
         ph_ec_controller

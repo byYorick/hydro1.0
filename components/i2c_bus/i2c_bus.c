@@ -1,4 +1,5 @@
 #include "i2c_bus.h"
+#include "error_handler.h"
 #include "esp_log.h"
 
 static const char *TAG = "i2c_bus";
@@ -21,6 +22,7 @@ esp_err_t i2c_bus_init(void)
     // Create the I2C master bus
     esp_err_t err = i2c_new_master_bus(&i2c_mst_config, &i2c_bus_handle);
     if (err != ESP_OK) {
+        ERROR_CRITICAL(ERROR_CATEGORY_I2C, err, TAG, "Не удалось создать шину I2C");
         ESP_LOGE(TAG, "Failed to create I2C master bus: %s", esp_err_to_name(err));
         return err;
     }
@@ -28,6 +30,7 @@ esp_err_t i2c_bus_init(void)
     // Create mutex for thread safety
     i2c_bus_mutex = xSemaphoreCreateMutex();
     if (i2c_bus_mutex == NULL) {
+        ERROR_CRITICAL(ERROR_CATEGORY_I2C, ESP_ERR_NO_MEM, TAG, "Не удалось создать мьютекс I2C");
         ESP_LOGE(TAG, "Failed to create I2C mutex");
         return ESP_ERR_NO_MEM;
     }
@@ -50,6 +53,7 @@ esp_err_t i2c_bus_write(uint8_t dev_addr, const uint8_t *data, size_t len)
     }
 
     if (xSemaphoreTake(i2c_bus_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ERROR_WARN(ERROR_CATEGORY_I2C, TAG, "Таймаут ожидания мьютекса I2C");
         ESP_LOGW(TAG, "Timeout waiting for I2C mutex");
         return ESP_ERR_TIMEOUT;
     }
@@ -64,6 +68,7 @@ esp_err_t i2c_bus_write(uint8_t dev_addr, const uint8_t *data, size_t len)
     i2c_master_dev_handle_t dev_handle;
     esp_err_t err = i2c_master_bus_add_device(i2c_bus_handle, &dev_cfg, &dev_handle);
     if (err != ESP_OK) {
+        ERROR_CHECK_I2C(err, TAG, "Не удалось добавить устройство 0x%02X", dev_addr);
         ESP_LOGW(TAG, "Failed to add device 0x%02X to bus: %s", dev_addr, esp_err_to_name(err));
         xSemaphoreGive(i2c_bus_mutex);
         return err;
@@ -72,6 +77,7 @@ esp_err_t i2c_bus_write(uint8_t dev_addr, const uint8_t *data, size_t len)
     // Perform the write transaction with timeout
     err = i2c_master_transmit(dev_handle, data, len, 1000); // 1 second timeout
     if (err != ESP_OK) {
+        ERROR_CHECK_I2C(err, TAG, "Ошибка записи на устройство 0x%02X", dev_addr);
         ESP_LOGW(TAG, "Failed to write to device 0x%02X: %s", dev_addr, esp_err_to_name(err));
     }
 

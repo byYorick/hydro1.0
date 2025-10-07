@@ -60,6 +60,7 @@
 #include "config_manager.h"
 #include "system_interfaces.h"
 #include "notification_system.h"
+#include "error_handler.h"
 #include "data_logger.h"
 #include "task_scheduler.h"
 #include "ph_ec_controller.h"
@@ -70,6 +71,10 @@
 #include "encoder.h"
 #include "i2c_bus.h"
 #include "lvgl_main.h"
+
+// Объявление русского шрифта (после включения lvgl)
+#include "lvgl.h"
+LV_FONT_DECLARE(montserrat_ru);
 
 // Датчики (для инициализации)
 #include "sht3x.h"
@@ -510,6 +515,16 @@ static esp_err_t init_system_components(void)
     }
     notification_set_callback(notification_callback);
     ESP_LOGI(TAG, "  ✓ Notification System initialized");
+    
+    // Error Handler: Централизованная обработка ошибок
+    ret = error_handler_init(true); // Включаем всплывающие окна
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize error handler: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    // Устанавливаем русский шрифт для отображения кириллицы
+    error_handler_set_font(&montserrat_ru);
+    ESP_LOGI(TAG, "  ✓ Error Handler initialized (with Cyrillic support)");
     
     // Data Logger: Логирование данных
     ret = data_logger_init(MAX_LOG_ENTRIES);

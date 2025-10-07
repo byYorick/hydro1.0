@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "app_main.c"
+    SRCS "app_main.c" "montserrat14_ru.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
         driver
@@ -23,6 +23,7 @@ idf_component_register(
         ui_manager
         config_manager
         notification_system
+        error_handler
         data_logger
         task_scheduler
         system_interfaces
