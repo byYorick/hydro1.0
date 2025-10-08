@@ -1879,9 +1879,21 @@ static void system_settings_button_event_cb(lv_event_t *e)
 // Обработчик пунктов меню системных настроек
 static void system_menu_item_event_cb(lv_event_t *e)
 {
+    lv_event_code_t code = lv_event_get_code(e);
+    
+    // Обрабатываем только клик или нажатие Enter
+    if (code == LV_EVENT_KEY) {
+        uint32_t key = lv_event_get_key(e);
+        if (key != LV_KEY_ENTER) {
+            return;  // Игнорируем другие клавиши
+        }
+    } else if (code != LV_EVENT_CLICKED) {
+        return;  // Игнорируем другие события
+    }
+    
     uint8_t item_index = (uint8_t)(intptr_t)lv_event_get_user_data(e);
     
-    ESP_LOGI(TAG, "System menu item %d clicked", item_index);
+    ESP_LOGI(TAG, "System menu item %d activated (code=%d)", item_index, code);
     
     switch (item_index) {
         case 0:  // Auto Control
@@ -2278,6 +2290,11 @@ static void create_system_settings_screen(void)
         lv_obj_set_height(item, 40);
         lv_obj_add_flag(item, LV_OBJ_FLAG_CLICKABLE);
         
+        // Стиль фокуса - бирюзовая рамка
+        lv_obj_set_style_border_color(item, COLOR_ACCENT, LV_STATE_FOCUSED);
+        lv_obj_set_style_border_width(item, 2, LV_STATE_FOCUSED);
+        lv_obj_set_style_border_opa(item, LV_OPA_COVER, LV_STATE_FOCUSED);
+        
         lv_obj_t *item_label = lv_label_create(item);
         lv_obj_add_style(item_label, &style_label, 0);
         lv_label_set_text(item_label, settings_items[i]);
@@ -2288,8 +2305,9 @@ static void create_system_settings_screen(void)
         lv_label_set_text(arrow, ">");
         lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -10, 0);
         
-        // Добавляем обработчик события с индексом пункта меню
+        // Добавляем обработчики события с индексом пункта меню
         lv_obj_add_event_cb(item, system_menu_item_event_cb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+        lv_obj_add_event_cb(item, system_menu_item_event_cb, LV_EVENT_KEY, (void*)(intptr_t)i);
         
         // Добавляем в группу для навигации
         lv_group_add_obj(system_settings_group, item);
