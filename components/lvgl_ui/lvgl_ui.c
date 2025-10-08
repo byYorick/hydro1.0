@@ -4,6 +4,12 @@
 #include "encoder.h"
 #include "ph_screen.h"
 #include <inttypes.h>
+
+// Screen Manager System
+#include "screen_manager/screen_manager.h"
+#include "screen_manager/screen_init.h"
+#include "screens/main_screen.h"
+#include "lvgl_styles.h"
 // Используем только встроенные шрифты LVGL
 
 #include <math.h>
@@ -251,30 +257,32 @@ static lv_obj_t *detail_chart = NULL;
 static lv_chart_series_t *detail_series = NULL;
 static int detail_current_index = -1;
 
-static lv_style_t style_bg;
-static lv_style_t style_header;
-static lv_style_t style_title;
-static lv_style_t style_label;
-static lv_style_t style_value;
-static lv_style_t style_value_large;
-static lv_style_t style_value_small;
-static lv_style_t style_unit;
-static lv_style_t style_focus;
-static lv_style_t style_card;
-static lv_style_t style_card_focused;
-static lv_style_t style_status_bar;
-static lv_style_t style_status_normal;
-static lv_style_t style_status_warning;
-static lv_style_t style_status_danger;
-static lv_style_t style_badge;
-static lv_style_t style_button;
-static lv_style_t style_button_pressed;
-static lv_style_t style_button_secondary;
-static lv_style_t style_detail_bg;
-static lv_style_t style_detail_container;
-static lv_style_t style_detail_title;
-static lv_style_t style_detail_value;
-static lv_style_t style_detail_info;
+// ===== ГЛОБАЛЬНЫЕ СТИЛИ (экспортированы в lvgl_styles.h) =====
+lv_style_t style_bg;
+lv_style_t style_header;
+lv_style_t style_title;
+lv_style_t style_label;
+lv_style_t style_value;
+lv_style_t style_value_large;
+lv_style_t style_value_small;
+lv_style_t style_unit;
+lv_style_t style_focus;
+lv_style_t style_card;
+lv_style_t style_card_focused;
+lv_style_t style_status_bar;
+lv_style_t style_status_normal;
+lv_style_t style_status_warning;
+lv_style_t style_status_danger;
+lv_style_t style_badge;
+lv_style_t style_button;
+lv_style_t style_button_pressed;
+lv_style_t style_button_secondary;
+lv_style_t style_detail_bg;
+lv_style_t style_detail_container;
+lv_style_t style_detail_title;
+lv_style_t style_detail_value;
+lv_style_t style_detail_info;
+lv_style_t style_detail_value_big;  // Alias для style_detail_value (для совместимости)
 static bool styles_initialized = false;
 
 static lv_group_t *encoder_group = NULL;
@@ -298,7 +306,7 @@ static bool sensor_snapshot_valid = false;
 /* =============================
  *  FORWARD DECLARATIONS
  * ============================= */
-static void init_styles(void);
+// init_styles() объявлен в lvgl_styles.h
 static void create_main_ui(void);
 static void create_detail_ui(int index);
 static void create_status_bar(lv_obj_t *parent, const char *title);
@@ -357,7 +365,7 @@ static inline bool threshold_defined(float value)
  * Использует принципы Material Design с адаптацией под гидропонную тематику
  * Все элементы рассчитаны для дисплея 240x320 с правильными отступами
  */
-static void init_styles(void)
+void init_styles(void)  // Глобальная функция - объявлена в lvgl_styles.h
 {
     if (styles_initialized) {
         return;
@@ -530,6 +538,13 @@ static void init_styles(void)
     lv_style_set_text_font(&style_detail_value, &lv_font_montserrat_14);
     lv_style_set_text_opa(&style_detail_value, LV_OPA_COVER);
     lv_style_set_pad_ver(&style_detail_value, 8);
+
+    // Стиль очень крупного значения в детализации (алиас для style_detail_value)
+    lv_style_init(&style_detail_value_big);
+    lv_style_set_text_color(&style_detail_value_big, COLOR_ACCENT_SOFT);
+    lv_style_set_text_font(&style_detail_value_big, &lv_font_montserrat_14);  // Используем доступный шрифт (14)
+    lv_style_set_text_opa(&style_detail_value_big, LV_OPA_COVER);
+    lv_style_set_pad_ver(&style_detail_value_big, 12);
 
     // Стиль дополнительной информации
     lv_style_init(&style_detail_info);
@@ -1133,16 +1148,20 @@ void lvgl_set_focus(int index)
     
     // Убираем фокус с предыдущего элемента (карточка или кнопка SET)
     if (current_focus_index >= 0 && current_focus_index < SENSOR_COUNT) {
+        // Убираем визуальный стиль фокуса с карточки датчика
         if (sensor_containers[current_focus_index] && focus_visible) {
             lv_obj_remove_style(sensor_containers[current_focus_index], &style_focus, LV_PART_MAIN);
         }
     } else if (current_focus_index == SENSOR_COUNT) {
         // Убираем фокус с кнопки SET (индекс 6)
-        if (status_settings_btn && encoder_group) {
+        if (status_settings_btn) {
             lv_obj_clear_state(status_settings_btn, LV_STATE_FOCUSED);
+            // Также убираем визуальный стиль фокуса если есть
+            lv_obj_remove_style(status_settings_btn, &style_focus, LV_PART_MAIN);
         }
     }
 
+    // Обновляем индекс фокуса
     current_focus_index = index;
     selected_card_index = index;  // Синхронизируем индексы
     
@@ -1385,39 +1404,38 @@ static void ph_return_to_main(void)
  * ============================= */
 void lvgl_main_init(void)
 {
-    // Инициализируем экраны pH
-    ph_screen_init();
+    ESP_LOGI(TAG, "╔═══════════════════════════════════════════════════╗");
+    ESP_LOGI(TAG, "║   Initializing UI with Screen Manager System     ║");
+    ESP_LOGI(TAG, "╚═══════════════════════════════════════════════════╝");
     
-    // Устанавливаем callback для возврата из pH экранов
+    // Инициализация старых компонентов (для совместимости)
+    // Инициализируем экраны pH (пока оставляем)
+    ph_screen_init();
     ph_set_close_callback(ph_return_to_main);
     
     vTaskDelay(pdMS_TO_TICKS(100));
+    
+    // ===== НОВАЯ СИСТЕМА: Screen Manager =====
+    ESP_LOGI(TAG, "Initializing Screen Manager System...");
     if (lvgl_lock(1000)) {
-        create_main_ui();
+        // Инициализация стилей (требуется для виджетов)
+        init_styles();
+        
+        // Инициализируем Screen Manager и регистрируем все экраны
+        esp_err_t ret = screen_system_init_all();
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize Screen Manager: %s", esp_err_to_name(ret));
+            lvgl_unlock();
+            return;
+        }
+        
         lvgl_unlock();
     } else {
         ESP_LOGE(TAG, "Failed to acquire LVGL lock for UI initialization");
+        return;
     }
-    
-    // Создаем группы для экранов детализации и настроек
-    for (int i = 0; i < SENSOR_COUNT; i++) {
-        if (!detail_screen_groups[i]) {
-            detail_screen_groups[i] = lv_group_create();
-            lv_group_set_wrap(detail_screen_groups[i], true);
-        }
-        if (!settings_screen_groups[i]) {
-            settings_screen_groups[i] = lv_group_create();
-            lv_group_set_wrap(settings_screen_groups[i], true);
-        }
-    }
-    
-    // Инициализируем экраны датчиков (будет выполнено асинхронно)
-    // Примечание: инициализация будет происходить при первом открытии экрана
-    // чтобы избежать блокировки watchdog
-    ESP_LOGI(TAG, "Sensor screen groups created");
     
     // Создаем задачу обработки энкодера
-    // Используем собственную обработку вместо стандартной LVGL для кастомной навигации
     TaskHandle_t encoder_task_handle = NULL;
     BaseType_t task_created = xTaskCreate(encoder_task, "lvgl_encoder", 4096, NULL, 5, &encoder_task_handle);
     if (task_created == pdPASS && encoder_task_handle != NULL) {
@@ -1426,9 +1444,7 @@ void lvgl_main_init(void)
         ESP_LOGE(TAG, "FAILED to create encoder task!");
     }
     
-    // Добавляем обработчик событий энкодера
-    lv_obj_add_event_cb(main_screen, encoder_event_cb, LV_EVENT_ALL, NULL);
-    ESP_LOGI(TAG, "Encoder navigation and sensor screens initialized");
+    ESP_LOGI(TAG, "UI initialization complete with Screen Manager");
 }
 
 void lvgl_update_sensor_values(float ph, float ec, float temp, float hum, float lux, float co2)
@@ -1598,6 +1614,16 @@ static void create_settings_screen(uint8_t sensor_index)
     lv_obj_add_style(settings->screen, &style_bg, 0);
     lv_obj_set_style_pad_all(settings->screen, 16, 0);
     
+    // Получаем или создаем группу для этого экрана настроек
+    lv_group_t *settings_group = settings_screen_groups[sensor_index];
+    if (settings_group == NULL) {
+        settings_group = lv_group_create();
+        lv_group_set_wrap(settings_group, true);
+        settings_screen_groups[sensor_index] = settings_group;
+    } else {
+        lv_group_remove_all_objs(settings_group);
+    }
+    
     // Заголовок
     lv_obj_t *title = lv_label_create(settings->screen);
     lv_obj_add_style(title, &style_title, 0);
@@ -1610,6 +1636,8 @@ static void create_settings_screen(uint8_t sensor_index)
     lv_obj_set_size(settings->back_btn, 60, 30);
     lv_obj_align(settings->back_btn, LV_ALIGN_TOP_RIGHT, 0, 0);
     lv_obj_add_event_cb(settings->back_btn, back_button_event_cb, LV_EVENT_CLICKED, NULL);
+    // Добавляем кнопку назад в группу энкодера
+    lv_group_add_obj(settings_group, settings->back_btn);
     
     lv_obj_t *back_label = lv_label_create(settings->back_btn);
     lv_label_set_text(back_label, "←");
@@ -1640,6 +1668,8 @@ static void create_settings_screen(uint8_t sensor_index)
         lv_obj_add_style(item, &style_card, 0);
         lv_obj_set_size(item, 240, 30);
         lv_obj_add_flag(item, LV_OBJ_FLAG_CLICKABLE);
+        // Добавляем каждую кнопку в группу энкодера
+        lv_group_add_obj(settings_group, item);
         
         lv_obj_t *item_label = lv_label_create(item);
         lv_label_set_text(item_label, settings_items[i]);
@@ -1651,6 +1681,8 @@ static void create_settings_screen(uint8_t sensor_index)
         lv_label_set_text(placeholder, "→");
         lv_obj_align(placeholder, LV_ALIGN_RIGHT_MID, -10, 0);
     }
+    
+    ESP_LOGI(TAG, "Settings screen created with %d objects in encoder group", lv_group_get_obj_count(settings_group));
 }
 
 // Переключение экранов
@@ -1775,9 +1807,8 @@ static void show_screen(screen_type_t screen)
 
     if (screen == SCREEN_MAIN) {
         update_card_selection();
-    } else if (screen >= SCREEN_SETTINGS_PH && screen <= SCREEN_SETTINGS_CO2) {
-        update_settings_selection();
     }
+    // update_settings_selection() больше не используется - навигация управляется группой LVGL
 }
 
 // Обработчик кнопки "Назад"
@@ -1975,123 +2006,63 @@ static void encoder_task(void *pvParameters)
     }
 }
 
-// Обработка событий энкодера
+// Обработка событий энкодера (УПРОЩЕННАЯ для Screen Manager)
 static void handle_encoder_event(encoder_event_t *event)
 {
     if (!encoder_navigation_enabled) {
         return;
     }
     
-    // Сбрасываем таймер скрытия фокуса при любой активности энкодера
+    // Сбрасываем таймер скрытия фокуса
     reset_focus_timer();
+    
+    // ===== НОВАЯ СИСТЕМА: Делегируем Screen Manager =====
+    screen_instance_t *current = screen_get_current();
+    if (current && current->encoder_group) {
+        // Навигация управляется группой LVGL автоматически
+        switch (event->type) {
+            case ENCODER_EVENT_ROTATE_CW:
+                lv_group_focus_next(current->encoder_group);
+                ESP_LOGD(TAG, "Screen Manager: focus next");
+                return;  // Обработано новой системой
+                
+            case ENCODER_EVENT_ROTATE_CCW:
+                lv_group_focus_prev(current->encoder_group);
+                ESP_LOGD(TAG, "Screen Manager: focus prev");
+                return;  // Обработано новой системой
+                
+            case ENCODER_EVENT_BUTTON_PRESS:
+                // Отправляем ENTER в группу
+                lv_group_send_data(current->encoder_group, LV_KEY_ENTER);
+                // Также отправляем CLICKED напрямую
+                lv_obj_t *focused = lv_group_get_focused(current->encoder_group);
+                if (focused) {
+                    lv_obj_send_event(focused, LV_EVENT_CLICKED, NULL);
+                }
+                ESP_LOGD(TAG, "Screen Manager: button pressed");
+                return;  // Обработано новой системой
+                
+            default:
+                break;
+        }
+    }
+    
+    // ===== LEGACY: Минимальная обработка для pH screen (если активен) =====
+    // Screen Manager не активен, используем fallback
+    ESP_LOGD(TAG, "Legacy encoder handling (Screen Manager not active)");
     
     switch (event->type) {
         case ENCODER_EVENT_ROTATE_CW:
-            if (current_screen == SCREEN_MAIN) {
-                // Навигация по карточкам (0-5) и кнопке SET (6)
-                int total_items = SENSOR_COUNT + 1;  // 6 датчиков + 1 кнопка SET
-                selected_card_index = (selected_card_index + 1) % total_items;
-                
-                if (selected_card_index < SENSOR_COUNT) {
-                    // Фокус на карточке датчика
-                    lvgl_set_focus(selected_card_index);
-                    ESP_LOGI(TAG, "Focus CW: sensor card %d", selected_card_index);
-                } else {
-                    // Фокус на кнопке SET (индекс 6)
-                    if (encoder_group && status_settings_btn) {
-                        lv_group_focus_obj(status_settings_btn);
-                        current_focus_index = SENSOR_COUNT;  // индекс 6
-                        ESP_LOGI(TAG, "Focus CW: SET button (index %d)", SENSOR_COUNT);
-                    }
-                }
-            } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
-                selected_settings_item = (selected_settings_item + 1) % 5;
-                update_settings_selection();
-            } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
-                lcd_ili9341_set_encoder_diff(1);
-            } else if (current_screen == SCREEN_CALIBRATION) {
-                lcd_ili9341_set_encoder_diff(1);
-            } else if (current_screen == SCREEN_SYSTEM_STATUS) {
-                lcd_ili9341_set_encoder_diff(1);
-            }
+            lcd_ili9341_set_encoder_diff(1);
             break;
             
         case ENCODER_EVENT_ROTATE_CCW:
-            if (current_screen == SCREEN_MAIN) {
-                // Навигация по карточкам (0-5) и кнопке SET (6)
-                int total_items = SENSOR_COUNT + 1;  // 6 датчиков + 1 кнопка SET
-                selected_card_index = (selected_card_index - 1 + total_items) % total_items;
-                
-                if (selected_card_index < SENSOR_COUNT) {
-                    // Фокус на карточке датчика
-                    lvgl_set_focus(selected_card_index);
-                    ESP_LOGI(TAG, "Focus CCW: sensor card %d", selected_card_index);
-                } else {
-                    // Фокус на кнопке SET (индекс 6)
-                    if (encoder_group && status_settings_btn) {
-                        lv_group_focus_obj(status_settings_btn);
-                        current_focus_index = SENSOR_COUNT;  // индекс 6
-                        ESP_LOGI(TAG, "Focus CCW: SET button (index %d)", SENSOR_COUNT);
-                    }
-                }
-            } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
-                selected_settings_item = (selected_settings_item - 1 + 5) % 5;
-                update_settings_selection();
-            } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
-                lcd_ili9341_set_encoder_diff(-1);
-            } else if (current_screen == SCREEN_CALIBRATION) {
-                lcd_ili9341_set_encoder_diff(-1);
-            } else if (current_screen == SCREEN_SYSTEM_STATUS) {
-                lcd_ili9341_set_encoder_diff(-1);
-            }
+            lcd_ili9341_set_encoder_diff(-1);
             break;
             
         case ENCODER_EVENT_BUTTON_PRESS:
-            if (current_screen == SCREEN_MAIN) {
-                // Проверяем, на каком объекте сейчас фокус
-                lv_obj_t *focused = lv_group_get_focused(encoder_group);
-                
-                // Если фокус на кнопке SET - вызываем callback напрямую
-                if (focused == status_settings_btn) {
-                    ESP_LOGI(TAG, "SET button activated via encoder");
-                    system_settings_button_event_cb(NULL);
-                } else {
-                    // Иначе переходим к экрану детализации выбранной карточки
-                    if (detail_screens[selected_card_index].screen == NULL) {
-                        create_detail_screen(selected_card_index);
-                    }
-                    screen_type_t detail_screen = SCREEN_DETAIL_PH + selected_card_index;
-                    show_screen(detail_screen);
-                }
-            } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
-                // На экране детализации - активируем кнопку с фокусом
-                lv_indev_t *indev = lcd_ili9341_get_encoder_indev();
-                if (indev) {
-                    lv_group_t *group = lv_indev_get_group(indev);
-                    if (group) {
-                        lv_group_send_data(group, LV_KEY_ENTER);
-                    }
-                }
-            } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
-                // На экране настроек - активируем элемент с фокусом
-                lv_indev_t *indev = lcd_ili9341_get_encoder_indev();
-                if (indev) {
-                    lv_group_t *group = lv_indev_get_group(indev);
-                    if (group) {
-                        lv_group_send_data(group, LV_KEY_ENTER);
-                    }
-                }
-            } else if (current_screen == SCREEN_CALIBRATION) {
-                // На экране калибровки - активируем кнопку с фокусом
-                lv_indev_t *indev = lcd_ili9341_get_encoder_indev();
-                if (indev) {
-                    lv_group_t *group = lv_indev_get_group(indev);
-                    if (group) {
-                        lv_group_send_data(group, LV_KEY_ENTER);
-                    }
-                }
-            } else if (current_screen == SCREEN_SYSTEM_STATUS) {
-                // На экране системных настроек - активируем элемент с фокусом
+            // Fallback для legacy экранов
+            {
                 lv_indev_t *indev = lcd_ili9341_get_encoder_indev();
                 if (indev) {
                     lv_group_t *group = lv_indev_get_group(indev);
