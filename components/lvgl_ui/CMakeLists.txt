@@ -12,5 +12,7 @@ idf_component_register(
         main 
         ph_ec_controller
         nvs_flash
+        config_manager
+        data_logger
 )
 

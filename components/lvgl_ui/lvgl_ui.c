@@ -10,9 +10,12 @@
 #include <stdio.h>
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "config_manager.h"
+#include "data_logger.h"
 
 static const char *TAG = "LVGL_MAIN";
 
@@ -64,11 +67,17 @@ typedef enum {
     SCREEN_SETTINGS_CO2,                // Настройки CO2
 
     // Новые экраны для улучшенной функциональности
-    SCREEN_SYSTEM_STATUS,               // Статус системы и диагностика
+    SCREEN_SYSTEM_STATUS,               // Общие настройки системы (главное меню настроек)
+    SCREEN_AUTO_CONTROL,                // Настройки автоматического управления
+    SCREEN_WIFI_SETTINGS,               // Настройки WiFi
+    SCREEN_DISPLAY_SETTINGS,            // Настройки дисплея
+    SCREEN_DATA_LOGGER_SETTINGS,        // Настройки логирования
+    SCREEN_SYSTEM_INFO,                 // Информация о системе
+    SCREEN_RESET_CONFIRM,               // Подтверждение сброса настроек
     SCREEN_NETWORK_SETTINGS,            // Настройки сети (WiFi, Bluetooth)
     SCREEN_MOBILE_CONNECT,              // Подключение к мобильному приложению
     SCREEN_OTA_UPDATE,                  // OTA обновления прошивки
-    SCREEN_CALIBRATION,                 // Калибровка датчиков
+    SCREEN_CALIBRATION,                 // Калибровка датчиков (зарезервировано)
     SCREEN_DATA_EXPORT,                 // Экспорт данных
     SCREEN_ABOUT,                       // О программе и системе
 
@@ -100,6 +109,24 @@ static detail_screen_t detail_screens[SENSOR_COUNT];
 static settings_screen_t settings_screens[SENSOR_COUNT];
 static lv_obj_t *main_screen;
 static lv_obj_t *sensor_cards[SENSOR_COUNT];
+static lv_obj_t *system_settings_screen = NULL;
+static lv_group_t *system_settings_group = NULL;
+
+// Экраны подменю системных настроек
+static lv_obj_t *auto_control_screen = NULL;
+static lv_obj_t *wifi_settings_screen = NULL;
+static lv_obj_t *display_settings_screen = NULL;
+static lv_obj_t *data_logger_screen = NULL;
+static lv_obj_t *system_info_screen = NULL;
+static lv_obj_t *reset_confirm_screen = NULL;
+
+// Группы для навигации
+static lv_group_t *auto_control_group = NULL;
+static lv_group_t *wifi_settings_group = NULL;
+static lv_group_t *display_settings_group = NULL;
+static lv_group_t *data_logger_group = NULL;
+static lv_group_t *system_info_group = NULL;
+static lv_group_t *reset_confirm_group = NULL;
 
 /* =============================
  *  ENCODER NAVIGATION
@@ -294,11 +321,20 @@ static void hide_focus(void);
 static void reset_focus_timer(void);
 static void back_button_event_cb(lv_event_t *e);
 static void settings_button_event_cb(lv_event_t *e);
+static void system_settings_button_event_cb(lv_event_t *e);
+static void system_menu_item_event_cb(lv_event_t *e);
 static void encoder_task(void *pvParameters);
 static void handle_encoder_event(encoder_event_t *event);
 static void update_card_selection(void);
 static void update_settings_selection(void);
 static void encoder_event_cb(lv_event_t *e);
+static void create_system_settings_screen(void);
+static void create_auto_control_screen(void);
+static void create_wifi_settings_screen(void);
+static void create_display_settings_screen(void);
+static void create_data_logger_screen(void);
+static void create_system_info_screen(void);
+static void create_reset_confirm_screen(void);
 
 /* =============================
  *  PUBLIC HELPERS
@@ -557,12 +593,25 @@ static void create_status_bar(lv_obj_t *parent, const char *title)
     lv_obj_remove_style_all(status_settings_btn);
     lv_obj_set_style_bg_opa(status_settings_btn, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_opa(status_settings_btn, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_all(status_settings_btn, 0, 0);
+    lv_obj_set_style_pad_all(status_settings_btn, 4, 0);
     lv_obj_set_size(status_settings_btn, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    
+    // Стиль при фокусе - добавляем рамку
+    lv_obj_set_style_border_color(status_settings_btn, COLOR_ACCENT, LV_STATE_FOCUSED);
+    lv_obj_set_style_border_width(status_settings_btn, 2, LV_STATE_FOCUSED);
+    lv_obj_set_style_border_opa(status_settings_btn, LV_OPA_COVER, LV_STATE_FOCUSED);
 
     lv_obj_t *icon = lv_label_create(status_settings_btn);
     lv_obj_add_style(icon, &style_label, 0);
     lv_label_set_text(icon, "SET");
+    
+    // Добавляем обработчик события для кнопки SET
+    lv_obj_add_event_cb(status_settings_btn, system_settings_button_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(status_settings_btn, LV_OBJ_FLAG_CLICKABLE);
+    
+    // Делаем кнопку видимой и фокусируемой
+    lv_obj_clear_flag(status_settings_btn, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(status_settings_btn, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
     if (status_timer == NULL) {
         status_timer = lv_timer_create(status_timer_cb, 1000, NULL);
@@ -879,6 +928,16 @@ static void create_main_ui(void)
             lv_group_add_obj(encoder_group, sensor_containers[i]);
         }
     }
+    
+    // Добавляем кнопку SET в группу энкодера (в конце, после всех карточек)
+    if (encoder_group && status_settings_btn) {
+        lv_group_add_obj(encoder_group, status_settings_btn);
+        ESP_LOGI(TAG, "SET button added to encoder group");
+        
+        // Проверяем количество объектов в группе
+        uint32_t obj_count = lv_group_get_obj_count(encoder_group);
+        ESP_LOGI(TAG, "Total objects in encoder group: %lu (6 sensors + 1 SET button)", (unsigned long)obj_count);
+    }
 
     lvgl_set_focus(focus_to_restore);
 
@@ -1072,10 +1131,15 @@ void lvgl_set_focus(int index)
         return;
     }
     
-    // Убираем фокус с предыдущего элемента (только если фокус видим)
+    // Убираем фокус с предыдущего элемента (карточка или кнопка SET)
     if (current_focus_index >= 0 && current_focus_index < SENSOR_COUNT) {
         if (sensor_containers[current_focus_index] && focus_visible) {
             lv_obj_remove_style(sensor_containers[current_focus_index], &style_focus, LV_PART_MAIN);
+        }
+    } else if (current_focus_index == SENSOR_COUNT) {
+        // Убираем фокус с кнопки SET (индекс 6)
+        if (status_settings_btn && encoder_group) {
+            lv_obj_clear_state(status_settings_btn, LV_STATE_FOCUSED);
         }
     }
 
@@ -1105,7 +1169,7 @@ int lvgl_get_focus_index(void)
 
 int lvgl_get_total_focus_items(void)
 {
-    return SENSOR_COUNT;
+    return SENSOR_COUNT + 1;  // 6 датчиков + 1 кнопка SET
 }
 
 void lvgl_clear_focus_group(void)
@@ -1652,6 +1716,55 @@ static void show_screen(screen_type_t screen)
             target_group = ph_get_calibration_group();
             target_screen_obj = ph_get_calibration_screen();
             break;
+        case SCREEN_SYSTEM_STATUS:
+            if (system_settings_screen == NULL) {
+                create_system_settings_screen();
+            }
+            target_screen_obj = system_settings_screen;
+            target_group = system_settings_group;
+            break;
+        case SCREEN_AUTO_CONTROL:
+            if (auto_control_screen == NULL) {
+                create_auto_control_screen();
+            }
+            target_screen_obj = auto_control_screen;
+            target_group = auto_control_group;
+            break;
+        case SCREEN_WIFI_SETTINGS:
+            if (wifi_settings_screen == NULL) {
+                create_wifi_settings_screen();
+            }
+            target_screen_obj = wifi_settings_screen;
+            target_group = wifi_settings_group;
+            break;
+        case SCREEN_DISPLAY_SETTINGS:
+            if (display_settings_screen == NULL) {
+                create_display_settings_screen();
+            }
+            target_screen_obj = display_settings_screen;
+            target_group = display_settings_group;
+            break;
+        case SCREEN_DATA_LOGGER_SETTINGS:
+            if (data_logger_screen == NULL) {
+                create_data_logger_screen();
+            }
+            target_screen_obj = data_logger_screen;
+            target_group = data_logger_group;
+            break;
+        case SCREEN_SYSTEM_INFO:
+            if (system_info_screen == NULL) {
+                create_system_info_screen();
+            }
+            target_screen_obj = system_info_screen;
+            target_group = system_info_group;
+            break;
+        case SCREEN_RESET_CONFIRM:
+            if (reset_confirm_screen == NULL) {
+                create_reset_confirm_screen();
+            }
+            target_screen_obj = reset_confirm_screen;
+            target_group = reset_confirm_group;
+            break;
         default:
             break;
     }
@@ -1700,6 +1813,30 @@ static void back_button_event_cb(lv_event_t *e)
             break;
         }
         
+        case SCREEN_SYSTEM_STATUS:
+            // С главного меню настроек возвращаемся на главный экран
+            show_screen(SCREEN_MAIN);
+            break;
+        
+        case SCREEN_AUTO_CONTROL:
+        case SCREEN_WIFI_SETTINGS:
+        case SCREEN_DISPLAY_SETTINGS:
+        case SCREEN_DATA_LOGGER_SETTINGS:
+        case SCREEN_SYSTEM_INFO:
+        case SCREEN_RESET_CONFIRM:
+            // Из подменю настроек возвращаемся в меню системных настроек
+            show_screen(SCREEN_SYSTEM_STATUS);
+            break;
+        
+        case SCREEN_NETWORK_SETTINGS:
+        case SCREEN_MOBILE_CONNECT:
+        case SCREEN_OTA_UPDATE:
+        case SCREEN_DATA_EXPORT:
+        case SCREEN_ABOUT:
+            // Возвращаемся на главный экран
+            show_screen(SCREEN_MAIN);
+            break;
+        
         default:
             break;
     }
@@ -1721,6 +1858,71 @@ static void settings_button_event_cb(lv_event_t *e)
     // Переключаемся на экран настроек
     screen_type_t settings_screen = SCREEN_SETTINGS_PH + sensor_index;
     show_screen(settings_screen);
+}
+
+// Обработчик кнопки "SET" в строке состояния
+static void system_settings_button_event_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    
+    ESP_LOGI(TAG, "System settings button clicked");
+    
+    // Создаем экран системных настроек если еще не создан
+    if (system_settings_screen == NULL) {
+        create_system_settings_screen();
+    }
+    
+    // Переключаемся на экран системных настроек
+    show_screen(SCREEN_SYSTEM_STATUS);
+}
+
+// Обработчик пунктов меню системных настроек
+static void system_menu_item_event_cb(lv_event_t *e)
+{
+    uint8_t item_index = (uint8_t)(intptr_t)lv_event_get_user_data(e);
+    
+    ESP_LOGI(TAG, "System menu item %d clicked", item_index);
+    
+    switch (item_index) {
+        case 0:  // Auto Control
+            if (auto_control_screen == NULL) {
+                create_auto_control_screen();
+            }
+            show_screen(SCREEN_AUTO_CONTROL);
+            break;
+        case 1:  // WiFi Settings
+            if (wifi_settings_screen == NULL) {
+                create_wifi_settings_screen();
+            }
+            show_screen(SCREEN_WIFI_SETTINGS);
+            break;
+        case 2:  // Display Settings
+            if (display_settings_screen == NULL) {
+                create_display_settings_screen();
+            }
+            show_screen(SCREEN_DISPLAY_SETTINGS);
+            break;
+        case 3:  // Data Logger
+            if (data_logger_screen == NULL) {
+                create_data_logger_screen();
+            }
+            show_screen(SCREEN_DATA_LOGGER_SETTINGS);
+            break;
+        case 4:  // System Info
+            if (system_info_screen == NULL) {
+                create_system_info_screen();
+            }
+            show_screen(SCREEN_SYSTEM_INFO);
+            break;
+        case 5:  // Reset to Defaults
+            if (reset_confirm_screen == NULL) {
+                create_reset_confirm_screen();
+            }
+            show_screen(SCREEN_RESET_CONFIRM);
+            break;
+        default:
+            break;
+    }
 }
 
 /* =============================
@@ -1774,8 +1976,22 @@ static void handle_encoder_event(encoder_event_t *event)
     switch (event->type) {
         case ENCODER_EVENT_ROTATE_CW:
             if (current_screen == SCREEN_MAIN) {
-                selected_card_index = (selected_card_index + 1) % SENSOR_COUNT;
-                update_card_selection();
+                // Навигация по карточкам (0-5) и кнопке SET (6)
+                int total_items = SENSOR_COUNT + 1;  // 6 датчиков + 1 кнопка SET
+                selected_card_index = (selected_card_index + 1) % total_items;
+                
+                if (selected_card_index < SENSOR_COUNT) {
+                    // Фокус на карточке датчика
+                    lvgl_set_focus(selected_card_index);
+                    ESP_LOGI(TAG, "Focus CW: sensor card %d", selected_card_index);
+                } else {
+                    // Фокус на кнопке SET (индекс 6)
+                    if (encoder_group && status_settings_btn) {
+                        lv_group_focus_obj(status_settings_btn);
+                        current_focus_index = SENSOR_COUNT;  // индекс 6
+                        ESP_LOGI(TAG, "Focus CW: SET button (index %d)", SENSOR_COUNT);
+                    }
+                }
             } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
                 selected_settings_item = (selected_settings_item + 1) % 5;
                 update_settings_selection();
@@ -1783,13 +1999,29 @@ static void handle_encoder_event(encoder_event_t *event)
                 lcd_ili9341_set_encoder_diff(1);
             } else if (current_screen == SCREEN_CALIBRATION) {
                 lcd_ili9341_set_encoder_diff(1);
+            } else if (current_screen == SCREEN_SYSTEM_STATUS) {
+                lcd_ili9341_set_encoder_diff(1);
             }
             break;
             
         case ENCODER_EVENT_ROTATE_CCW:
             if (current_screen == SCREEN_MAIN) {
-                selected_card_index = (selected_card_index - 1 + SENSOR_COUNT) % SENSOR_COUNT;
-                update_card_selection();
+                // Навигация по карточкам (0-5) и кнопке SET (6)
+                int total_items = SENSOR_COUNT + 1;  // 6 датчиков + 1 кнопка SET
+                selected_card_index = (selected_card_index - 1 + total_items) % total_items;
+                
+                if (selected_card_index < SENSOR_COUNT) {
+                    // Фокус на карточке датчика
+                    lvgl_set_focus(selected_card_index);
+                    ESP_LOGI(TAG, "Focus CCW: sensor card %d", selected_card_index);
+                } else {
+                    // Фокус на кнопке SET (индекс 6)
+                    if (encoder_group && status_settings_btn) {
+                        lv_group_focus_obj(status_settings_btn);
+                        current_focus_index = SENSOR_COUNT;  // индекс 6
+                        ESP_LOGI(TAG, "Focus CCW: SET button (index %d)", SENSOR_COUNT);
+                    }
+                }
             } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
                 selected_settings_item = (selected_settings_item - 1 + 5) % 5;
                 update_settings_selection();
@@ -1797,17 +2029,28 @@ static void handle_encoder_event(encoder_event_t *event)
                 lcd_ili9341_set_encoder_diff(-1);
             } else if (current_screen == SCREEN_CALIBRATION) {
                 lcd_ili9341_set_encoder_diff(-1);
+            } else if (current_screen == SCREEN_SYSTEM_STATUS) {
+                lcd_ili9341_set_encoder_diff(-1);
             }
             break;
             
         case ENCODER_EVENT_BUTTON_PRESS:
             if (current_screen == SCREEN_MAIN) {
-                // С главного экрана → переходим к экрану детализации выбранной карточки
-                if (detail_screens[selected_card_index].screen == NULL) {
-                    create_detail_screen(selected_card_index);
+                // Проверяем, на каком объекте сейчас фокус
+                lv_obj_t *focused = lv_group_get_focused(encoder_group);
+                
+                // Если фокус на кнопке SET - вызываем callback напрямую
+                if (focused == status_settings_btn) {
+                    ESP_LOGI(TAG, "SET button activated via encoder");
+                    system_settings_button_event_cb(NULL);
+                } else {
+                    // Иначе переходим к экрану детализации выбранной карточки
+                    if (detail_screens[selected_card_index].screen == NULL) {
+                        create_detail_screen(selected_card_index);
+                    }
+                    screen_type_t detail_screen = SCREEN_DETAIL_PH + selected_card_index;
+                    show_screen(detail_screen);
                 }
-                screen_type_t detail_screen = SCREEN_DETAIL_PH + selected_card_index;
-                show_screen(detail_screen);
             } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
                 // На экране детализации - активируем кнопку с фокусом
                 lv_indev_t *indev = lcd_ili9341_get_encoder_indev();
@@ -1828,6 +2071,15 @@ static void handle_encoder_event(encoder_event_t *event)
                 }
             } else if (current_screen == SCREEN_CALIBRATION) {
                 // На экране калибровки - активируем кнопку с фокусом
+                lv_indev_t *indev = lcd_ili9341_get_encoder_indev();
+                if (indev) {
+                    lv_group_t *group = lv_indev_get_group(indev);
+                    if (group) {
+                        lv_group_send_data(group, LV_KEY_ENTER);
+                    }
+                }
+            } else if (current_screen == SCREEN_SYSTEM_STATUS) {
+                // На экране системных настроек - активируем элемент с фокусом
                 lv_indev_t *indev = lcd_ili9341_get_encoder_indev();
                 if (indev) {
                     lv_group_t *group = lv_indev_get_group(indev);
@@ -1860,8 +2112,16 @@ static void update_card_selection(void)
         return;
     }
     
-    // Используем систему фокуса с рамкой вместо изменения цвета фона
-    lvgl_set_focus(selected_card_index);
+    // Для карточек датчиков (индексы 0-5) используем систему фокуса
+    if (selected_card_index < SENSOR_COUNT) {
+        lvgl_set_focus(selected_card_index);
+    } else {
+        // Для кнопки SET (индекс 6) устанавливаем фокус напрямую
+        if (encoder_group && status_settings_btn) {
+            lv_group_focus_obj(status_settings_btn);
+            current_focus_index = SENSOR_COUNT;
+        }
+    }
 }
 
 // Обновление выделения пунктов настроек
@@ -1933,27 +2193,790 @@ static void encoder_event_cb(lv_event_t *e)
     }
     
     // Обрабатываем события вращения энкодера
+    // ОТКЛЮЧЕНО: теперь навигация на главном экране обрабатывается через handle_encoder_event()
+    // с использованием lv_group_focus_next/prev для поддержки кнопки SET
     if (code == LV_EVENT_VALUE_CHANGED) {
         if (last_encoder_diff > 0) {
-            if (current_screen == SCREEN_MAIN) {
-                selected_card_index = (selected_card_index + 1) % SENSOR_COUNT;
-                update_card_selection();
-            } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
+            // На главном экране навигация теперь через lv_group_focus_next()
+            if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
                 selected_settings_item = (selected_settings_item + 1) % 5;
                 update_settings_selection();
             }
             last_encoder_diff = 0;
         } else if (last_encoder_diff < 0) {
-            if (current_screen == SCREEN_MAIN) {
-                selected_card_index = (selected_card_index - 1 + SENSOR_COUNT) % SENSOR_COUNT;
-                update_card_selection();
-            } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
+            // На главном экране навигация теперь через lv_group_focus_prev()
+            if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
                 selected_settings_item = (selected_settings_item - 1 + 5) % 5;
                 update_settings_selection();
             }
             last_encoder_diff = 0;
         }
     }
+}
+
+// =============================================
+// ЭКРАН СИСТЕМНЫХ НАСТРОЕК
+// =============================================
+
+/**
+ * @brief Создание экрана общих настроек системы
+ */
+static void create_system_settings_screen(void)
+{
+    if (system_settings_screen != NULL) {
+        ESP_LOGI(TAG, "System settings screen already exists");
+        return;
+    }
+
+    system_settings_screen = lv_obj_create(NULL);
+    lv_obj_remove_style_all(system_settings_screen);
+    lv_obj_add_style(system_settings_screen, &style_bg, 0);
+    lv_obj_set_style_pad_all(system_settings_screen, 16, 0);
+
+    // Статус-бар
+    create_status_bar(system_settings_screen, "System Settings");
+
+    // Основной контент
+    lv_obj_t *content = lv_obj_create(system_settings_screen);
+    lv_obj_remove_style_all(content);
+    lv_obj_set_size(content, 240 - 32, 320 - 60);
+    lv_obj_align(content, LV_ALIGN_TOP_MID, 0, 35);
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(content, 12, 0);
+    lv_obj_set_style_pad_row(content, 8, 0);
+    lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_AUTO);
+
+    // Создаем группу для навигации энкодером
+    if (system_settings_group == NULL) {
+        system_settings_group = lv_group_create();
+        lv_group_set_wrap(system_settings_group, true);
+    } else {
+        lv_group_remove_all_objs(system_settings_group);
+    }
+
+    // Заголовок
+    lv_obj_t *title = lv_label_create(content);
+    lv_obj_add_style(title, &style_detail_title, 0);
+    lv_label_set_text(title, "General Settings");
+    lv_obj_set_width(title, LV_PCT(100));
+
+    // Пункты меню настроек
+    const char* settings_items[] = {
+        "Auto Control",
+        "WiFi Settings",
+        "Display Settings",
+        "Data Logger",
+        "System Info",
+        "Reset to Defaults"
+    };
+    
+    for (int i = 0; i < 6; i++) {
+        lv_obj_t *item = lv_btn_create(content);
+        lv_obj_add_style(item, &style_card, 0);
+        lv_obj_set_width(item, LV_PCT(100));
+        lv_obj_set_height(item, 40);
+        lv_obj_add_flag(item, LV_OBJ_FLAG_CLICKABLE);
+        
+        lv_obj_t *item_label = lv_label_create(item);
+        lv_obj_add_style(item_label, &style_label, 0);
+        lv_label_set_text(item_label, settings_items[i]);
+        lv_obj_align(item_label, LV_ALIGN_LEFT_MID, 10, 0);
+        
+        lv_obj_t *arrow = lv_label_create(item);
+        lv_obj_add_style(arrow, &style_unit, 0);
+        lv_label_set_text(arrow, ">");
+        lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -10, 0);
+        
+        // Добавляем обработчик события с индексом пункта меню
+        lv_obj_add_event_cb(item, system_menu_item_event_cb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+        
+        // Добавляем в группу для навигации
+        lv_group_add_obj(system_settings_group, item);
+    }
+
+    // Кнопка назад
+    lv_obj_t *back_btn = lv_btn_create(content);
+    lv_obj_add_style(back_btn, &style_button_secondary, 0);
+    lv_obj_set_width(back_btn, 120);
+    lv_obj_set_height(back_btn, 40);
+    lv_obj_add_event_cb(back_btn, back_button_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_group_add_obj(system_settings_group, back_btn);
+    
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_obj_add_style(back_label, &style_label, 0);
+    lv_label_set_text(back_label, "< Back");
+    lv_obj_center(back_label);
+
+    ESP_LOGI(TAG, "System settings screen created");
+}
+
+// =============================================
+// ЭКРАН AUTO CONTROL
+// =============================================
+
+static void auto_control_switch_event_cb(lv_event_t *e)
+{
+    lv_obj_t *sw = lv_event_get_target(e);
+    bool enabled = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    
+    // Загружаем конфигурацию
+    system_config_t config;
+    if (config_load(&config) == ESP_OK) {
+        config.auto_control_enabled = enabled;
+        config_save(&config);
+        ESP_LOGI(TAG, "Auto control %s", enabled ? "enabled" : "disabled");
+    }
+}
+
+static void create_auto_control_screen(void)
+{
+    if (auto_control_screen != NULL) {
+        ESP_LOGI(TAG, "Auto control screen already exists");
+        return;
+    }
+
+    auto_control_screen = lv_obj_create(NULL);
+    lv_obj_remove_style_all(auto_control_screen);
+    lv_obj_add_style(auto_control_screen, &style_bg, 0);
+    lv_obj_set_style_pad_all(auto_control_screen, 16, 0);
+
+    // Статус-бар
+    create_status_bar(auto_control_screen, "Auto Control");
+
+    // Основной контент
+    lv_obj_t *content = lv_obj_create(auto_control_screen);
+    lv_obj_remove_style_all(content);
+    lv_obj_set_size(content, 240 - 32, 320 - 60);
+    lv_obj_align(content, LV_ALIGN_TOP_MID, 0, 35);
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(content, 12, 0);
+    lv_obj_set_style_pad_row(content, 12, 0);
+
+    // Создаем группу для навигации
+    if (auto_control_group == NULL) {
+        auto_control_group = lv_group_create();
+        lv_group_set_wrap(auto_control_group, true);
+    } else {
+        lv_group_remove_all_objs(auto_control_group);
+    }
+
+    // Заголовок
+    lv_obj_t *title = lv_label_create(content);
+    lv_obj_add_style(title, &style_detail_title, 0);
+    lv_label_set_text(title, "Automatic Control");
+    lv_obj_set_width(title, LV_PCT(100));
+
+    // Описание
+    lv_obj_t *desc = lv_label_create(content);
+    lv_obj_add_style(desc, &style_detail_info, 0);
+    lv_label_set_text(desc, "Enable automatic pH and EC correction using pumps");
+    lv_label_set_long_mode(desc, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(desc, LV_PCT(100));
+
+    // Главный переключатель Auto Control
+    lv_obj_t *main_switch_cont = lv_obj_create(content);
+    lv_obj_add_style(main_switch_cont, &style_card, 0);
+    lv_obj_set_width(main_switch_cont, LV_PCT(100));
+    lv_obj_set_height(main_switch_cont, 50);
+    lv_obj_set_flex_flow(main_switch_cont, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(main_switch_cont, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(main_switch_cont, 12, 0);
+
+    lv_obj_t *main_label = lv_label_create(main_switch_cont);
+    lv_obj_add_style(main_label, &style_label, 0);
+    lv_label_set_text(main_label, "Auto Control");
+
+    lv_obj_t *main_switch = lv_switch_create(main_switch_cont);
+    lv_obj_set_style_bg_color(main_switch, COLOR_ACCENT, LV_PART_INDICATOR | LV_STATE_CHECKED);
+    
+    // Загружаем текущее состояние из конфигурации
+    system_config_t config;
+    if (config_load(&config) == ESP_OK) {
+        if (config.auto_control_enabled) {
+            lv_obj_add_state(main_switch, LV_STATE_CHECKED);
+        }
+    }
+    
+    lv_obj_add_event_cb(main_switch, auto_control_switch_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_group_add_obj(auto_control_group, main_switch);
+
+    // Информация о статусе
+    lv_obj_t *status_cont = lv_obj_create(content);
+    lv_obj_add_style(status_cont, &style_card, 0);
+    lv_obj_set_width(status_cont, LV_PCT(100));
+    lv_obj_set_height(status_cont, 80);
+    lv_obj_set_style_pad_all(status_cont, 12, 0);
+
+    lv_obj_t *status_label = lv_label_create(status_cont);
+    lv_obj_add_style(status_label, &style_label, 0);
+    lv_label_set_text(status_label, 
+        "When enabled:\n"
+        "- pH will be corrected automatically\n"
+        "- EC will be adjusted as needed");
+    lv_label_set_long_mode(status_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(status_label, LV_PCT(100));
+
+    // Кнопка назад
+    lv_obj_t *back_btn = lv_btn_create(content);
+    lv_obj_add_style(back_btn, &style_button_secondary, 0);
+    lv_obj_set_width(back_btn, 120);
+    lv_obj_set_height(back_btn, 40);
+    lv_obj_add_event_cb(back_btn, back_button_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_group_add_obj(auto_control_group, back_btn);
+    
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_obj_add_style(back_label, &style_label, 0);
+    lv_label_set_text(back_label, "< Back");
+    lv_obj_center(back_label);
+
+    ESP_LOGI(TAG, "Auto control screen created");
+}
+
+// =============================================
+// ЭКРАН WIFI SETTINGS
+// =============================================
+
+static void create_wifi_settings_screen(void)
+{
+    if (wifi_settings_screen != NULL) {
+        ESP_LOGI(TAG, "WiFi settings screen already exists");
+        return;
+    }
+
+    wifi_settings_screen = lv_obj_create(NULL);
+    lv_obj_remove_style_all(wifi_settings_screen);
+    lv_obj_add_style(wifi_settings_screen, &style_bg, 0);
+    lv_obj_set_style_pad_all(wifi_settings_screen, 16, 0);
+
+    // Статус-бар
+    create_status_bar(wifi_settings_screen, "WiFi Settings");
+
+    // Основной контент
+    lv_obj_t *content = lv_obj_create(wifi_settings_screen);
+    lv_obj_remove_style_all(content);
+    lv_obj_set_size(content, 240 - 32, 320 - 60);
+    lv_obj_align(content, LV_ALIGN_TOP_MID, 0, 35);
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(content, 12, 0);
+    lv_obj_set_style_pad_row(content, 12, 0);
+    lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_AUTO);
+
+    // Создаем группу для навигации
+    if (wifi_settings_group == NULL) {
+        wifi_settings_group = lv_group_create();
+        lv_group_set_wrap(wifi_settings_group, true);
+    } else {
+        lv_group_remove_all_objs(wifi_settings_group);
+    }
+
+    // Заголовок
+    lv_obj_t *title = lv_label_create(content);
+    lv_obj_add_style(title, &style_detail_title, 0);
+    lv_label_set_text(title, "WiFi Configuration");
+    lv_obj_set_width(title, LV_PCT(100));
+
+    // Информация о подключении
+    lv_obj_t *info_cont = lv_obj_create(content);
+    lv_obj_add_style(info_cont, &style_card, 0);
+    lv_obj_set_width(info_cont, LV_PCT(100));
+    lv_obj_set_height(info_cont, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(info_cont, 12, 0);
+    lv_obj_set_flex_flow(info_cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(info_cont, 6, 0);
+
+    lv_obj_t *mode_label = lv_label_create(info_cont);
+    lv_obj_add_style(mode_label, &style_label, 0);
+    lv_label_set_text(mode_label, "Mode: Access Point");
+    
+    lv_obj_t *ssid_label = lv_label_create(info_cont);
+    lv_obj_add_style(ssid_label, &style_label, 0);
+    lv_label_set_text(ssid_label, "SSID: HydroMonitor");
+    
+    lv_obj_t *ip_label = lv_label_create(info_cont);
+    lv_obj_add_style(ip_label, &style_detail_info, 0);
+    lv_label_set_text(ip_label, "IP: 192.168.4.1");
+
+    // Кнопки управления
+    lv_obj_t *btn_scan = lv_btn_create(content);
+    lv_obj_add_style(btn_scan, &style_button, 0);
+    lv_obj_set_width(btn_scan, LV_PCT(100));
+    lv_obj_set_height(btn_scan, 40);
+    lv_group_add_obj(wifi_settings_group, btn_scan);
+    
+    lv_obj_t *scan_label = lv_label_create(btn_scan);
+    lv_label_set_text(scan_label, "Scan Networks");
+    lv_obj_center(scan_label);
+
+    // Кнопка назад
+    lv_obj_t *back_btn = lv_btn_create(content);
+    lv_obj_add_style(back_btn, &style_button_secondary, 0);
+    lv_obj_set_width(back_btn, 120);
+    lv_obj_set_height(back_btn, 40);
+    lv_obj_add_event_cb(back_btn, back_button_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_group_add_obj(wifi_settings_group, back_btn);
+    
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_obj_add_style(back_label, &style_label, 0);
+    lv_label_set_text(back_label, "< Back");
+    lv_obj_center(back_label);
+
+    ESP_LOGI(TAG, "WiFi settings screen created");
+}
+
+// =============================================
+// ЭКРАН DISPLAY SETTINGS
+// =============================================
+
+static void brightness_slider_event_cb(lv_event_t *e)
+{
+    lv_obj_t *slider = lv_event_get_target(e);
+    int32_t value = lv_slider_get_value(slider);
+    
+    // Устанавливаем яркость дисплея
+    lcd_ili9341_set_brightness((uint8_t)value);
+    ESP_LOGI(TAG, "Display brightness set to %ld%%", value);
+}
+
+static void create_display_settings_screen(void)
+{
+    if (display_settings_screen != NULL) {
+        ESP_LOGI(TAG, "Display settings screen already exists");
+        return;
+    }
+
+    display_settings_screen = lv_obj_create(NULL);
+    lv_obj_remove_style_all(display_settings_screen);
+    lv_obj_add_style(display_settings_screen, &style_bg, 0);
+    lv_obj_set_style_pad_all(display_settings_screen, 16, 0);
+
+    // Статус-бар
+    create_status_bar(display_settings_screen, "Display Settings");
+
+    // Основной контент
+    lv_obj_t *content = lv_obj_create(display_settings_screen);
+    lv_obj_remove_style_all(content);
+    lv_obj_set_size(content, 240 - 32, 320 - 60);
+    lv_obj_align(content, LV_ALIGN_TOP_MID, 0, 35);
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(content, 12, 0);
+    lv_obj_set_style_pad_row(content, 12, 0);
+
+    // Создаем группу для навигации
+    if (display_settings_group == NULL) {
+        display_settings_group = lv_group_create();
+        lv_group_set_wrap(display_settings_group, true);
+    } else {
+        lv_group_remove_all_objs(display_settings_group);
+    }
+
+    // Заголовок
+    lv_obj_t *title = lv_label_create(content);
+    lv_obj_add_style(title, &style_detail_title, 0);
+    lv_label_set_text(title, "Display Configuration");
+    lv_obj_set_width(title, LV_PCT(100));
+
+    // Контейнер яркости
+    lv_obj_t *brightness_cont = lv_obj_create(content);
+    lv_obj_add_style(brightness_cont, &style_card, 0);
+    lv_obj_set_width(brightness_cont, LV_PCT(100));
+    lv_obj_set_height(brightness_cont, 80);
+    lv_obj_set_style_pad_all(brightness_cont, 12, 0);
+    lv_obj_set_flex_flow(brightness_cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(brightness_cont, 8, 0);
+
+    lv_obj_t *brightness_label = lv_label_create(brightness_cont);
+    lv_obj_add_style(brightness_label, &style_label, 0);
+    lv_label_set_text(brightness_label, "Brightness");
+
+    lv_obj_t *slider = lv_slider_create(brightness_cont);
+    lv_obj_set_width(slider, LV_PCT(90));
+    lv_slider_set_range(slider, 0, 100);
+    lv_slider_set_value(slider, 80, LV_ANIM_OFF);  // Значение по умолчанию
+    lv_obj_set_style_bg_color(slider, COLOR_ACCENT, LV_PART_INDICATOR);
+    lv_obj_add_event_cb(slider, brightness_slider_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_group_add_obj(display_settings_group, slider);
+
+    // Дополнительная информация
+    lv_obj_t *info = lv_label_create(content);
+    lv_obj_add_style(info, &style_detail_info, 0);
+    lv_label_set_text(info, "Recommended: 60-80% for indoor use");
+    lv_label_set_long_mode(info, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(info, LV_PCT(100));
+
+    // Кнопка назад
+    lv_obj_t *back_btn = lv_btn_create(content);
+    lv_obj_add_style(back_btn, &style_button_secondary, 0);
+    lv_obj_set_width(back_btn, 120);
+    lv_obj_set_height(back_btn, 40);
+    lv_obj_add_event_cb(back_btn, back_button_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_group_add_obj(display_settings_group, back_btn);
+    
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_obj_add_style(back_label, &style_label, 0);
+    lv_label_set_text(back_label, "< Back");
+    lv_obj_center(back_label);
+
+    ESP_LOGI(TAG, "Display settings screen created");
+}
+
+// =============================================
+// ЭКРАН DATA LOGGER
+// =============================================
+
+static void data_logger_clear_event_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    
+    if (data_logger_clear() == ESP_OK) {
+        ESP_LOGI(TAG, "Data logger cleared successfully");
+    }
+}
+
+static void data_logger_save_event_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    
+    if (data_logger_save_to_nvs() == ESP_OK) {
+        ESP_LOGI(TAG, "Data logger saved to NVS");
+    }
+}
+
+static void create_data_logger_screen(void)
+{
+    if (data_logger_screen != NULL) {
+        ESP_LOGI(TAG, "Data logger screen already exists");
+        return;
+    }
+
+    data_logger_screen = lv_obj_create(NULL);
+    lv_obj_remove_style_all(data_logger_screen);
+    lv_obj_add_style(data_logger_screen, &style_bg, 0);
+    lv_obj_set_style_pad_all(data_logger_screen, 16, 0);
+
+    // Статус-бар
+    create_status_bar(data_logger_screen, "Data Logger");
+
+    // Основной контент
+    lv_obj_t *content = lv_obj_create(data_logger_screen);
+    lv_obj_remove_style_all(content);
+    lv_obj_set_size(content, 240 - 32, 320 - 60);
+    lv_obj_align(content, LV_ALIGN_TOP_MID, 0, 35);
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(content, 12, 0);
+    lv_obj_set_style_pad_row(content, 12, 0);
+
+    // Создаем группу для навигации
+    if (data_logger_group == NULL) {
+        data_logger_group = lv_group_create();
+        lv_group_set_wrap(data_logger_group, true);
+    } else {
+        lv_group_remove_all_objs(data_logger_group);
+    }
+
+    // Заголовок
+    lv_obj_t *title = lv_label_create(content);
+    lv_obj_add_style(title, &style_detail_title, 0);
+    lv_label_set_text(title, "Data Logger");
+    lv_obj_set_width(title, LV_PCT(100));
+
+    // Статистика логов
+    lv_obj_t *stats_cont = lv_obj_create(content);
+    lv_obj_add_style(stats_cont, &style_card, 0);
+    lv_obj_set_width(stats_cont, LV_PCT(100));
+    lv_obj_set_height(stats_cont, 80);
+    lv_obj_set_style_pad_all(stats_cont, 12, 0);
+    lv_obj_set_flex_flow(stats_cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(stats_cont, 6, 0);
+
+    lv_obj_t *count_label = lv_label_create(stats_cont);
+    lv_obj_add_style(count_label, &style_label, 0);
+    uint32_t log_count = data_logger_get_count();
+    lv_label_set_text_fmt(count_label, "Total entries: %lu", (unsigned long)log_count);
+    
+    lv_obj_t *info_label = lv_label_create(stats_cont);
+    lv_obj_add_style(info_label, &style_detail_info, 0);
+    lv_label_set_text(info_label, "Logs are saved in NVS flash");
+
+    // Кнопка сохранения
+    lv_obj_t *save_btn = lv_btn_create(content);
+    lv_obj_add_style(save_btn, &style_button, 0);
+    lv_obj_set_width(save_btn, LV_PCT(100));
+    lv_obj_set_height(save_btn, 40);
+    lv_obj_add_event_cb(save_btn, data_logger_save_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_group_add_obj(data_logger_group, save_btn);
+    
+    lv_obj_t *save_label = lv_label_create(save_btn);
+    lv_label_set_text(save_label, "Save to NVS");
+    lv_obj_center(save_label);
+
+    // Кнопка очистки
+    lv_obj_t *clear_btn = lv_btn_create(content);
+    lv_obj_add_style(clear_btn, &style_button, 0);
+    lv_obj_set_style_bg_color(clear_btn, COLOR_DANGER, 0);
+    lv_obj_set_width(clear_btn, LV_PCT(100));
+    lv_obj_set_height(clear_btn, 40);
+    lv_obj_add_event_cb(clear_btn, data_logger_clear_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_group_add_obj(data_logger_group, clear_btn);
+    
+    lv_obj_t *clear_label = lv_label_create(clear_btn);
+    lv_label_set_text(clear_label, "Clear All Logs");
+    lv_obj_center(clear_label);
+
+    // Кнопка назад
+    lv_obj_t *back_btn = lv_btn_create(content);
+    lv_obj_add_style(back_btn, &style_button_secondary, 0);
+    lv_obj_set_width(back_btn, 120);
+    lv_obj_set_height(back_btn, 40);
+    lv_obj_add_event_cb(back_btn, back_button_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_group_add_obj(data_logger_group, back_btn);
+    
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_obj_add_style(back_label, &style_label, 0);
+    lv_label_set_text(back_label, "< Back");
+    lv_obj_center(back_label);
+
+    ESP_LOGI(TAG, "Data logger screen created");
+}
+
+// =============================================
+// ЭКРАН SYSTEM INFO
+// =============================================
+
+static void create_system_info_screen(void)
+{
+    if (system_info_screen != NULL) {
+        ESP_LOGI(TAG, "System info screen already exists");
+        return;
+    }
+
+    system_info_screen = lv_obj_create(NULL);
+    lv_obj_remove_style_all(system_info_screen);
+    lv_obj_add_style(system_info_screen, &style_bg, 0);
+    lv_obj_set_style_pad_all(system_info_screen, 16, 0);
+
+    // Статус-бар
+    create_status_bar(system_info_screen, "System Info");
+
+    // Основной контент
+    lv_obj_t *content = lv_obj_create(system_info_screen);
+    lv_obj_remove_style_all(content);
+    lv_obj_set_size(content, 240 - 32, 320 - 60);
+    lv_obj_align(content, LV_ALIGN_TOP_MID, 0, 35);
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(content, 12, 0);
+    lv_obj_set_style_pad_row(content, 12, 0);
+    lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_AUTO);
+
+    // Создаем группу для навигации
+    if (system_info_group == NULL) {
+        system_info_group = lv_group_create();
+        lv_group_set_wrap(system_info_group, true);
+    } else {
+        lv_group_remove_all_objs(system_info_group);
+    }
+
+    // Заголовок
+    lv_obj_t *title = lv_label_create(content);
+    lv_obj_add_style(title, &style_detail_title, 0);
+    lv_label_set_text(title, "System Information");
+    lv_obj_set_width(title, LV_PCT(100));
+
+    // Информация о системе
+    lv_obj_t *info_cont = lv_obj_create(content);
+    lv_obj_add_style(info_cont, &style_card, 0);
+    lv_obj_set_width(info_cont, LV_PCT(100));
+    lv_obj_set_height(info_cont, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(info_cont, 12, 0);
+    lv_obj_set_flex_flow(info_cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(info_cont, 6, 0);
+
+    lv_obj_t *version_label = lv_label_create(info_cont);
+    lv_obj_add_style(version_label, &style_label, 0);
+    lv_label_set_text(version_label, "Version: v1.0");
+    
+    lv_obj_t *chip_label = lv_label_create(info_cont);
+    lv_obj_add_style(chip_label, &style_label, 0);
+    lv_label_set_text(chip_label, "Chip: ESP32-S3");
+    
+    lv_obj_t *cores_label = lv_label_create(info_cont);
+    lv_obj_add_style(cores_label, &style_label, 0);
+    lv_label_set_text(cores_label, "Cores: 2 (Dual Core)");
+
+    // Память
+    lv_obj_t *memory_cont = lv_obj_create(content);
+    lv_obj_add_style(memory_cont, &style_card, 0);
+    lv_obj_set_width(memory_cont, LV_PCT(100));
+    lv_obj_set_height(memory_cont, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(memory_cont, 12, 0);
+    lv_obj_set_flex_flow(memory_cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(memory_cont, 6, 0);
+
+    uint32_t free_heap = esp_get_free_heap_size();
+    uint32_t min_heap = esp_get_minimum_free_heap_size();
+    
+    lv_obj_t *heap_label = lv_label_create(memory_cont);
+    lv_obj_add_style(heap_label, &style_label, 0);
+    lv_label_set_text_fmt(heap_label, "Free Heap: %lu KB", (unsigned long)(free_heap / 1024));
+    
+    lv_obj_t *min_heap_label = lv_label_create(memory_cont);
+    lv_obj_add_style(min_heap_label, &style_detail_info, 0);
+    lv_label_set_text_fmt(min_heap_label, "Min Free: %lu KB", (unsigned long)(min_heap / 1024));
+
+    // Время работы
+    uint64_t uptime = esp_timer_get_time() / 1000000ULL;  // секунды
+    uint32_t hours = uptime / 3600;
+    uint32_t minutes = (uptime % 3600) / 60;
+    
+    lv_obj_t *uptime_cont = lv_obj_create(content);
+    lv_obj_add_style(uptime_cont, &style_card, 0);
+    lv_obj_set_width(uptime_cont, LV_PCT(100));
+    lv_obj_set_height(uptime_cont, 50);
+    lv_obj_set_style_pad_all(uptime_cont, 12, 0);
+
+    lv_obj_t *uptime_label = lv_label_create(uptime_cont);
+    lv_obj_add_style(uptime_label, &style_label, 0);
+    lv_label_set_text_fmt(uptime_label, "Uptime: %luh %lum", 
+                          (unsigned long)hours, (unsigned long)minutes);
+
+    // Кнопка назад
+    lv_obj_t *back_btn = lv_btn_create(content);
+    lv_obj_add_style(back_btn, &style_button_secondary, 0);
+    lv_obj_set_width(back_btn, 120);
+    lv_obj_set_height(back_btn, 40);
+    lv_obj_add_event_cb(back_btn, back_button_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_group_add_obj(system_info_group, back_btn);
+    
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_obj_add_style(back_label, &style_label, 0);
+    lv_label_set_text(back_label, "< Back");
+    lv_obj_center(back_label);
+
+    ESP_LOGI(TAG, "System info screen created");
+}
+
+// =============================================
+// ЭКРАН RESET CONFIRM
+// =============================================
+
+static void reset_confirm_yes_event_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    
+    ESP_LOGI(TAG, "Resetting system to defaults");
+    
+    system_config_t config;
+    if (config_manager_reset_to_defaults(&config) == ESP_OK) {
+        ESP_LOGI(TAG, "System reset successful, restarting...");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        esp_restart();
+    }
+}
+
+static void reset_confirm_no_event_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    
+    ESP_LOGI(TAG, "Reset cancelled");
+    show_screen(SCREEN_SYSTEM_STATUS);
+}
+
+static void create_reset_confirm_screen(void)
+{
+    if (reset_confirm_screen != NULL) {
+        ESP_LOGI(TAG, "Reset confirm screen already exists");
+        return;
+    }
+
+    reset_confirm_screen = lv_obj_create(NULL);
+    lv_obj_remove_style_all(reset_confirm_screen);
+    lv_obj_add_style(reset_confirm_screen, &style_bg, 0);
+    lv_obj_set_style_pad_all(reset_confirm_screen, 16, 0);
+
+    // Статус-бар
+    create_status_bar(reset_confirm_screen, "Reset Confirmation");
+
+    // Основной контент
+    lv_obj_t *content = lv_obj_create(reset_confirm_screen);
+    lv_obj_remove_style_all(content);
+    lv_obj_set_size(content, 240 - 32, 320 - 60);
+    lv_obj_align(content, LV_ALIGN_TOP_MID, 0, 35);
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(content, 12, 0);
+    lv_obj_set_style_pad_row(content, 16, 0);
+
+    // Создаем группу для навигации
+    if (reset_confirm_group == NULL) {
+        reset_confirm_group = lv_group_create();
+        lv_group_set_wrap(reset_confirm_group, true);
+    } else {
+        lv_group_remove_all_objs(reset_confirm_group);
+    }
+
+    // Иконка предупреждения
+    lv_obj_t *warning_icon = lv_label_create(content);
+    lv_obj_add_style(warning_icon, &style_detail_title, 0);
+    lv_obj_set_style_text_color(warning_icon, COLOR_WARNING, 0);
+    lv_label_set_text(warning_icon, LV_SYMBOL_WARNING);
+
+    // Заголовок
+    lv_obj_t *title = lv_label_create(content);
+    lv_obj_add_style(title, &style_detail_title, 0);
+    lv_label_set_text(title, "Reset to Defaults?");
+    lv_obj_set_width(title, LV_PCT(100));
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+
+    // Описание
+    lv_obj_t *desc = lv_label_create(content);
+    lv_obj_add_style(desc, &style_label, 0);
+    lv_label_set_text(desc, 
+        "This will reset all settings to factory defaults and restart the system.\n\n"
+        "Are you sure?");
+    lv_label_set_long_mode(desc, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(desc, LV_PCT(100));
+    lv_obj_set_style_text_align(desc, LV_TEXT_ALIGN_CENTER, 0);
+
+    // Контейнер для кнопок
+    lv_obj_t *btn_cont = lv_obj_create(content);
+    lv_obj_remove_style_all(btn_cont);
+    lv_obj_set_width(btn_cont, LV_PCT(100));
+    lv_obj_set_height(btn_cont, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(btn_cont, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(btn_cont, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(btn_cont, 16, 0);
+
+    // Кнопка Нет
+    lv_obj_t *no_btn = lv_btn_create(btn_cont);
+    lv_obj_add_style(no_btn, &style_button, 0);
+    lv_obj_set_width(no_btn, 90);
+    lv_obj_set_height(no_btn, 45);
+    lv_obj_add_event_cb(no_btn, reset_confirm_no_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_group_add_obj(reset_confirm_group, no_btn);
+    
+    lv_obj_t *no_label = lv_label_create(no_btn);
+    lv_label_set_text(no_label, "No");
+    lv_obj_center(no_label);
+
+    // Кнопка Да
+    lv_obj_t *yes_btn = lv_btn_create(btn_cont);
+    lv_obj_add_style(yes_btn, &style_button, 0);
+    lv_obj_set_style_bg_color(yes_btn, COLOR_DANGER, 0);
+    lv_obj_set_width(yes_btn, 90);
+    lv_obj_set_height(yes_btn, 45);
+    lv_obj_add_event_cb(yes_btn, reset_confirm_yes_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_group_add_obj(reset_confirm_group, yes_btn);
+    
+    lv_obj_t *yes_label = lv_label_create(yes_btn);
+    lv_label_set_text(yes_label, "Yes");
+    lv_obj_center(yes_label);
+
+    ESP_LOGI(TAG, "Reset confirm screen created");
 }
 
 // =============================================

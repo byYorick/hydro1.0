@@ -1274,13 +1274,13 @@ void app_main(void)
     nvs_flash_init();
     
     // 2. Инициализация I2C шины
-    i2c_bus_init();
+i2c_bus_init();
     
     // 3. Инициализация датчиков
     sht3x_init();
     trema_ph_init();
     trema_ec_init();
-    trema_lux_init();
+trema_lux_init();
     ccs811_init();
     
     // 4. Инициализация дисплея
