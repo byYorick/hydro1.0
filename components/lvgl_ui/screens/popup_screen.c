@@ -324,17 +324,24 @@ static void ok_button_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     
-    // ИСПРАВЛЕНО: Обрабатываем все типы событий (клик мышью, энкодер, touch)
-    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
-        ESP_LOGI(TAG, "OK button event: %d", code);
+    ESP_LOGI(TAG, ">>> OK button callback triggered! Event code: %d", code);
+    
+    // ИСПРАВЛЕНО: Обрабатываем все типы событий
+    if (code == LV_EVENT_CLICKED) {
+        ESP_LOGI(TAG, "OK button CLICKED - closing popup");
+        popup_close();
+    } else if (code == LV_EVENT_PRESSED) {
+        ESP_LOGI(TAG, "OK button PRESSED - closing popup");
         popup_close();
     } else if (code == LV_EVENT_KEY) {
         uint32_t key = lv_event_get_key(e);
-        ESP_LOGI(TAG, "OK button KEY event: %lu", key);
+        ESP_LOGI(TAG, "OK button KEY event: key=%lu", key);
         if (key == LV_KEY_ENTER) {
-            ESP_LOGI(TAG, "OK button pressed via encoder");
+            ESP_LOGI(TAG, "OK button ENTER key - closing popup");
             popup_close();
         }
+    } else {
+        ESP_LOGD(TAG, "OK button unhandled event: %d", code);
     }
 }
 

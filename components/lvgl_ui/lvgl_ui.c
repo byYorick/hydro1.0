@@ -2,7 +2,6 @@
 #include "lvgl.h"
 #include "lcd_ili9341.h"
 #include "encoder.h"
-// УДАЛЕНО: #include "ph_screen.h" - все pH экраны через Screen Manager
 #include <inttypes.h>
 
 // Screen Manager System
@@ -88,25 +87,14 @@ typedef enum {
     SCREEN_DATA_EXPORT,                 // Экспорт данных
     SCREEN_ABOUT,                       // О программе и системе
 
-    SCREEN_COUNT                        // Общее количество экранов
+    SCREEN_COUNT
 } screen_type_t;
-
-// LEGACY STRUCTURES REMOVED: detail_screen_t, settings_screen_t - replaced by Screen Manager
-
-/* =============================
- *  GLOBAL VARIABLES
- * ============================= */
-// LEGACY VARIABLES REMOVED: current_screen, detail_screens[], settings_screens[] - replaced by Screen Manager
-// LEGACY VARIABLES REMOVED: main_screen, sensor_cards[] - replaced by Screen Manager (main_screen.c)
-// LEGACY VARIABLES REMOVED: system screens and groups - replaced by Screen Manager
 
 /* =============================
  *  ENCODER NAVIGATION
  * ============================= */
-// LEGACY REMOVED: selected_card_index - управляется Screen Manager
-// LEGACY VARIABLE REMOVED: selected_settings_item - replaced by Screen Manager
-static bool encoder_navigation_enabled = true; // Включаем обратно
-int32_t last_encoder_diff = 0;  // Последняя разность энкодера
+static bool encoder_navigation_enabled = true;
+int32_t last_encoder_diff = 0;
 
 typedef struct {
     const char *title;
@@ -206,11 +194,7 @@ static const sensor_meta_t SENSOR_META[SENSOR_COUNT] = {
 /* =============================
  *  LVGL OBJECTS & STATE
  * ============================= */
-// LEGACY VARIABLES REMOVED: screen_main, status_bar, status_time_label, status_settings_btn, status_timer
-// LEGACY VARIABLES REMOVED: screen_detail, detail_value_label, detail_status_label, detail_chart, detail_series, detail_current_index - replaced by Screen Manager
-// LEGACY VARIABLES REMOVED: sensor_containers[], value_labels[], status_labels[] - replaced by main_screen.c
-
-// ===== ГЛОБАЛЬНЫЕ СТИЛИ (экспортированы в lvgl_styles.h) =====
+// Глобальные стили (экспортированы в lvgl_styles.h)
 lv_style_t style_bg;
 lv_style_t style_header;
 lv_style_t style_title;
