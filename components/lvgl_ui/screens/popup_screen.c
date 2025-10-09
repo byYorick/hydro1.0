@@ -3,6 +3,9 @@
 #include "esp_log.h"
 #include <string.h>
 
+// Объявление русского шрифта
+LV_FONT_DECLARE(montserrat_ru);
+
 static const char *TAG = "POPUP_SCREEN";
 
 // Константы
@@ -142,12 +145,12 @@ static lv_obj_t* popup_create(void *user_data)
 {
     ESP_LOGI(TAG, "Creating popup screen (user_data=%p)", user_data);
     
-    // Полупрозрачный фон на весь экран (overlay)
+    // ИСПРАВЛЕНО: Непрозрачный фон на весь экран (overlay)
     lv_obj_t *bg = lv_obj_create(NULL);
     lv_obj_remove_style_all(bg);
     lv_obj_set_size(bg, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(bg, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(bg, LV_OPA_50, 0); // Полупрозрачный затемнённый фон
+    lv_obj_set_style_bg_color(bg, lv_color_hex(0x0F1419), 0);  // Темный фон как у главного экрана
+    lv_obj_set_style_bg_opa(bg, LV_OPA_COVER, 0); // Полная непрозрачность - избегаем искажений
     
     // Контейнер попапа (по центру)
     lv_obj_t *container = lv_obj_create(bg);
@@ -170,13 +173,13 @@ static lv_obj_t* popup_create(void *user_data)
     
     // Иконка
     lv_obj_t *icon = lv_label_create(container);
-    lv_obj_set_style_text_font(icon, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(icon, &montserrat_ru, 0); // ИСПРАВЛЕНО: русский шрифт
     lv_obj_set_style_text_color(icon, lv_color_white(), 0);
     lv_label_set_text(icon, "!"); // Default icon
     
     // Текст сообщения
     lv_obj_t *msg = lv_label_create(container);
-    lv_obj_set_style_text_font(msg, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(msg, &montserrat_ru, 0); // ИСПРАВЛЕНО: русский шрифт
     lv_obj_set_style_text_color(msg, lv_color_white(), 0);
     lv_label_set_text(msg, "Message");
     lv_label_set_long_mode(msg, LV_LABEL_LONG_WRAP);
@@ -194,10 +197,13 @@ static lv_obj_t* popup_create(void *user_data)
     lv_obj_t *ok_label = lv_label_create(ok_btn);
     lv_label_set_text(ok_label, "OK");
     lv_obj_set_style_text_color(ok_label, lv_color_black(), 0);
+    lv_obj_set_style_text_font(ok_label, &montserrat_ru, 0); // ИСПРАВЛЕНО: русский шрифт
     lv_obj_center(ok_label);
     
-    // Выделить кнопку для энкодера
+    // ИСПРАВЛЕНО: Добавляем обработчик нажатия энкодера
     lv_obj_add_flag(ok_btn, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(ok_btn, ok_button_cb, LV_EVENT_PRESSED, NULL); // Добавляем обработчик PRESSED
+    lv_obj_add_event_cb(ok_btn, ok_button_cb, LV_EVENT_KEY, NULL); // Добавляем обработчик KEY (для энкодера)
     
     // Сохраняем указатели на элементы в user_data контейнера
     popup_ui_t *ui = heap_caps_malloc(sizeof(popup_ui_t), MALLOC_CAP_8BIT);
@@ -252,22 +258,14 @@ static esp_err_t popup_on_show(lv_obj_t *scr, void *user_data)
     if (ui->config.has_ok_button) {
         lv_obj_clear_flag(ui->ok_button, LV_OBJ_FLAG_HIDDEN);
         
-        // Создать группу энкодера для кнопки
-        g_popup_group = lv_group_create();
-        if (g_popup_group) {
-            lv_group_add_obj(g_popup_group, ui->ok_button);
+        // ИСПРАВЛЕНО: Используем Screen Manager encoder_group вместо создания новой
+        screen_instance_t *current = screen_get_current();
+        if (current && current->encoder_group) {
+            lv_group_add_obj(current->encoder_group, ui->ok_button);
             lv_group_focus_obj(ui->ok_button);
-            
-            // Установить группу на энкодер
-            lv_indev_t *indev = lv_indev_get_next(NULL);
-            while (indev) {
-                if (lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
-                    lv_indev_set_group(indev, g_popup_group);
-                    ESP_LOGI(TAG, "Encoder group set for popup OK button");
-                    break;
-                }
-                indev = lv_indev_get_next(indev);
-            }
+            ESP_LOGI(TAG, "OK button added to popup encoder group");
+        } else {
+            ESP_LOGW(TAG, "No encoder group available in popup screen instance!");
         }
     } else {
         lv_obj_add_flag(ui->ok_button, LV_OBJ_FLAG_HIDDEN);
@@ -306,12 +304,9 @@ static esp_err_t popup_on_hide(lv_obj_t *scr)
         ui->close_timer = NULL;
     }
     
-    // Удалить группу энкодера
-    if (g_popup_group) {
-        lv_group_del(g_popup_group);
-        g_popup_group = NULL;
-    }
-    
+    // ИСПРАВЛЕНО: Не удаляем группу - она управляется Screen Manager
+    // Группа автоматически очищается при уничтожении экрана
+    g_popup_group = NULL;
     g_current_popup = NULL;
     
     // Освобождаем UI данные
@@ -327,8 +322,20 @@ static esp_err_t popup_on_hide(lv_obj_t *scr)
  */
 static void ok_button_cb(lv_event_t *e)
 {
-    ESP_LOGI(TAG, "OK button clicked");
-    popup_close();
+    lv_event_code_t code = lv_event_get_code(e);
+    
+    // ИСПРАВЛЕНО: Обрабатываем все типы событий (клик мышью, энкодер, touch)
+    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
+        ESP_LOGI(TAG, "OK button event: %d", code);
+        popup_close();
+    } else if (code == LV_EVENT_KEY) {
+        uint32_t key = lv_event_get_key(e);
+        ESP_LOGI(TAG, "OK button KEY event: %lu", key);
+        if (key == LV_KEY_ENTER) {
+            ESP_LOGI(TAG, "OK button pressed via encoder");
+            popup_close();
+        }
+    }
 }
 
 /**
@@ -400,6 +407,7 @@ static void format_popup_message(char *buffer, size_t size, const popup_config_t
     if (config->type == POPUP_TYPE_NOTIFICATION) {
         snprintf(buffer, size, "%s", config->data.notification.message);
     } else if (config->type == POPUP_TYPE_ERROR) {
+        // ИСПРАВЛЕНО: Используем русский шрифт - поддерживает кириллицу
         snprintf(buffer, size, "%s\n%s\nКод: %d", 
                  config->data.error.component,
                  config->data.error.message,
