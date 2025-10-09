@@ -328,11 +328,32 @@ static esp_err_t popup_on_show(lv_obj_t *scr, void *user_data)
         
         screen_instance_t *current = screen_get_current();
         if (current && current->encoder_group) {
-            // КРИТИЧНО: Сначала удаляем (на случай если уже был добавлен), потом добавляем
-            lv_group_remove_obj(ui->ok_button);
+            // ИСПРАВЛЕНО: В попапе должна быть ТОЛЬКО кнопка OK
+            // Очищаем всю группу и добавляем только кнопку OK
+            
+            // Сохраняем все объекты для удаления
+            lv_obj_t *to_remove[50];
+            uint32_t count = lv_group_get_obj_count(current->encoder_group);
+            uint32_t remove_count = 0;
+            
+            for (uint32_t i = 0; i < count && remove_count < 50; i++) {
+                lv_obj_t *obj = lv_group_get_obj_by_index(current->encoder_group, i);
+                if (obj && obj != ui->ok_button) {
+                    to_remove[remove_count++] = obj;
+                }
+            }
+            
+            // Удаляем все кроме кнопки OK
+            for (uint32_t i = 0; i < remove_count; i++) {
+                lv_group_remove_obj(to_remove[i]);
+            }
+            
+            // Теперь добавляем кнопку OK если её нет
+            lv_group_remove_obj(ui->ok_button); // На всякий случай удаляем
             lv_group_add_obj(current->encoder_group, ui->ok_button);
             lv_group_focus_obj(ui->ok_button);
-            ESP_LOGI(TAG, "OK button added to popup encoder group");
+            
+            ESP_LOGI(TAG, "Popup encoder group: cleared %d elements, added OK button with focus", remove_count);
         } else {
             ESP_LOGW(TAG, "No encoder group available in popup screen instance!");
         }
@@ -433,6 +454,15 @@ static void ok_button_cb(lv_event_t *e)
 static void close_timer_cb(lv_timer_t *timer)
 {
     ESP_LOGI(TAG, "Auto-close timer triggered (no cooldown)");
+    
+    // КРИТИЧНО: Удалить кнопку OK из encoder группы ДО закрытия попапа
+    if (g_current_popup && g_current_popup->ok_button) {
+        screen_instance_t *current = screen_get_current();
+        if (current && current->encoder_group) {
+            lv_group_remove_obj(g_current_popup->ok_button);
+            ESP_LOGI(TAG, "Auto-close: OK button removed from encoder group");
+        }
+    }
     
     // НЕ устанавливаем g_last_popup_close_time - таймер не активирует cooldown
     // Cooldown активируется только при нажатии кнопки OK

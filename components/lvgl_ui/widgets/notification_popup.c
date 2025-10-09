@@ -23,19 +23,11 @@ static void notification_callback(const notification_t *notification)
     
     // Показываем только важные уведомления
     if (notification->priority >= NOTIF_PRIORITY_NORMAL) {
-        // Определяем таймаут в зависимости от приоритета
-        uint32_t timeout = POPUP_AUTO_HIDE_MS; // 5 секунд по умолчанию
-        if (notification->priority == NOTIF_PRIORITY_URGENT) {
-            timeout = 8000; // 8 секунд для срочных
-        } else if (notification->priority == NOTIF_PRIORITY_LOW) {
-            timeout = 3000; // 3 секунды для низких
-        }
-        
         ESP_LOGI(TAG, "Forwarding notification to popup_screen: [%d] %s", 
                  notification->type, notification->message);
         
-        // Показываем через popup_screen (управляется Screen Manager)
-        popup_show_notification(notification, timeout);
+        // Показываем без таймера - закрытие только по нажатию OK
+        popup_show_notification(notification, 0);
     }
 }
 

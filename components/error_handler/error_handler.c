@@ -48,14 +48,8 @@ static void show_error_popup_via_screen_manager(const error_info_t *error)
         return;
     }
     
-    // Определяем таймаут в зависимости от уровня
-    uint32_t timeout = 3000; // 3 секунды по умолчанию
-    if (error->level >= ERROR_LEVEL_ERROR) {
-        timeout = 5000; // 5 секунд для ошибок
-    }
-    if (error->level == ERROR_LEVEL_CRITICAL) {
-        timeout = 10000; // 10 секунд для критических
-    }
+    // Попапы закрываются только по нажатию OK (без таймера)
+    uint32_t timeout = 0;
 
     // Проверяем, что мы в главной задаче или задаче с доступом к LVGL
     const char *current_task = pcTaskGetName(NULL);
