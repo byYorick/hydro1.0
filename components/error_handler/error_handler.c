@@ -5,31 +5,23 @@
 
 #include "error_handler.h"
 #include "notification_system.h"
+#include "../lvgl_ui/screens/popup_screen.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
-#include "freertos/queue.h"
-#include "lvgl.h"
 #include <string.h>
 #include <stdarg.h>
 #include <time.h>
 
 static const char *TAG = "ERROR_HANDLER";
 
-// Прототипы внутренних функций
-static void show_error_popup_internal(const error_info_t *error);
-static void queue_error_popup(const error_info_t *error);
-static void popup_check_cb(lv_timer_t *timer);
-static void popup_close_cb(lv_timer_t *timer);
-
 // Глобальные переменные
 static bool g_initialized = false;
 static bool g_show_popup = true;
 static SemaphoreHandle_t g_mutex = NULL;
 static error_callback_t g_callback = NULL;
-static QueueHandle_t g_popup_queue = NULL;
-static const lv_font_t *g_popup_font = NULL; // Шрифт для всплывающих окон
+static QueueHandle_t g_error_queue = NULL;
 
 // Статистика ошибок
 static struct {
@@ -41,127 +33,22 @@ static struct {
     uint32_t debug;
 } g_stats = {0};
 
-// LVGL объекты для всплывающих окон
-static lv_obj_t *g_popup = NULL;
-static lv_obj_t *g_popup_label = NULL;
-static lv_timer_t *g_popup_timer = NULL;
-static lv_timer_t *g_popup_check_timer = NULL;
-
 /**
- * @brief Callback для автоматического закрытия всплывающего окна
+ * @brief Показ попапа ошибки через Screen Manager
  */
-static void popup_close_cb(lv_timer_t *timer)
+static void show_error_popup_via_screen_manager(const error_info_t *error)
 {
-    if (g_popup != NULL) {
-        lv_obj_del(g_popup);
-        g_popup = NULL;
-        g_popup_label = NULL;
-    }
-    if (g_popup_timer != NULL) {
-        lv_timer_del(g_popup_timer);
-        g_popup_timer = NULL;
-    }
-}
-
-/**
- * @brief Callback для проверки очереди и показа всплывающих окон (вызывается из LVGL таймера)
- */
-static void popup_check_cb(lv_timer_t *timer)
-{
-    if (g_popup_queue == NULL) {
+    if (!g_show_popup || !error) {
         return;
     }
 
-    // Если уже показано окно, не показываем новое
-    if (g_popup != NULL) {
+    // Проверяем, что мы в правильном контексте для работы с LVGL
+    if (!lv_is_initialized()) {
+        ESP_LOGW(TAG, "LVGL not initialized, skipping popup display");
         return;
     }
-
-    // Проверяем очередь
-    error_info_t error;
-    if (xQueueReceive(g_popup_queue, &error, 0) == pdTRUE) {
-        // Показываем всплывающее окно
-        show_error_popup_internal(&error);
-    }
-}
-
-/**
- * @brief Внутренняя функция для показа всплывающего окна (вызывается только из LVGL контекста)
- */
-static void show_error_popup_internal(const error_info_t *error)
-{
-    if (!g_show_popup) {
-        return;
-    }
-
-    // Закрыть предыдущее окно если есть
-    if (g_popup != NULL) {
-        lv_obj_del(g_popup);
-        g_popup = NULL;
-        g_popup_label = NULL;
-    }
     
-    if (g_popup_timer != NULL) {
-        lv_timer_del(g_popup_timer);
-        g_popup_timer = NULL;
-    }
-
-    // Создать контейнер для всплывающего окна
-    g_popup = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(g_popup, 280, 120);
-    lv_obj_align(g_popup, LV_ALIGN_CENTER, 0, 0);
-    
-    // Установить цвет в зависимости от уровня ошибки
-    lv_color_t bg_color = lv_color_hex(0x2196F3); // Синий по умолчанию
-    switch (error->level) {
-        case ERROR_LEVEL_WARNING:
-            bg_color = lv_color_hex(0xFFA726); // Оранжевый
-            break;
-        case ERROR_LEVEL_ERROR:
-            bg_color = lv_color_hex(0xF44336); // Красный
-            break;
-        case ERROR_LEVEL_CRITICAL:
-            bg_color = lv_color_hex(0xD32F2F); // Темно-красный
-            break;
-        case ERROR_LEVEL_INFO:
-            bg_color = lv_color_hex(0x4CAF50); // Зеленый
-            break;
-        default:
-            break;
-    }
-    lv_obj_set_style_bg_color(g_popup, bg_color, 0);
-    lv_obj_set_style_border_width(g_popup, 2, 0);
-    lv_obj_set_style_border_color(g_popup, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_shadow_width(g_popup, 20, 0);
-    lv_obj_set_style_shadow_opa(g_popup, LV_OPA_50, 0);
-
-    // Создать метку с текстом ошибки
-    g_popup_label = lv_label_create(g_popup);
-    lv_obj_set_width(g_popup_label, 260);
-    lv_label_set_long_mode(g_popup_label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_color(g_popup_label, lv_color_hex(0xFFFFFF), 0);
-    
-    // Использовать русский шрифт если установлен, иначе стандартный
-    if (g_popup_font != NULL) {
-        lv_obj_set_style_text_font(g_popup_label, g_popup_font, 0);
-    } else {
-        lv_obj_set_style_text_font(g_popup_label, &lv_font_montserrat_14, 0);
-    }
-    
-    // Форматировать текст
-    char popup_text[256];
-    snprintf(popup_text, sizeof(popup_text), 
-             "%s\n\n%s: %s\n\nКод: %d (%s)",
-             error_level_to_string(error->level),
-             error->component,
-             error->message,
-             error->code,
-             esp_err_to_name(error->code));
-    
-    lv_label_set_text(g_popup_label, popup_text);
-    lv_obj_center(g_popup_label);
-
-    // Установить таймер для автоматического закрытия
+    // Определяем таймаут в зависимости от уровня
     uint32_t timeout = 3000; // 3 секунды по умолчанию
     if (error->level >= ERROR_LEVEL_ERROR) {
         timeout = 5000; // 5 секунд для ошибок
@@ -169,22 +56,33 @@ static void show_error_popup_internal(const error_info_t *error)
     if (error->level == ERROR_LEVEL_CRITICAL) {
         timeout = 10000; // 10 секунд для критических
     }
-    
-    g_popup_timer = lv_timer_create(popup_close_cb, timeout, NULL);
-    lv_timer_set_repeat_count(g_popup_timer, 1);
-}
 
-/**
- * @brief Добавить ошибку в очередь для показа всплывающего окна
- */
-static void queue_error_popup(const error_info_t *error)
-{
-    if (g_popup_queue == NULL || !g_show_popup) {
+    // Проверяем, что мы в главной задаче или задаче с доступом к LVGL
+    const char *current_task = pcTaskGetName(NULL);
+    if (strstr(current_task, "sensor") != NULL || 
+        strstr(current_task, "i2c") != NULL ||
+        strstr(current_task, "system") != NULL) {
+        ESP_LOGW(TAG, "Error popup called from %s task - deferring to LVGL task", current_task);
+        
+        // Добавляем в очередь для отложенного показа
+        error_queue_item_t queue_item = {
+            .error = *error,
+            .timeout = timeout
+        };
+        
+        if (xQueueSend(g_error_queue, &queue_item, pdMS_TO_TICKS(100)) != pdTRUE) {
+            ESP_LOGW(TAG, "Failed to queue error popup - queue full");
+        } else {
+            ESP_LOGD(TAG, "Error popup queued for LVGL task");
+        }
         return;
     }
-
-    // Пытаемся добавить в очередь (не блокируем если очередь полна)
-    xQueueSend(g_popup_queue, error, 0);
+    
+    ESP_LOGI(TAG, "[INFO] Showing error popup via Screen Manager: [%s] %s", 
+             error_level_to_string(error->level), error->message);
+    
+    // Показываем через popup_screen (управляется Screen Manager)
+    popup_show_error(error, timeout);
 }
 
 esp_err_t error_handler_init(bool show_popup)
@@ -200,10 +98,10 @@ esp_err_t error_handler_init(bool show_popup)
         return ESP_ERR_NO_MEM;
     }
 
-    // Создаем очередь для всплывающих окон (максимум 5 ошибок в очереди)
-    g_popup_queue = xQueueCreate(5, sizeof(error_info_t));
-    if (g_popup_queue == NULL) {
-        ESP_LOGE(TAG, "Failed to create popup queue");
+    // Создаем очередь для отложенного показа ошибок
+    g_error_queue = xQueueCreate(10, sizeof(error_queue_item_t));
+    if (g_error_queue == NULL) {
+        ESP_LOGE(TAG, "Failed to create error queue");
         vSemaphoreDelete(g_mutex);
         return ESP_ERR_NO_MEM;
     }
@@ -211,15 +109,8 @@ esp_err_t error_handler_init(bool show_popup)
     g_show_popup = show_popup;
     g_initialized = true;
 
-    // Создаем LVGL таймер для проверки очереди (каждые 100 мс)
-    if (show_popup) {
-        g_popup_check_timer = lv_timer_create(popup_check_cb, 100, NULL);
-        if (g_popup_check_timer == NULL) {
-            ESP_LOGW(TAG, "Failed to create popup check timer");
-        }
-    }
-
-    ESP_LOGI(TAG, "Error handler initialized (popup: %s)", show_popup ? "ON" : "OFF");
+    ESP_LOGI(TAG, "Error handler initialized (popup: %s via Screen Manager)", 
+             show_popup ? "ON" : "OFF");
     return ESP_OK;
 }
 
@@ -351,9 +242,9 @@ esp_err_t error_handler_report(error_category_t category,
         notification_create(notif_type, notif_priority, notif_source, notif_message);
     }
 
-    // Добавить в очередь для показа всплывающего окна (только для errors и выше)
+    // Показать попап через Screen Manager (только для errors и выше)
     if (level >= ERROR_LEVEL_ERROR) {
-        queue_error_popup(&error);
+        show_error_popup_via_screen_manager(&error);
     }
 
     // Вызвать callback если зарегистрирован
@@ -374,17 +265,7 @@ esp_err_t error_handler_register_callback(error_callback_t callback)
 esp_err_t error_handler_set_popup(bool enable)
 {
     g_show_popup = enable;
-    
-    if (enable && g_popup_check_timer == NULL) {
-        // Создаем таймер если еще не создан
-        g_popup_check_timer = lv_timer_create(popup_check_cb, 100, NULL);
-    } else if (!enable && g_popup_check_timer != NULL) {
-        // Удаляем таймер если отключаем
-        lv_timer_del(g_popup_check_timer);
-        g_popup_check_timer = NULL;
-    }
-    
-    ESP_LOGI(TAG, "Popup %s", enable ? "enabled" : "disabled");
+    ESP_LOGI(TAG, "Error popup %s (via Screen Manager)", enable ? "enabled" : "disabled");
     return ESP_OK;
 }
 
@@ -471,14 +352,38 @@ const char* error_level_to_string(error_level_t level)
     }
 }
 
+/**
+ * @brief Обработка очереди ошибок (вызывается из LVGL задачи)
+ */
+esp_err_t error_handler_process_queue(void)
+{
+    if (!g_initialized || !g_error_queue) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    error_queue_item_t queue_item;
+    BaseType_t result = xQueueReceive(g_error_queue, &queue_item, 0); // Неблокирующий вызов
+    
+    if (result == pdTRUE) {
+        ESP_LOGI(TAG, "Processing queued error popup: [%s] %s", 
+                 error_level_to_string(queue_item.error.level), queue_item.error.message);
+        
+        // Показываем popup в контексте LVGL задачи
+        popup_show_error(&queue_item.error, queue_item.timeout);
+        return ESP_OK;
+    }
+    
+    return ESP_ERR_NOT_FOUND; // Нет элементов в очереди
+}
+
 esp_err_t error_handler_set_font(const void *font)
 {
     if (font == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
     
-    g_popup_font = (const lv_font_t *)font;
-    ESP_LOGI(TAG, "Custom font set for error popups");
+    // Шрифт управляется popup_screen.c теперь
+    ESP_LOGI(TAG, "Custom font API deprecated - popups managed by Screen Manager");
     return ESP_OK;
 }
 

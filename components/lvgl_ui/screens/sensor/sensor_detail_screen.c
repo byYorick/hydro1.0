@@ -98,7 +98,7 @@ static void on_settings_click(lv_event_t *e)
 }
 
 /**
- * @brief Callback при показе экрана детализации - настройка группы
+ * @brief Callback при показе экрана детализации - проверка группы
  */
 static esp_err_t sensor_detail_on_show(lv_obj_t *screen_obj, void *params)
 {
@@ -108,7 +108,7 @@ static esp_err_t sensor_detail_on_show(lv_obj_t *screen_obj, void *params)
     }
     
     const sensor_meta_t *meta = &SENSOR_META[sensor_id];
-    ESP_LOGI(TAG, "Detail screen '%s' shown - configuring encoder", meta->name);
+    ESP_LOGI(TAG, "Detail screen '%s' shown", meta->name);
     
     // Получаем instance для доступа к encoder_group
     screen_instance_t *inst = screen_get_by_id(meta->id);
@@ -117,43 +117,9 @@ static esp_err_t sensor_detail_on_show(lv_obj_t *screen_obj, void *params)
         return ESP_OK;
     }
     
-    lv_group_t *group = inst->encoder_group;
-    
-    // ВАЖНО: Добавляем все интерактивные элементы в группу
-    // Ищем кнопки на экране и добавляем их
-    lv_obj_t *child = lv_obj_get_child(screen_obj, 0);
-    int added = 0;
-    
-    while (child != NULL) {
-        // Добавляем кнопки
-        if (lv_obj_check_type(child, &lv_button_class)) {
-            lv_group_add_obj(group, child);
-            added++;
-            ESP_LOGD(TAG, "  Added button to encoder group");
-        }
-        
-        // Проверяем дочерние элементы
-        lv_obj_t *grandchild = lv_obj_get_child(child, 0);
-        while (grandchild != NULL) {
-            if (lv_obj_check_type(grandchild, &lv_button_class)) {
-                lv_group_add_obj(group, grandchild);
-                added++;
-                ESP_LOGD(TAG, "  Added nested button to encoder group");
-            }
-            grandchild = lv_obj_get_child(child, lv_obj_get_index(grandchild) + 1);
-        }
-        
-        child = lv_obj_get_child(screen_obj, lv_obj_get_index(child) + 1);
-    }
-    
-    int obj_count = lv_group_get_obj_count(group);
-    ESP_LOGI(TAG, "  Encoder group has %d objects (added %d)", obj_count, added);
-    
-    // Устанавливаем начальный фокус
-    if (obj_count > 0) {
-        lv_group_focus_next(group);
-        ESP_LOGI(TAG, "  Initial focus set");
-    }
+    // Элементы уже автоматически добавлены в группу при создании
+    int obj_count = lv_group_get_obj_count(inst->encoder_group);
+    ESP_LOGI(TAG, "  Encoder group ready with %d interactive elements", obj_count);
     
     return ESP_OK;
 }
@@ -184,11 +150,11 @@ static lv_obj_t* sensor_detail_create(void *params)
         .unit = meta->unit,
         .decimals = meta->decimals,
         .settings_callback = on_settings_click,
-        .settings_user_data = (void*)(intptr_t)sensor_index,  // ← Передаем sensor_index!
-        .back_callback = NULL,  // Автоматическая навигация
+        .settings_user_data = (void*)(intptr_t)sensor_index,
+        .back_callback = NULL,  // Автоматическая навигация через screen_go_back()
     };
     
-    // Создаем экран без группы (группа будет настроена в on_show)
+    // Создаем экран - группа автоматически настроится при создании
     lv_obj_t *screen = template_create_detail_screen(&detail_cfg, NULL);
     
     // Сохраняем sensor_index в user_data экрана для on_show callback

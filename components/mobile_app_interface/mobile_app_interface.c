@@ -93,7 +93,7 @@ esp_err_t mobile_app_interface_init(network_mode_t mode) {
     esp_err_t ret = ESP_OK;
 
     if (mobile_interface_initialized) {
-        ESP_LOGW(TAG, "Мобильный интерфейс уже инициализирован");
+        ESP_LOGW(TAG, "Mobile interface already initialized");
         return ESP_OK;
     }
 

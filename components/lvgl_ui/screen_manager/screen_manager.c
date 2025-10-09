@@ -15,9 +15,9 @@ static const char *TAG = "SCREEN_MANAGER";
 
 esp_err_t screen_manager_init(const screen_manager_config_t *config)
 {
-    ESP_LOGI(TAG, "╔════════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║   Screen Manager Initialization        ║");
-    ESP_LOGI(TAG, "╚════════════════════════════════════════╝");
+    ESP_LOGI(TAG, "==============================================");
+    ESP_LOGI(TAG, "   Screen Manager Initialization        ");
+    ESP_LOGI(TAG, "==============================================");
     
     // Инициализируем реестр
     esp_err_t ret = screen_registry_init();
@@ -189,5 +189,37 @@ bool screen_is_visible_check(const char *screen_id)
 uint8_t screen_get_history_count(void)
 {
     return navigator_get_history_count();
+}
+
+/* =============================
+ *  УПРАВЛЕНИЕ ГРУППОЙ ЭНКОДЕРА
+ * ============================= */
+
+esp_err_t screen_add_to_group(const char *screen_id, lv_obj_t *widget)
+{
+    ESP_LOGD(TAG, "screen_add_to_group() -> screen_add_to_encoder_group()");
+    return screen_add_to_encoder_group(screen_id, widget);
+}
+
+// Функция screen_add_widget_tree реализована в screen_lifecycle.c
+
+int screen_cleanup_hidden_elements(const char *screen_id)
+{
+    screen_instance_t *instance = NULL;
+    
+    if (screen_id) {
+        instance = screen_get_by_id(screen_id);
+    } else {
+        instance = screen_get_current();
+    }
+    
+    if (!instance || !instance->encoder_group) {
+        ESP_LOGW(TAG, "No encoder group available for cleanup");
+        return 0;
+    }
+    
+    // Используем внутреннюю функцию очистки
+    extern int cleanup_hidden_elements(lv_group_t *group);
+    return cleanup_hidden_elements(instance->encoder_group);
 }
 

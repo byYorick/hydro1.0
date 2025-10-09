@@ -57,61 +57,13 @@ void lvgl_update_sensor_values_from_queue(sensor_data_t *data);
  */
 void* lvgl_get_sensor_data_queue(void);
 
-/**
- * @brief Установка фокуса на определенный элемент интерфейса
- * 
- * Эта функция устанавливает фокус на указанный элемент интерфейса для
- * навигации с помощью энкодера.
- * 
- * @param index Индекс элемента (0-5 для pH, EC, Temp, Hum, Lux, CO2)
- */
-void lvgl_set_focus(int index);
+// LEGACY FUNCTIONS REMOVED: lvgl_set_focus(), lvgl_get_focus_index(), 
+// lvgl_get_total_focus_items(), lvgl_clear_focus_group()
+// Фокус теперь управляется автоматически через Screen Manager
+// Используйте API Screen Manager для управления навигацией
 
-/**
- * @brief Получение текущего индекса фокуса
- * 
- * Эта функция возвращает текущий индекс элемента с фокусом.
- * 
- * @return Текущий индекс фокуса (0-5)
- */
-int lvgl_get_focus_index(void);
-
-/**
- * @brief Получение общего количества элементов для фокуса
- * 
- * Эта функция возвращает общее количество элементов, между которыми
- * можно перемещаться с помощью фокуса.
- * 
- * @return Общее количество элементов для фокуса
- */
-int lvgl_get_total_focus_items(void);
-
-/**
- * @brief Очистка группы фокуса
- * 
- * Эта функция очищает группу фокуса, удаляя все объекты из нее.
- * Используется при переключении между экранами/панелями.
- */
-void lvgl_clear_focus_group(void);
-
-/**
- * @brief Открыть экран деталей для текущей панели по индексу
- * 
- * Создает и отображает экран деталей, соответствующий панели с заданным индексом.
- * При повторном вызове с открытым экраном деталей сначала закроет текущий.
- * 
- * @param index Индекс панели (0-5)
- */
-void lvgl_open_detail_screen(int index);
-
-/**
- * @brief Закрыть экран деталей (вернуться на главный экран)
- */
-void lvgl_close_detail_screen(void);
-
-/**
- * @brief Статус: открыт ли экран деталей
- * 
- * @return true если открыт экран деталей, иначе false
- */
-bool lvgl_is_detail_screen_open(void);
+// LEGACY FUNCTIONS REMOVED: lvgl_open_detail_screen(), lvgl_close_detail_screen(), lvgl_is_detail_screen_open()
+// Детальные экраны теперь управляются через Screen Manager API:
+// - screen_show("detail_ph", NULL) для открытия
+// - screen_go_back() для закрытия
+// - screen_get_current() для проверки состояния

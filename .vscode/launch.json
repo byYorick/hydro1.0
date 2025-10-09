@@ -1,66 +1,35 @@
 {
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "type": "gdbtarget",
-      "request": "attach",
-      "name": "Eclipse CDT GDB Adapter"
-    },
-    {
-      "type": "espidf",
-      "name": "Launch",
-      "request": "launch"
-    },
-    {
-      "name": "ESP-IDF Build",
-      "type": "shell",
-      "request": "launch",
-      "command": "cmd",
-      "args": [
-        "/c",
-        "C:\\Espressif\\idf_cmd_init.bat esp-idf-1dcc643656a1439837fdf6ab63363005 && idf.py build"
-      ],
-      "cwd": "${workspaceFolder}",
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": false,
-        "panel": "new"
-      }
-    },
-    {
-      "name": "ESP-IDF Flash",
-      "type": "shell",
-      "request": "launch",
-      "command": "cmd",
-      "args": [
-        "/c",
-        "C:\\Espressif\\idf_cmd_init.bat esp-idf-1dcc643656a1439837fdf6ab63363005 && idf.py flash"
-      ],
-      "cwd": "${workspaceFolder}",
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": false,
-        "panel": "new"
-      }
-    },
-    {
-      "name": "ESP-IDF Monitor",
-      "type": "shell",
-      "request": "launch",
-      "command": "cmd",
-      "args": [
-        "/c",
-        "C:\\Espressif\\idf_cmd_init.bat esp-idf-1dcc643656a1439837fdf6ab63363005 && idf.py monitor"
-      ],
-      "cwd": "${workspaceFolder}",
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": false,
-        "panel": "new"
-      }
-    }
-  ]
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "ESP32-S3 JTAG Flash & Debug",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/hydroponics.elf",
+            "cwd": "${workspaceFolder}",
+            "MIMode": "gdb",
+            "miDebuggerPath": "xtensa-esp32s3-elf-gdb",
+            "miDebuggerServerAddress": "localhost:3333",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build Project",
+            "postDebugTask": null
+        },
+        {
+            "name": "ESP32-S3 USB-JTAG Flash Only",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/hydroponics.elf",
+            "cwd": "${workspaceFolder}",
+            "MIMode": "gdb",
+            "customLaunchSetupCommands": [],
+            "targetArchitecture": "xtensa",
+            "preLaunchTask": "Flash via JTAG"
+        }
+    ]
 }

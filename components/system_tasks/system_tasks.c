@@ -184,7 +184,7 @@ esp_err_t system_tasks_create_all(system_task_handles_t *handles)
         ESP_LOGE(TAG, "Failed to create sensor_task");
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "✓ sensor_task created (Pri: %d, Stack: %d)",
+    ESP_LOGI(TAG, "[OK] sensor_task created (Pri: %d, Stack: %d)",
              TASK_PRIORITY_SENSOR, TASK_STACK_SIZE_SENSOR);
 
     ret = xTaskCreate(display_task, "display_task", TASK_STACK_SIZE_DISPLAY, NULL,
@@ -193,7 +193,7 @@ esp_err_t system_tasks_create_all(system_task_handles_t *handles)
         ESP_LOGE(TAG, "Failed to create display_task");
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "✓ display_task created (Pri: %d, Stack: %d)",
+    ESP_LOGI(TAG, "[OK] display_task created (Pri: %d, Stack: %d)",
              TASK_PRIORITY_DISPLAY, TASK_STACK_SIZE_DISPLAY);
 
     ret = xTaskCreate(notification_task, "notification_task", TASK_STACK_SIZE_NOTIFICATION, NULL,
@@ -202,7 +202,7 @@ esp_err_t system_tasks_create_all(system_task_handles_t *handles)
         ESP_LOGE(TAG, "Failed to create notification_task");
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "✓ notification_task created (Pri: %d, Stack: %d)",
+    ESP_LOGI(TAG, "[OK] notification_task created (Pri: %d, Stack: %d)",
              TASK_PRIORITY_NOTIFICATION, TASK_STACK_SIZE_NOTIFICATION);
 
     ret = xTaskCreate(data_logger_task, "data_logger_task", TASK_STACK_SIZE_DATALOGGER, NULL,
@@ -211,7 +211,7 @@ esp_err_t system_tasks_create_all(system_task_handles_t *handles)
         ESP_LOGE(TAG, "Failed to create data_logger_task");
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "✓ data_logger_task created (Pri: %d, Stack: %d)",
+    ESP_LOGI(TAG, "[OK] data_logger_task created (Pri: %d, Stack: %d)",
              TASK_PRIORITY_DATALOGGER, TASK_STACK_SIZE_DATALOGGER);
 
     ret = xTaskCreate(scheduler_task, "scheduler_task", TASK_STACK_SIZE_SCHEDULER, NULL,
@@ -220,7 +220,7 @@ esp_err_t system_tasks_create_all(system_task_handles_t *handles)
         ESP_LOGE(TAG, "Failed to create scheduler_task");
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "✓ scheduler_task created (Pri: %d, Stack: %d)",
+    ESP_LOGI(TAG, "[OK] scheduler_task created (Pri: %d, Stack: %d)",
              TASK_PRIORITY_SCHEDULER, TASK_STACK_SIZE_SCHEDULER);
 
     ret = xTaskCreate(ph_ec_task, "ph_ec_task", TASK_STACK_SIZE_PH_EC, NULL,
@@ -229,10 +229,10 @@ esp_err_t system_tasks_create_all(system_task_handles_t *handles)
         ESP_LOGE(TAG, "Failed to create ph_ec_task");
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "✓ ph_ec_task created (Pri: %d, Stack: %d)",
+    ESP_LOGI(TAG, "[OK] ph_ec_task created (Pri: %d, Stack: %d)",
              TASK_PRIORITY_PH_EC, TASK_STACK_SIZE_PH_EC);
 
-    ESP_LOGI(TAG, "✓ encoder_task will be created by lvgl_main.c");
+    ESP_LOGI(TAG, "[OK] encoder_task will be created by lvgl_main.c");
 
     if (handles != NULL) {
         *handles = task_handles;
@@ -277,6 +277,8 @@ static void sensor_task(void *pvParameters)
     vTaskDelay(pdMS_TO_TICKS(3000));
     last_wake_time = xTaskGetTickCount();
     last_cycle_tick = last_wake_time;
+    
+    // ТЕСТОВАЯ ОШИБКА УДАЛЕНА для проверки фокуса
 
     while (1) {
         read_count++;
@@ -558,7 +560,7 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
         successful_reads += 2;
         register_sensor_recovery(SENSOR_INDEX_TEMPERATURE);
         register_sensor_recovery(SENSOR_INDEX_HUMIDITY);
-        ESP_LOGI(TAG, "Temperature/Humidity: %.1f°C %.1f%%", temp, hum);
+        ESP_LOGI(TAG, "Temperature/Humidity: %.1fC %.1f%%", temp, hum);
     } else {
         data->temperature = TEMP_TARGET_DEFAULT;
         data->humidity = HUMIDITY_TARGET_DEFAULT;
@@ -588,7 +590,7 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
     // Устанавливаем температуру для компенсации EC измерений (критично для точности!)
     if (data->valid[SENSOR_INDEX_TEMPERATURE]) {
         trema_ec_set_temperature(data->temperature);
-        ESP_LOGD(TAG, "Temperature compensation set for EC: %.1f°C", data->temperature);
+        ESP_LOGD(TAG, "Temperature compensation set for EC: %.1fC", data->temperature);
     }
     
     float ec = EC_TARGET_DEFAULT;

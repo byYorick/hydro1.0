@@ -163,9 +163,9 @@ static esp_err_t register_task_executors(void);
  */
 void app_main(void)
 {
-    ESP_LOGI(TAG, "╔══════════════════════════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║   Hydroponics Monitor System v%s Starting...     ║", APP_VERSION);
-    ESP_LOGI(TAG, "╚══════════════════════════════════════════════════════════╝");
+    ESP_LOGI(TAG, "================================================================");
+    ESP_LOGI(TAG, "   Hydroponics Monitor System v%s Starting...     ", APP_VERSION);
+    ESP_LOGI(TAG, "================================================================");
     
     // Выводим информацию о системе
     print_system_info();
@@ -176,7 +176,7 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to initialize NVS. System cannot continue.");
         return;
     }
-    ESP_LOGI(TAG, "✓ NVS initialized successfully");
+    ESP_LOGI(TAG, "[OK] NVS initialized successfully");
     
     // ========== ЭТАП 2: Инициализация аппаратных компонентов ==========
     ESP_LOGI(TAG, "[2/7] Initializing hardware...");
@@ -184,22 +184,22 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to initialize hardware. System cannot continue.");
         return;
     }
-    ESP_LOGI(TAG, "✓ Hardware initialized successfully");
+    ESP_LOGI(TAG, "[OK] Hardware initialized successfully");
     
     // ========== ЭТАП 3: Инициализация датчиков ==========
     ESP_LOGI(TAG, "[3/7] Initializing sensors...");
     if (init_sensors() != ESP_OK) {
-        ESP_LOGW(TAG, "⚠ Some sensors failed to initialize, continuing with available sensors");
+        ESP_LOGW(TAG, "[WARN] Some sensors failed to initialize, continuing with available sensors");
     } else {
-        ESP_LOGI(TAG, "✓ All sensors initialized successfully");
+        ESP_LOGI(TAG, "[OK] All sensors initialized successfully");
     }
     
     // ========== ЭТАП 4: Инициализация насосов и реле ==========
     ESP_LOGI(TAG, "[4/7] Initializing pumps and relays...");
     if (init_pumps() != ESP_OK) {
-        ESP_LOGW(TAG, "⚠ Some pumps/relays failed to initialize");
+        ESP_LOGW(TAG, "[WARN] Some pumps/relays failed to initialize");
     } else {
-        ESP_LOGI(TAG, "✓ Pumps and relays initialized successfully");
+        ESP_LOGI(TAG, "[OK] Pumps and relays initialized successfully");
     }
     
     // ========== ЭТАП 5: Инициализация системных компонентов ==========
@@ -208,7 +208,7 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to initialize system components. System cannot continue.");
         return;
     }
-    ESP_LOGI(TAG, "✓ System components initialized successfully");
+    ESP_LOGI(TAG, "[OK] System components initialized successfully");
     
     // ========== ЭТАП 6: Инициализация контекста задач ==========
     ESP_LOGI(TAG, "[6/7] Initializing task context...");
@@ -229,24 +229,24 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to create system tasks. System cannot continue.");
         return;
     }
-    ESP_LOGI(TAG, "✓ All tasks created successfully");
+    ESP_LOGI(TAG, "[OK] All tasks created successfully");
     
     // ========== ЭТАП 7: Регистрация исполнителей задач ==========
     ESP_LOGI(TAG, "[7/7] Registering task executors...");
     if (register_task_executors() != ESP_OK) {
-        ESP_LOGW(TAG, "⚠ Some task executors failed to register");
+        ESP_LOGW(TAG, "[WARN] Some task executors failed to register");
     } else {
-        ESP_LOGI(TAG, "✓ Task executors registered successfully");
+        ESP_LOGI(TAG, "[OK] Task executors registered successfully");
     }
     
     // Система полностью инициализирована
     system_initialized = true;
     
     ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "╔══════════════════════════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║   System Initialization Complete!                       ║");
-    ESP_LOGI(TAG, "║   All systems operational. Starting monitoring...       ║");
-    ESP_LOGI(TAG, "╚══════════════════════════════════════════════════════════╝");
+    ESP_LOGI(TAG, "================================================================");
+    ESP_LOGI(TAG, "   System Initialization Complete!                       ");
+    ESP_LOGI(TAG, "   All systems operational. Starting monitoring...       ");
+    ESP_LOGI(TAG, "================================================================");
     
     // Создаем уведомление о запуске системы
     notification_system(NOTIFICATION_INFO, "System Started", 
@@ -324,7 +324,7 @@ static esp_err_t init_hardware(void)
         ESP_LOGE(TAG, "Failed to initialize I2C bus: %s", esp_err_to_name(ret));
         return ret;
     }
-    ESP_LOGI(TAG, "  ✓ I2C bus initialized (SCL: GPIO%d, SDA: GPIO%d)", 
+    ESP_LOGI(TAG, "  [OK] I2C bus initialized (SCL: GPIO%d, SDA: GPIO%d)", 
              I2C_MASTER_SCL_IO, I2C_MASTER_SDA_IO);
     
     // Небольшая задержка для стабилизации I2C шины
@@ -337,7 +337,7 @@ static esp_err_t init_hardware(void)
         ESP_LOGE(TAG, "Failed to initialize LCD");
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "  ✓ LCD initialized (Resolution: %dx%d)", LCD_H_RES, LCD_V_RES);
+    ESP_LOGI(TAG, "  [OK] LCD initialized (Resolution: %dx%d)", LCD_H_RES, LCD_V_RES);
     
     // Задержка для инициализации дисплея
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -346,7 +346,7 @@ static esp_err_t init_hardware(void)
     // LVGL управляет всеми экранами и виджетами
     ESP_LOGI(TAG, "  Initializing LVGL UI...");
     lvgl_main_init();
-    ESP_LOGI(TAG, "  ✓ LVGL UI initialized");
+    ESP_LOGI(TAG, "  [OK] LVGL UI initialized");
     
     // Задержка для завершения инициализации UI
     vTaskDelay(pdMS_TO_TICKS(200));
@@ -357,7 +357,7 @@ static esp_err_t init_hardware(void)
     encoder_set_pins(ENCODER_PIN_A, ENCODER_PIN_B, ENCODER_PIN_SW);
     encoder_set_long_press_duration(ENCODER_LONG_PRESS_MS);
     encoder_init();  // void function
-    ESP_LOGI(TAG, "  ✓ Encoder initialized (A: GPIO%d, B: GPIO%d, SW: GPIO%d)", 
+    ESP_LOGI(TAG, "  [OK] Encoder initialized (A: GPIO%d, B: GPIO%d, SW: GPIO%d)", 
              ENCODER_PIN_A, ENCODER_PIN_B, ENCODER_PIN_SW);
     
     return ESP_OK;
@@ -385,42 +385,42 @@ static esp_err_t init_sensors(void)
     
     // SHT3x: Температура и влажность
     // Не требует отдельной инициализации, используется I2C шина
-    ESP_LOGI(TAG, "  ✓ SHT3x (Temp/Humidity) configured @ 0x%02X", I2C_ADDR_SHT3X);
+    ESP_LOGI(TAG, "  [OK] SHT3x (Temp/Humidity) configured @ 0x%02X", I2C_ADDR_SHT3X);
     initialized_count++;
     
     // CCS811: CO2 и VOC
     if (ccs811_init()) {
-        ESP_LOGI(TAG, "  ✓ CCS811 (CO2/VOC) initialized @ 0x%02X", I2C_ADDR_CCS811);
+        ESP_LOGI(TAG, "  [OK] CCS811 (CO2/VOC) initialized @ 0x%02X", I2C_ADDR_CCS811);
         initialized_count++;
     } else {
-        ESP_LOGW(TAG, "  ✗ CCS811 initialization failed");
+        ESP_LOGW(TAG, "  [FAIL] CCS811 initialization failed");
     }
     
     // Trema pH: Кислотность
     ret = trema_ph_init();
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "  ✓ Trema pH initialized @ 0x%02X", I2C_ADDR_TREMA_PH);
+        ESP_LOGI(TAG, "  [OK] Trema pH initialized @ 0x%02X", I2C_ADDR_TREMA_PH);
         initialized_count++;
     } else {
-        ESP_LOGW(TAG, "  ✗ Trema pH initialization failed: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "  [FAIL] Trema pH initialization failed: %s", esp_err_to_name(ret));
     }
     
     // Trema EC: Электропроводность
     ret = trema_ec_init();
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "  ✓ Trema EC initialized @ 0x%02X", I2C_ADDR_TREMA_EC);
+        ESP_LOGI(TAG, "  [OK] Trema EC initialized @ 0x%02X", I2C_ADDR_TREMA_EC);
         initialized_count++;
     } else {
-        ESP_LOGW(TAG, "  ✗ Trema EC initialization failed: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "  [FAIL] Trema EC initialization failed: %s", esp_err_to_name(ret));
     }
     
     // Trema Lux: Освещенность
     ret = trema_lux_init();
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "  ✓ Trema Lux initialized @ 0x%02X", I2C_ADDR_TREMA_LUX);
+        ESP_LOGI(TAG, "  [OK] Trema Lux initialized @ 0x%02X", I2C_ADDR_TREMA_LUX);
         initialized_count++;
     } else {
-        ESP_LOGW(TAG, "  ✗ Trema Lux initialization failed: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "  [FAIL] Trema Lux initialization failed: %s", esp_err_to_name(ret));
     }
     
     ESP_LOGI(TAG, "  Sensors initialized: %d/5", initialized_count);
@@ -454,13 +454,13 @@ static esp_err_t init_pumps(void)
     // Инициализация реле
     esp_err_t ret = trema_relay_init();
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "  ✓ Relays initialized (4 channels)");
+        ESP_LOGI(TAG, "  [OK] Relays initialized (4 channels)");
         ESP_LOGI(TAG, "    - Relay 1 (Light):  GPIO%d", RELAY_1_PIN);
         ESP_LOGI(TAG, "    - Relay 2 (Fan):    GPIO%d", RELAY_2_PIN);
         ESP_LOGI(TAG, "    - Relay 3 (Heater): GPIO%d", RELAY_3_PIN);
         ESP_LOGI(TAG, "    - Relay 4 (Reserve):GPIO%d", RELAY_4_PIN);
     } else {
-        ESP_LOGW(TAG, "  ✗ Relays initialization failed: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "  [FAIL] Relays initialization failed: %s", esp_err_to_name(ret));
     }
     
     return ESP_OK;
@@ -496,7 +496,7 @@ static esp_err_t init_system_components(void)
         ESP_LOGE(TAG, "Failed to load system configuration: %s", esp_err_to_name(ret));
         return ret;
     }
-    ESP_LOGI(TAG, "  ✓ Config Manager initialized (auto mode: %s)",
+    ESP_LOGI(TAG, "  [OK] Config Manager initialized (auto mode: %s)",
              g_system_config.auto_control_enabled ? "ON" : "OFF");
 
     // Interfaces: базовые адаптеры датчиков и исполнительных устройств
@@ -505,7 +505,7 @@ static esp_err_t init_system_components(void)
         ESP_LOGE(TAG, "Failed to initialize system interfaces: %s", esp_err_to_name(ret));
         return ret;
     }
-    ESP_LOGI(TAG, "  ✓ System interfaces initialized");
+    ESP_LOGI(TAG, "  [OK] System interfaces initialized");
     
     // Notification System: Система уведомлений
     ret = notification_system_init(100); // Максимум 100 уведомлений
@@ -514,7 +514,7 @@ static esp_err_t init_system_components(void)
         return ret;
     }
     notification_set_callback(notification_callback);
-    ESP_LOGI(TAG, "  ✓ Notification System initialized");
+    ESP_LOGI(TAG, "  [OK] Notification System initialized");
     
     // Error Handler: Централизованная обработка ошибок
     ret = error_handler_init(true); // Включаем всплывающие окна
@@ -524,7 +524,7 @@ static esp_err_t init_system_components(void)
     }
     // Устанавливаем русский шрифт для отображения кириллицы
     error_handler_set_font(&montserrat_ru);
-    ESP_LOGI(TAG, "  ✓ Error Handler initialized (with Cyrillic support)");
+    ESP_LOGI(TAG, "  [OK] Error Handler initialized (with Cyrillic support)");
     
     // Data Logger: Логирование данных
     ret = data_logger_init(MAX_LOG_ENTRIES);
@@ -541,7 +541,7 @@ static esp_err_t init_system_components(void)
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "  ! Failed to restore logs from NVS: %s", esp_err_to_name(ret));
     }
-    ESP_LOGI(TAG, "  ✓ Data Logger initialized (capacity: %d)", MAX_LOG_ENTRIES);
+    ESP_LOGI(TAG, "  [OK] Data Logger initialized (capacity: %d)", MAX_LOG_ENTRIES);
     
     // Task Scheduler: Планировщик задач
     ret = task_scheduler_init();
@@ -550,7 +550,7 @@ static esp_err_t init_system_components(void)
         return ret;
     }
     task_scheduler_set_event_callback(task_event_callback);
-    ESP_LOGI(TAG, "  ✓ Task Scheduler initialized");
+    ESP_LOGI(TAG, "  [OK] Task Scheduler initialized");
 
     ret = ph_ec_controller_init();
     if (ret != ESP_OK) {
@@ -563,7 +563,7 @@ static esp_err_t init_system_components(void)
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "  ! Failed to apply controller config: %s", esp_err_to_name(ret));
     }
-    ESP_LOGI(TAG, "  ✓ pH/EC Controller initialized");
+    ESP_LOGI(TAG, "  [OK] pH/EC Controller initialized");
 
     return ESP_OK;
 }

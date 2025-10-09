@@ -177,7 +177,7 @@ bool trema_ec_set_temperature(float temperature)
     
     // Validate temperature range (0 - 63.75 °C)
     if (temperature < 0.0f || temperature > 63.75f) {
-        ESP_LOGW(TAG, "Invalid temperature: %.2f °C", temperature);
+        ESP_LOGW(TAG, "Invalid temperature: %.2f C", temperature);
         return false;
     }
     
@@ -193,7 +193,7 @@ bool trema_ec_set_temperature(float temperature)
         return false;
     }
     
-    ESP_LOGD(TAG, "Temperature set to %.2f °C", temperature);
+    ESP_LOGD(TAG, "Temperature set to %.2f C", temperature);
     return true;
 }
 

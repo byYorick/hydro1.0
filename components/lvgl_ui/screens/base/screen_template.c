@@ -99,74 +99,96 @@ lv_obj_t* template_create_detail_screen(const template_detail_config_t *config,
         lv_group_add_obj(group, base.back_button);
     }
     
-    // Информационная панель с описанием
+    // ИСПРАВЛЕН LAYOUT: Используем flex вместо абсолютного позиционирования
+    lv_obj_set_flex_flow(base.content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(base.content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_row(base.content, 8, 0);
+    
+    // Компактная информационная панель с описанием
     if (config->description) {
         lv_obj_t *info_panel = lv_obj_create(base.content);
         lv_obj_add_style(info_panel, &style_card, 0);
-        lv_obj_set_size(info_panel, LV_PCT(100), 100);
-        lv_obj_align(info_panel, LV_ALIGN_TOP_MID, 0, 0);
+        lv_obj_set_size(info_panel, LV_PCT(100), LV_SIZE_CONTENT);
+        lv_obj_set_style_pad_all(info_panel, 8, 0);  // Компактнее
         
         lv_obj_t *desc_label = lv_label_create(info_panel);
         lv_obj_add_style(desc_label, &style_unit, 0);
         lv_label_set_text(desc_label, config->description);
         lv_label_set_long_mode(desc_label, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(desc_label, LV_PCT(90));
+        lv_obj_set_width(desc_label, LV_PCT(95));
         lv_obj_center(desc_label);
     }
     
-    // Панель значений
+    // Компактная панель значений в одну строку
     lv_obj_t *values_panel = lv_obj_create(base.content);
     lv_obj_remove_style_all(values_panel);
-    lv_obj_set_size(values_panel, LV_PCT(100), 80);
-    lv_obj_align(values_panel, LV_ALIGN_TOP_MID, 0, 110);
+    lv_obj_add_style(values_panel, &style_card, 0);
+    lv_obj_set_size(values_panel, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(values_panel, 8, 0);
     
-    // Текущее значение (слева)
-    lv_obj_t *current_label = lv_label_create(values_panel);
-    lv_obj_add_style(current_label, &style_label, 0);
-    lv_label_set_text(current_label, "Текущее:");
-    lv_obj_align(current_label, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_flex_flow(values_panel, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(values_panel, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     
-    lv_obj_t *current_value = lv_label_create(values_panel);
+    // Текущее значение
+    lv_obj_t *current_container = lv_obj_create(values_panel);
+    lv_obj_remove_style_all(current_container);
+    lv_obj_set_size(current_container, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(current_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(current_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(current_container, 0, 0);
+    
+    lv_obj_t *current_label = lv_label_create(current_container);
+    lv_obj_add_style(current_label, &style_unit, 0);
+    lv_label_set_text(current_label, "Current");
+    
+    lv_obj_t *current_value = lv_label_create(current_container);
     lv_obj_add_style(current_value, &style_value_large, 0);
     char curr_text[32];
-    snprintf(curr_text, sizeof(curr_text), "%.*f %s", 
+    snprintf(curr_text, sizeof(curr_text), "%.*f%s", 
              config->decimals, config->current_value, 
              config->unit ? config->unit : "");
     lv_label_set_text(current_value, curr_text);
-    lv_obj_align(current_value, LV_ALIGN_TOP_LEFT, 0, 25);
     
-    // Целевое значение (справа)
-    lv_obj_t *target_label = lv_label_create(values_panel);
-    lv_obj_add_style(target_label, &style_label, 0);
-    lv_label_set_text(target_label, "Целевое:");
-    lv_obj_align(target_label, LV_ALIGN_TOP_RIGHT, 0, 0);
+    // Разделитель
+    lv_obj_t *separator = lv_label_create(values_panel);
+    lv_obj_add_style(separator, &style_unit, 0);
+    lv_label_set_text(separator, "|");
     
-    lv_obj_t *target_value = lv_label_create(values_panel);
+    // Целевое значение
+    lv_obj_t *target_container = lv_obj_create(values_panel);
+    lv_obj_remove_style_all(target_container);
+    lv_obj_set_size(target_container, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(target_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(target_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(target_container, 0, 0);
+    
+    lv_obj_t *target_label = lv_label_create(target_container);
+    lv_obj_add_style(target_label, &style_unit, 0);
+    lv_label_set_text(target_label, "Target");
+    
+    lv_obj_t *target_value = lv_label_create(target_container);
     lv_obj_add_style(target_value, &style_value_large, 0);
     char targ_text[32];
-    snprintf(targ_text, sizeof(targ_text), "%.*f %s",
+    snprintf(targ_text, sizeof(targ_text), "%.*f%s",
              config->decimals, config->target_value,
              config->unit ? config->unit : "");
     lv_label_set_text(target_value, targ_text);
-    lv_obj_align(target_value, LV_ALIGN_TOP_RIGHT, 0, 25);
     
-    // Кнопка настроек внизу
+    // Компактная кнопка настроек
     if (config->settings_callback) {
         lv_obj_t *settings_btn = lv_btn_create(base.content);
         lv_obj_add_style(settings_btn, &style_card, 0);
-        lv_obj_set_size(settings_btn, 120, 40);
-        lv_obj_align(settings_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
+        lv_obj_set_size(settings_btn, LV_PCT(100), 35);  // Полная ширина, компактная высота
+        
+        // ИСПРАВЛЕНО: Правильно передаем settings_user_data
         lv_obj_add_event_cb(settings_btn, config->settings_callback, 
-                           LV_EVENT_CLICKED, NULL);
+                           LV_EVENT_CLICKED, config->settings_user_data);
         
         lv_obj_t *settings_label = lv_label_create(settings_btn);
-        lv_label_set_text(settings_label, "Настройки");
+        lv_label_set_text(settings_label, "Settings");
         lv_obj_center(settings_label);
         
-        // Добавляем в группу
-        if (group) {
-            lv_group_add_obj(group, settings_btn);
-        }
+        ESP_LOGD(TAG, "Settings button created (user_data: %p)", config->settings_user_data);
     }
     
     ESP_LOGI(TAG, "Detail screen created");

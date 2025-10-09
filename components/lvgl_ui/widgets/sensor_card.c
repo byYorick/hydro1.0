@@ -7,6 +7,7 @@
 #include "lvgl_styles.h"
 #include "esp_log.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 static const char *TAG = "WIDGET_SENSOR_CARD";
 
@@ -18,21 +19,21 @@ lv_obj_t* widget_create_sensor_card(lv_obj_t *parent,
         return NULL;
     }
     
-    // Создаем контейнер карточки - компактный размер для сетки 2x3
+    // Создаем контейнер карточки - оптимизированный размер для сетки 2x3
     lv_obj_t *card = lv_obj_create(parent);
     lv_obj_add_style(card, &style_card, 0);
-    lv_obj_set_size(card, 110, 80);  // 2 в ряд: (240-20)/2 = 110, высота: (264-20)/3 = 81
+    lv_obj_set_size(card, 115, 85);  // Оптимизированные размеры
     
     // ВАЖНО: Применяем стиль фокуса при получении состояния FOCUSED
     extern lv_style_t style_card_focused;
     lv_obj_add_style(card, &style_card_focused, LV_STATE_FOCUSED);
     
-    // Настраиваем flex layout
+    // Настраиваем flex layout для максимальной информативности
     lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, 
                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
-    lv_obj_set_style_pad_all(card, 12, 0);
-    lv_obj_set_style_pad_row(card, 6, 0);
+    lv_obj_set_style_pad_all(card, 8, 0);  // Компактнее отступы
+    lv_obj_set_style_pad_row(card, 4, 0);  // Меньше между строками
     
     // Делаем кликабельной
     lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
@@ -43,32 +44,55 @@ lv_obj_t* widget_create_sensor_card(lv_obj_t *parent,
                            config->user_data);
     }
     
-    // Название датчика
+    // Название датчика - компактное
     lv_obj_t *name_label = lv_label_create(card);
     lv_obj_add_style(name_label, &style_unit, 0);
     lv_label_set_text(name_label, config->name ? config->name : "Sensor");
     
-    // Текущее значение (большой шрифт)
+    // Текущее значение (большой шрифт) с единицами в одной строке
     lv_obj_t *value_label = lv_label_create(card);
     lv_obj_add_style(value_label, &style_value_large, 0);
     
     char value_text[32];
-    snprintf(value_text, sizeof(value_text), "%.*f", 
-             config->decimals, config->current_value);
+    snprintf(value_text, sizeof(value_text), "%.*f%s", 
+             config->decimals, config->current_value,
+             config->unit ? config->unit : "");
     lv_label_set_text(value_label, value_text);
     
-    // Сохраняем ссылку на value_label для обновления
-    lv_obj_set_user_data(card, value_label);
+    // ИСПРАВЛЕНО: Сохраняем и value_label, и config в user_data
+    // Создаем структуру для хранения обоих указателей
+    typedef struct {
+        lv_obj_t *value_label;
+        sensor_card_config_t config;
+    } card_data_t;
     
-    // Единицы измерения
-    lv_obj_t *unit_label = lv_label_create(card);
-    lv_obj_add_style(unit_label, &style_unit, 0);
-    lv_label_set_text(unit_label, config->unit ? config->unit : "");
+    card_data_t *card_data = malloc(sizeof(card_data_t));
+    if (card_data) {
+        card_data->value_label = value_label;
+        card_data->config = *config;
+        lv_obj_set_user_data(card, card_data);
+    } else {
+        ESP_LOGE(TAG, "Failed to allocate card_data");
+    }
     
-    // Статус (позже можно добавить логику)
-    lv_obj_t *status_label = lv_label_create(card);
+    // Статус с индикатором - компактный
+    lv_obj_t *status_container = lv_obj_create(card);
+    lv_obj_remove_style_all(status_container);
+    lv_obj_set_size(status_container, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(status_container, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(status_container, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(status_container, 0, 0);
+    
+    // Индикатор статуса (цветная точка)
+    lv_obj_t *status_dot = lv_obj_create(status_container);
+    lv_obj_set_size(status_dot, 6, 6);
+    lv_obj_set_style_radius(status_dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(status_dot, lv_color_hex(0x4CAF50), 0);  // Зеленый по умолчанию
+    
+    // Текст статуса
+    lv_obj_t *status_label = lv_label_create(status_container);
     lv_obj_add_style(status_label, &style_unit, 0);
-    lv_label_set_text(status_label, "Normal");
+    lv_label_set_text(status_label, "OK");
     
     ESP_LOGD(TAG, "Sensor card created for '%s'", config->name);
     
@@ -82,13 +106,22 @@ void widget_sensor_card_update_value(lv_obj_t *card, float value)
         return;
     }
     
-    // Получаем value_label из user data
-    lv_obj_t *value_label = (lv_obj_t*)lv_obj_get_user_data(card);
-    if (value_label) {
+    // ИСПРАВЛЕНО: Получаем структуру card_data из user_data
+    typedef struct {
+        lv_obj_t *value_label;
+        sensor_card_config_t config;
+    } card_data_t;
+    
+    card_data_t *card_data = (card_data_t*)lv_obj_get_user_data(card);
+    if (card_data && card_data->value_label) {
         char value_text[32];
-        snprintf(value_text, sizeof(value_text), "%.2f", value);
-        lv_label_set_text(value_label, value_text);
+        snprintf(value_text, sizeof(value_text), "%.*f%s", 
+                 card_data->config.decimals, value,
+                 card_data->config.unit ? card_data->config.unit : "");
+        lv_label_set_text(card_data->value_label, value_text);
         ESP_LOGD(TAG, "Card value updated to %.2f", value);
+    } else {
+        ESP_LOGW(TAG, "Card data is NULL or invalid");
     }
 }
 

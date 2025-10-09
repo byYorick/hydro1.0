@@ -1,41 +1,28 @@
-#pragma once
-
 /**
  * @file notification_popup.h
- * @brief Виджет всплывающего уведомления
+ * @brief Адаптер для показа уведомлений через Screen Manager
  * 
- * Отображает уведомления из notification_system как попап на экране.
+ * Все попапы теперь управляются через popup_screen.c и Screen Manager.
+ * Этот модуль только регистрирует callback в notification_system.
  */
 
-#include "lvgl.h"
-#include "notification_system.h"
+#pragma once
+
+#include "../../notification_system/notification_system.h"
+#include "esp_err.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
- * @brief Показать всплывающее уведомление
+ * @brief Инициализация адаптера попапов уведомлений
  * 
- * @param notification Уведомление для отображения
- * @return Созданный попап или NULL при ошибке
- */
-lv_obj_t* widget_show_notification_popup(const notification_t *notification);
-
-/**
- * @brief Скрыть все активные уведомления
- */
-void widget_hide_all_popups(void);
-
-/**
- * @brief Инициализация системы попапов
- * 
- * Регистрирует callback в notification_system для автоматического показа
+ * Регистрирует callback в notification_system, который будет
+ * показывать уведомления через popup_screen.c (Screen Manager).
  */
 void widget_notification_popup_init(void);
 
 #ifdef __cplusplus
 }
 #endif
-
-

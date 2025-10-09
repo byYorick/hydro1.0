@@ -30,6 +30,14 @@ static esp_err_t push_history(screen_instance_t *instance)
         return ESP_ERR_INVALID_ARG;
     }
     
+    // КРИТИЧЕСКАЯ СЕКЦИЯ: Защищаем операции с историей
+    if (manager->mutex) {
+        if (xSemaphoreTake(manager->mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            ESP_LOGE(TAG, "Failed to acquire mutex for push_history");
+            return ESP_ERR_TIMEOUT;
+        }
+    }
+    
     // Если история заполнена, сдвигаем (FIFO)
     if (manager->history_count >= MAX_HISTORY) {
         ESP_LOGD(TAG, "History full, shifting...");
@@ -47,6 +55,10 @@ static esp_err_t push_history(screen_instance_t *instance)
     ESP_LOGD(TAG, "Pushed '%s' to history (count: %d/%d)", 
              instance->config->id, manager->history_count, MAX_HISTORY);
     
+    if (manager->mutex) {
+        xSemaphoreGive(manager->mutex);
+    }
+    
     return ESP_OK;
 }
 
@@ -57,14 +69,25 @@ static screen_instance_t* pop_history(void)
 {
     screen_manager_t *manager = screen_manager_get_instance();
     
+    // КРИТИЧЕСКАЯ СЕКЦИЯ: Защищаем операции с историей
+    screen_instance_t *instance = NULL;
+    
+    if (manager->mutex) {
+        if (xSemaphoreTake(manager->mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            ESP_LOGE(TAG, "Failed to acquire mutex for pop_history");
+            return NULL;
+        }
+    }
+    
     if (manager->history_count == 0) {
+        if (manager->mutex) xSemaphoreGive(manager->mutex);
         ESP_LOGD(TAG, "History is empty");
         return NULL;
     }
     
     // Извлекаем последний элемент (LIFO для back navigation)
     manager->history_count--;
-    screen_instance_t *instance = manager->history[manager->history_count];
+    instance = manager->history[manager->history_count];
     manager->history[manager->history_count] = NULL;
     
     // Обновляем индекс
@@ -77,6 +100,10 @@ static screen_instance_t* pop_history(void)
     if (instance) {
         ESP_LOGD(TAG, "Popped '%s' from history (count: %d)", 
                  instance->config->id, manager->history_count);
+    }
+    
+    if (manager->mutex) {
+        xSemaphoreGive(manager->mutex);
     }
     
     return instance;
@@ -134,7 +161,9 @@ esp_err_t navigator_go_back(void)
     ESP_LOGI(TAG, "Going back to '%s'", prev->config->id);
     
     // Показываем предыдущий экран (БЕЗ добавления в историю!)
-    esp_err_t ret = screen_show_instance(prev->config->id, prev->show_params);
+    // ИСПРАВЛЕНО: Не передаем старые show_params, так как они могут быть невалидны
+    // При навигации назад params не нужны
+    esp_err_t ret = screen_show_instance(prev->config->id, NULL);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to show previous screen: %s", esp_err_to_name(ret));
         // Восстанавливаем историю при ошибке
@@ -205,9 +234,21 @@ void navigator_clear_history(void)
 {
     screen_manager_t *manager = screen_manager_get_instance();
     
+    // КРИТИЧЕСКАЯ СЕКЦИЯ: Защищаем очистку истории
+    if (manager->mutex) {
+        if (xSemaphoreTake(manager->mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            ESP_LOGE(TAG, "Failed to acquire mutex for clear_history");
+            return;
+        }
+    }
+    
     manager->history_count = 0;
     manager->history_index = 0;
     memset(manager->history, 0, sizeof(manager->history));
+    
+    if (manager->mutex) {
+        xSemaphoreGive(manager->mutex);
+    }
     
     ESP_LOGI(TAG, "Navigation history cleared");
 }

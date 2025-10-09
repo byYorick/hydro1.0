@@ -48,59 +48,14 @@ static void on_system_settings_click(lv_event_t *e)
 }
 
 /**
- * @brief Callback при показе экрана - настройка группы энкодера
+ * @brief Callback при показе экрана - проверка группы энкодера
  */
 static esp_err_t main_screen_on_show(lv_obj_t *screen, void *params)
 {
-    ESP_LOGI(TAG, "╔═══════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║   Main Screen ON_SHOW Callback        ║");
-    ESP_LOGI(TAG, "╚═══════════════════════════════════════╝");
+    ESP_LOGI(TAG, "Main Screen ON_SHOW Callback");
     
-    // Получаем экземпляр экрана
-    screen_instance_t *inst = screen_get_by_id("main");
-    if (!inst) {
-        ESP_LOGE(TAG, "Failed to get main screen instance!");
-        return ESP_ERR_NOT_FOUND;
-    }
-    
-    if (!inst->encoder_group) {
-        ESP_LOGE(TAG, "No encoder group in main screen instance!");
-        return ESP_ERR_INVALID_STATE;
-    }
-    
-    ESP_LOGI(TAG, "Adding widgets to encoder group...");
-    
-    // Добавляем все 6 карточек в группу
-    int cards_added = 0;
-    for (int i = 0; i < 6; i++) {
-        if (sensor_cards[i]) {
-            widget_sensor_card_add_to_group(sensor_cards[i], inst->encoder_group);
-            cards_added++;
-            ESP_LOGI(TAG, "  ✓ Card %d added to group", i);
-        } else {
-            ESP_LOGW(TAG, "  ✗ Card %d is NULL!", i);
-        }
-    }
-    
-    // Добавляем кнопку SET (сохранена в user_data)
-    lv_obj_t *set_btn = (lv_obj_t*)lv_obj_get_user_data(screen);
-    if (set_btn) {
-        lv_group_add_obj(inst->encoder_group, set_btn);
-        ESP_LOGI(TAG, "  ✓ SET button added to group");
-    } else {
-        ESP_LOGW(TAG, "  ✗ SET button not found in user_data!");
-    }
-    
-    int total_objects = lv_group_get_obj_count(inst->encoder_group);
-    ESP_LOGI(TAG, "╔═══════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║   Encoder Group Ready: %2d objects     ║", total_objects);
-    ESP_LOGI(TAG, "╚═══════════════════════════════════════╝");
-    
-    // Устанавливаем фокус на первый элемент
-    if (total_objects > 0) {
-        lv_group_focus_next(inst->encoder_group);
-        ESP_LOGI(TAG, "Initial focus set");
-    }
+    // LVGL автоматически управляет фокусом через группы
+    // Дополнительная настройка не требуется
     
     return ESP_OK;
 }
@@ -114,9 +69,9 @@ static esp_err_t main_screen_on_show(lv_obj_t *screen, void *params)
  */
 static lv_obj_t* main_screen_create(void *params)
 {
-    ESP_LOGI(TAG, "╔═══════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║   Creating Main Screen                ║");
-    ESP_LOGI(TAG, "╚═══════════════════════════════════════╝");
+    ESP_LOGI(TAG, "=========================================");
+    ESP_LOGI(TAG, "   Creating Main Screen                ");
+    ESP_LOGI(TAG, "=========================================");
     
     // Создаем корневой объект экрана
     lv_obj_t *screen = lv_obj_create(NULL);
@@ -133,43 +88,51 @@ static lv_obj_t* main_screen_create(void *params)
     lv_obj_set_flex_align(screen, LV_FLEX_ALIGN_START, 
                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
     
-    // Создаем статус-бар с заголовком и кнопкой SET (компактный)
+    // Создаем компактный статус-бар с максимальной информативностью
     lv_obj_t *status_bar = lv_obj_create(screen);
     lv_obj_add_style(status_bar, &style_card, 0);
-    lv_obj_set_size(status_bar, LV_PCT(100), 50);  // Уменьшили до 50px
-    lv_obj_set_style_pad_all(status_bar, 8, 0);  // Меньше отступы
+    lv_obj_set_size(status_bar, LV_PCT(100), 40);  // Еще компактнее
+    lv_obj_set_style_pad_all(status_bar, 6, 0);
     
-    // Заголовок
+    // Flex layout для равномерного распределения
+    lv_obj_set_flex_flow(status_bar, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(status_bar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    
+    // Заголовок - компактный
     extern lv_style_t style_title;
     lv_obj_t *title = lv_label_create(status_bar);
     lv_obj_add_style(title, &style_title, 0);
-    lv_label_set_text(title, "🌱 Hydroponics Monitor v3.0");
-    lv_obj_align(title, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_label_set_text(title, "Hydro v3.0");
+    lv_obj_set_flex_grow(title, 1);
     
-    // Кнопка SET (системные настройки) - компактная
+    // Время работы системы
+    lv_obj_t *uptime_label = lv_label_create(status_bar);
+    lv_obj_add_style(uptime_label, &style_unit, 0);
+    lv_label_set_text(uptime_label, "00:00");
+    
+    // Кнопка SET - минималистичная
     lv_obj_t *set_btn = lv_btn_create(status_bar);
     lv_obj_add_style(set_btn, &style_card, 0);
-    lv_obj_set_size(set_btn, 45, 32);  // Компактнее
-    lv_obj_align(set_btn, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_size(set_btn, 35, 28);
     lv_obj_add_event_cb(set_btn, on_system_settings_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_flag(set_btn, LV_OBJ_FLAG_CLICKABLE);  // Явно делаем кликабельной
+    lv_obj_add_flag(set_btn, LV_OBJ_FLAG_CLICKABLE);
     
     lv_obj_t *set_label = lv_label_create(set_btn);
     lv_label_set_text(set_label, "SET");
     lv_obj_center(set_label);
     
-    // Контейнер для карточек датчиков - GRID LAYOUT для точной сетки 2x3
+    // Контейнер для карточек датчиков - оптимизированная сетка
     lv_obj_t *content = lv_obj_create(screen);
     lv_obj_remove_style_all(content);
     lv_obj_set_size(content, LV_PCT(100), LV_SIZE_CONTENT);
     
-    // GRID LAYOUT: 2 колонки × 3 ряда
-    static int32_t col_dsc[] = {110, 110, LV_GRID_TEMPLATE_LAST};  // 2 колонки по 110px
-    static int32_t row_dsc[] = {80, 80, 80, LV_GRID_TEMPLATE_LAST}; // 3 ряда по 80px
+    // GRID LAYOUT: 2 колонки × 3 ряда с оптимизированными размерами
+    static int32_t col_dsc[] = {115, 115, LV_GRID_TEMPLATE_LAST};  // 2 колонки по 115px
+    static int32_t row_dsc[] = {85, 85, 85, LV_GRID_TEMPLATE_LAST}; // 3 ряда по 85px
     lv_obj_set_grid_dsc_array(content, col_dsc, row_dsc);
-    lv_obj_set_style_pad_all(content, 5, 0);
-    lv_obj_set_style_pad_row(content, 5, 0);
-    lv_obj_set_style_pad_column(content, 5, 0);
+    lv_obj_set_style_pad_all(content, 4, 0);
+    lv_obj_set_style_pad_row(content, 4, 0);
+    lv_obj_set_style_pad_column(content, 4, 0);
     lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
     
     // Метаданные датчиков

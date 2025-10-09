@@ -48,6 +48,7 @@ esp_err_t screen_create_instance(const char *screen_id);
  */
 esp_err_t screen_destroy_instance(const char *screen_id);
 
+
 /* =============================
  *  ПОКАЗ/СКРЫТИЕ
  * ============================= */
@@ -129,6 +130,49 @@ bool screen_is_visible(const char *screen_id);
  * @return Количество активных экземпляров в памяти
  */
 uint8_t screen_get_instance_count(void);
+
+/* =============================
+ *  УПРАВЛЕНИЕ ГРУППОЙ ЭНКОДЕРА
+ * ============================= */
+
+/**
+ * @brief Добавить виджет в группу энкодера текущего экрана
+ * 
+ * Удобная функция для ручного добавления виджетов в группу энкодера.
+ * Используется когда автоматическое добавление не срабатывает или нужен
+ * контроль над порядком элементов.
+ * 
+ * @param screen_id ID экрана (если NULL - используется текущий)
+ * @param widget Виджет для добавления
+ * @return ESP_OK при успехе
+ * @return ESP_ERR_NOT_FOUND если экран не найден
+ * @return ESP_ERR_INVALID_STATE если группа не создана
+ */
+esp_err_t screen_add_to_encoder_group(const char *screen_id, lv_obj_t *widget);
+
+/**
+ * @brief Рекурсивно добавить все интерактивные элементы виджета в группу энкодера
+ * 
+ * Полезно для сложных виджетов с глубокой иерархией.
+ * 
+ * @param screen_id ID экрана (если NULL - используется текущий)
+ * @param widget Корневой виджет для рекурсивного обхода
+ * @return Количество добавленных элементов
+ */
+int screen_add_widget_tree(const char *screen_id, lv_obj_t *widget);
+
+/**
+ * @brief Добавить элементы главного экрана в правильном порядке
+ * 
+ * Добавляет элементы главного экрана в следующем порядке:
+ * 1. Карточки датчиков (0-5)
+ * 2. Кнопка SET
+ * 
+ * @param screen_obj Объект главного экрана
+ * @param group Группа энкодера
+ * @return Количество добавленных элементов
+ */
+int screen_lifecycle_add_main_screen_elements(lv_obj_t *screen_obj, lv_group_t *group);
 
 #ifdef __cplusplus
 }

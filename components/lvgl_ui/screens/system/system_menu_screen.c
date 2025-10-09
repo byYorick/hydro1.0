@@ -50,7 +50,7 @@ static void on_reset_click(lv_event_t *e) {
  */
 static esp_err_t system_menu_on_show(lv_obj_t *screen_obj, void *params)
 {
-    ESP_LOGI(TAG, "System menu shown - configuring encoder");
+    ESP_LOGI(TAG, "System menu shown");
     
     // Получаем instance для доступа к encoder_group
     screen_instance_t *inst = screen_get_by_id("system_menu");
@@ -59,41 +59,9 @@ static esp_err_t system_menu_on_show(lv_obj_t *screen_obj, void *params)
         return ESP_OK;
     }
     
-    lv_group_t *group = inst->encoder_group;
-    
-    // Добавляем все кнопки меню в группу
-    lv_obj_t *child = lv_obj_get_child(screen_obj, 0);
-    int added = 0;
-    
-    while (child != NULL) {
-        if (lv_obj_check_type(child, &lv_button_class)) {
-            lv_group_add_obj(group, child);
-            added++;
-            ESP_LOGD(TAG, "  Added button to encoder group");
-        }
-        
-        // Проверяем вложенные элементы
-        lv_obj_t *grandchild = lv_obj_get_child(child, 0);
-        while (grandchild != NULL) {
-            if (lv_obj_check_type(grandchild, &lv_button_class)) {
-                lv_group_add_obj(group, grandchild);
-                added++;
-                ESP_LOGD(TAG, "  Added nested button");
-            }
-            grandchild = lv_obj_get_child(child, lv_obj_get_index(grandchild) + 1);
-        }
-        
-        child = lv_obj_get_child(screen_obj, lv_obj_get_index(child) + 1);
-    }
-    
-    int obj_count = lv_group_get_obj_count(group);
-    ESP_LOGI(TAG, "  Encoder group has %d objects (added %d)", obj_count, added);
-    
-    // Устанавливаем фокус
-    if (obj_count > 0) {
-        lv_group_focus_next(group);
-        ESP_LOGI(TAG, "  Initial focus set");
-    }
+    // Элементы уже автоматически добавлены в группу при создании
+    int obj_count = lv_group_get_obj_count(inst->encoder_group);
+    ESP_LOGI(TAG, "  Encoder group ready with %d interactive elements", obj_count);
     
     return ESP_OK;
 }
@@ -106,7 +74,7 @@ static lv_obj_t* system_menu_create(void *params)
 {
     ESP_LOGI(TAG, "Creating system menu screen");
     
-    // Пункты системного меню
+    // Пункты системного меню - компактные с символами LVGL
     menu_item_config_t items[] = {
         {
             .text = "Auto Control",
@@ -115,13 +83,13 @@ static lv_obj_t* system_menu_create(void *params)
             .user_data = NULL,
         },
         {
-            .text = "WiFi Settings",
+            .text = "WiFi",
             .icon = LV_SYMBOL_WIFI,
             .callback = on_wifi_settings_click,
             .user_data = NULL,
         },
         {
-            .text = "Display Settings",
+            .text = "Display",
             .icon = LV_SYMBOL_IMAGE,
             .callback = on_display_settings_click,
             .user_data = NULL,
@@ -139,7 +107,7 @@ static lv_obj_t* system_menu_create(void *params)
             .user_data = NULL,
         },
         {
-            .text = "Reset Settings",
+            .text = "Reset",
             .icon = LV_SYMBOL_REFRESH,
             .callback = on_reset_click,
             .user_data = NULL,
@@ -148,7 +116,7 @@ static lv_obj_t* system_menu_create(void *params)
     
     // Используем шаблон меню (без группы - настроится в on_show)
     template_menu_config_t menu_cfg = {
-        .title = "System Settings",
+        .title = "System",
         .items = items,
         .item_count = 6,
         .has_back_button = true,
@@ -168,7 +136,7 @@ esp_err_t system_menu_screen_init(void)
     
     screen_config_t config = {
         .id = "system_menu",
-        .title = "System Settings",
+        .title = "System",
         .category = SCREEN_CATEGORY_MENU,
         .parent_id = "main",            // Возврат на главный экран
         .can_go_back = true,

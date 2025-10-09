@@ -17,6 +17,7 @@ idf_component_register(
         
         # Concrete screens
         "screens/main_screen.c"
+        "screens/popup_screen.c"
         "screens/sensor/sensor_detail_screen.c"
         "screens/sensor/sensor_settings_screen.c"
         "screens/system/system_menu_screen.c"
@@ -48,5 +49,6 @@ idf_component_register(
         config_manager
         data_logger
         notification_system
+        error_handler
 )
 

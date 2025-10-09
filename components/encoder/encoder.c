@@ -192,7 +192,7 @@ static void encoder_button_isr_handler(void *arg)
     // Проверяем состояние кнопки
     bool current_state = gpio_get_level(enc_sw_pin);
     
-    // В ISR нельзя использовать ESP_LOGI - это вызывает блокировку!
+    // Cannot use ESP_LOGI in ISR - causes blocking!
     
     if (current_state == 0) { // Кнопка нажата (active low)
         // Даем семафор нажатия

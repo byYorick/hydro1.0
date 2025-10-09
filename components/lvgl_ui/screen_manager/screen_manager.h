@@ -105,6 +105,19 @@ esp_err_t screen_hide(const char *screen_id);
 esp_err_t screen_go_back(void);
 
 /**
+ * @brief Очистить группу энкодера от скрытых элементов
+ * 
+ * Удаляет из группы энкодера все элементы, которые:
+ * - Имеют флаг LV_OBJ_FLAG_HIDDEN
+ * - Имеют нулевой размер (width <= 0 или height <= 0)
+ * - Имеют скрытых родителей
+ * 
+ * @param screen_id ID экрана (NULL = текущий экран)
+ * @return Количество удаленных элементов
+ */
+int screen_cleanup_hidden_elements(const char *screen_id);
+
+/**
  * @brief Перейти к родительскому экрану
  * 
  * Использует parent_id из конфигурации.
@@ -202,6 +215,32 @@ bool screen_is_visible_check(const char *screen_id);
  * @return Размер истории навигации
  */
 uint8_t screen_get_history_count(void);
+
+/* =============================
+ *  УПРАВЛЕНИЕ ГРУППОЙ ЭНКОДЕРА
+ * ============================= */
+
+/**
+ * @brief Добавить виджет в группу энкодера экрана
+ * 
+ * Удобная функция для ручного добавления виджетов в группу энкодера.
+ * 
+ * @param screen_id ID экрана (если NULL - используется текущий)
+ * @param widget Виджет для добавления
+ * @return ESP_OK при успехе
+ */
+esp_err_t screen_add_to_group(const char *screen_id, lv_obj_t *widget);
+
+/**
+ * @brief Рекурсивно добавить все интерактивные элементы виджета
+ * 
+ * Полезно для сложных виджетов с глубокой иерархией.
+ * 
+ * @param screen_id ID экрана (если NULL - используется текущий)
+ * @param widget Корневой виджет для обхода
+ * @return Количество добавленных элементов
+ */
+int screen_add_widget_tree(const char *screen_id, lv_obj_t *widget);
 
 #ifdef __cplusplus
 }

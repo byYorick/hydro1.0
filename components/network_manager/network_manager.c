@@ -113,17 +113,17 @@ static ble_handler_t ble_handlers[MAX_BLE_HANDLERS] = {0};
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                               int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        ESP_LOGI(TAG, "WiFi станция запущена");
+        ESP_LOGI(TAG, "WiFi station started");
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGW(TAG, "WiFi отключен, попытка переподключения...");
+        ESP_LOGW(TAG, "WiFi disconnected, attempting reconnection...");
         network_stats.wifi_reconnects++;
         current_status = NETWORK_STATUS_CONNECTING;
         xEventGroupSetBits(wifi_event_group, WIFI_FAIL_BIT);
         esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI(TAG, "Получен IP адрес: " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Got IP address: " IPSTR, IP2STR(&event->ip_info.ip));
         current_status = NETWORK_STATUS_CONNECTED;
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STACONNECTED) {
