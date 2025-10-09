@@ -326,9 +326,10 @@ static esp_err_t popup_on_show(lv_obj_t *scr, void *user_data)
     if (ui->config.has_ok_button) {
         lv_obj_clear_flag(ui->ok_button, LV_OBJ_FLAG_HIDDEN);
         
-        // ИСПРАВЛЕНО: Используем Screen Manager encoder_group вместо создания новой
         screen_instance_t *current = screen_get_current();
         if (current && current->encoder_group) {
+            // КРИТИЧНО: Сначала удаляем (на случай если уже был добавлен), потом добавляем
+            lv_group_remove_obj(ui->ok_button);
             lv_group_add_obj(current->encoder_group, ui->ok_button);
             lv_group_focus_obj(ui->ok_button);
             ESP_LOGI(TAG, "OK button added to popup encoder group");
@@ -368,6 +369,15 @@ static esp_err_t popup_on_hide(lv_obj_t *scr)
     }
     
     ESP_LOGI(TAG, "Popup ON_HIDE");
+    
+    // КРИТИЧНО: Удалить кнопку OK из encoder группы перед освобождением
+    if (ui->ok_button) {
+        screen_instance_t *current = screen_get_current();
+        if (current && current->encoder_group) {
+            lv_group_remove_obj(ui->ok_button);
+            ESP_LOGI(TAG, "OK button removed from encoder group");
+        }
+    }
     
     // Удалить таймер если есть
     if (ui->close_timer) {

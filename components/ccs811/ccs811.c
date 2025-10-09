@@ -142,29 +142,25 @@ bool ccs811_data_ready(void)
 
 bool ccs811_read_data(float *eco2, float *tvoc)
 {
-    // If sensor was not initialized, use stub values
     if (!ccs811_initialized || use_stub_values) {
-        *eco2 = stub_co2;
-        if (tvoc) *tvoc = stub_tvoc;
-        return true; // Return true to indicate success with stub values
+        *eco2 = NAN;
+        if (tvoc) *tvoc = NAN;
+        return false;
     }
     
-    // Check if data is ready
     if (!ccs811_data_ready()) {
-        *eco2 = stub_co2;
-        if (tvoc) *tvoc = stub_tvoc;
-        return true; // Return true to indicate success with stub values
+        *eco2 = NAN;
+        if (tvoc) *tvoc = NAN;
+        return false;
     }
     
-    // Read algorithm result data (8 bytes)
     uint8_t data[8];
     esp_err_t ret = ccs811_read_register(CCS811_ALG_RESULT_DATA, data, 8);
     if (ret != ESP_OK) {
         ESP_LOGD(TAG, "Failed to read algorithm result data: %s", esp_err_to_name(ret));
-        // Use stub values when sensor read fails
-        *eco2 = stub_co2;
-        if (tvoc) *tvoc = stub_tvoc;
-        return true; // Return true to indicate success with stub values
+        *eco2 = NAN;
+        if (tvoc) *tvoc = NAN;
+        return false;
     }
     
     // Parse eCO2 and TVOC values

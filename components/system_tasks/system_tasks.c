@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
-#include <stdio.h>
+#include <math.h>
 
 #include "esp_system.h"
 #include "notification_system.h"
@@ -562,18 +562,14 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
         register_sensor_recovery(SENSOR_INDEX_HUMIDITY);
         ESP_LOGI(TAG, "Temperature/Humidity: %.1fC %.1f%%", temp, hum);
     } else {
-        data->temperature = TEMP_TARGET_DEFAULT;
-        data->humidity = HUMIDITY_TARGET_DEFAULT;
-        char temp_msg[128];
-        char hum_msg[128];
-        snprintf(temp_msg, sizeof(temp_msg), "используется значение %.1f°C по умолчанию", TEMP_TARGET_DEFAULT);
-        snprintf(hum_msg, sizeof(hum_msg), "используется значение %.1f%% по умолчанию", HUMIDITY_TARGET_DEFAULT);
-        register_sensor_failure(SENSOR_INDEX_TEMPERATURE, temp_msg);
-        register_sensor_failure(SENSOR_INDEX_HUMIDITY, hum_msg);
-        ESP_LOGW(TAG, "Failed to read temperature/humidity, fallback to defaults");
+        data->temperature = NAN;
+        data->humidity = NAN;
+        register_sensor_failure(SENSOR_INDEX_TEMPERATURE, "датчик не отвечает");
+        register_sensor_failure(SENSOR_INDEX_HUMIDITY, "датчик не отвечает");
+        ESP_LOGW(TAG, "Failed to read temperature/humidity");
     }
 
-    float ph = PH_TARGET_DEFAULT;
+    float ph = NAN;
     if (sensor_if->read_ph != NULL && sensor_if->read_ph(&ph) == ESP_OK) {
         data->ph = ph;
         data->valid[SENSOR_INDEX_PH] = true;
@@ -582,9 +578,9 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
         register_sensor_recovery(SENSOR_INDEX_PH);
         ESP_LOGI(TAG, "pH read: %.2f", ph);
     } else {
-        data->ph = PH_TARGET_DEFAULT;
-        register_sensor_failure(SENSOR_INDEX_PH, "применяется целевое значение pH");
-        ESP_LOGW(TAG, "pH read failed, using default %.2f", PH_TARGET_DEFAULT);
+        data->ph = NAN;
+        register_sensor_failure(SENSOR_INDEX_PH, "датчик не отвечает");
+        ESP_LOGW(TAG, "pH read failed");
     }
 
     // Устанавливаем температуру для компенсации EC измерений (критично для точности!)
@@ -593,7 +589,7 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
         ESP_LOGD(TAG, "Temperature compensation set for EC: %.1fC", data->temperature);
     }
     
-    float ec = EC_TARGET_DEFAULT;
+    float ec = NAN;
     if (sensor_if->read_ec != NULL && sensor_if->read_ec(&ec) == ESP_OK) {
         data->ec = ec;
         data->valid[SENSOR_INDEX_EC] = true;
@@ -602,12 +598,12 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
         register_sensor_recovery(SENSOR_INDEX_EC);
         ESP_LOGI(TAG, "EC read: %.2f mS/cm", ec);
     } else {
-        data->ec = EC_TARGET_DEFAULT;
-        register_sensor_failure(SENSOR_INDEX_EC, "применяется целевое значение EC");
-        ESP_LOGW(TAG, "EC read failed, using default %.2f", EC_TARGET_DEFAULT);
+        data->ec = NAN;
+        register_sensor_failure(SENSOR_INDEX_EC, "датчик не отвечает");
+        ESP_LOGW(TAG, "EC read failed");
     }
 
-    float lux = LUX_TARGET_DEFAULT;
+    float lux = NAN;
     if (sensor_if->read_lux != NULL && sensor_if->read_lux(&lux)) {
         data->lux = lux;
         data->valid[SENSOR_INDEX_LUX] = true;
@@ -616,12 +612,12 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
         register_sensor_recovery(SENSOR_INDEX_LUX);
         ESP_LOGI(TAG, "Lux read: %.0f", lux);
     } else {
-        data->lux = LUX_TARGET_DEFAULT;
-        register_sensor_failure(SENSOR_INDEX_LUX, "применяется целевое значение освещенности");
-        ESP_LOGW(TAG, "Lux read failed, using default %.0f", LUX_TARGET_DEFAULT);
+        data->lux = NAN;
+        register_sensor_failure(SENSOR_INDEX_LUX, "датчик не отвечает");
+        ESP_LOGW(TAG, "Lux read failed");
     }
 
-    float co2 = CO2_TARGET_DEFAULT;
+    float co2 = NAN;
     float tvoc = 0.0f;
     if (sensor_if->read_co2 != NULL && sensor_if->read_co2(&co2, &tvoc)) {
         data->co2 = co2;
@@ -631,9 +627,9 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
         register_sensor_recovery(SENSOR_INDEX_CO2);
         ESP_LOGI(TAG, "CO2 read: %.0f ppm (TVOC: %.0f)", co2, tvoc);
     } else {
-        data->co2 = CO2_TARGET_DEFAULT;
-        register_sensor_failure(SENSOR_INDEX_CO2, "применяется целевое значение CO2");
-        ESP_LOGW(TAG, "CO2 read failed, using default %.0f", CO2_TARGET_DEFAULT);
+        data->co2 = NAN;
+        register_sensor_failure(SENSOR_INDEX_CO2, "датчик не отвечает");
+        ESP_LOGW(TAG, "CO2 read failed");
     }
 
     ESP_LOGD(TAG, "Sensors read: %d successful values", successful_reads);

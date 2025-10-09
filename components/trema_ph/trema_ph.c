@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <math.h>
 
 static const char *TAG = "trema_ph";
 
@@ -70,7 +71,7 @@ bool trema_ph_read(float *ph)
         ESP_LOGD(TAG, "PH sensor read failed, returning NAN");
         *ph = NAN;
         use_stub_values = true;
-        return true; // Return true to indicate success with stub values
+        return false;
     }
     
     // Convert the 2-byte value to float

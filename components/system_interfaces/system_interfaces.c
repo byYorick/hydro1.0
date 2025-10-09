@@ -6,6 +6,7 @@
 #include "trema_ec.h"
 #include "trema_lux.h"
 #include "trema_ph.h"
+#include <math.h>
 
 static sensor_interface_t g_sensor_interface = {0};
 static actuator_interface_t g_actuator_interface = {0};
@@ -46,6 +47,8 @@ static bool default_read_lux(float *lux_value)
     bool ok = trema_lux_read(&raw);
     if (ok && lux_value != NULL) {
         *lux_value = (float)raw;
+    } else if (lux_value != NULL) {
+        *lux_value = NAN;
     }
     return ok;
 }

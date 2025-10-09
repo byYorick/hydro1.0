@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <math.h>
 
 static const char *TAG = "sht3x";
 
@@ -17,24 +18,22 @@ bool sht3x_read(float *temp, float *hum)
 {
     uint8_t cmd[2] = {0x2C, 0x06};
     if (i2c_bus_write(SHT3X_ADDR, cmd, 2) != ESP_OK) {
-        ESP_LOGD(TAG, "SHT3x sensor not connected, using stub values");
-        // Use stub values when sensor is not connected
-        *temp = stub_temperature;
-        *hum = stub_humidity;
+        ESP_LOGD(TAG, "SHT3x sensor not connected, returning NAN");
+        *temp = NAN;
+        *hum = NAN;
         use_stub_values = true;
-        return true; // Return true to indicate success with stub values
+        return false;
     }
     
     vTaskDelay(pdMS_TO_TICKS(20));
 
     uint8_t data[6];
     if (i2c_bus_read(SHT3X_ADDR, data, 6) != ESP_OK) {
-        ESP_LOGD(TAG, "SHT3x sensor read failed, using stub values");
-        // Use stub values when sensor is not connected
-        *temp = stub_temperature;
-        *hum = stub_humidity;
+        ESP_LOGD(TAG, "SHT3x sensor read failed, returning NAN");
+        *temp = NAN;
+        *hum = NAN;
         use_stub_values = true;
-        return true; // Return true to indicate success with stub values
+        return false;
     }
     
     uint16_t t_raw = (data[0] << 8) | data[1];

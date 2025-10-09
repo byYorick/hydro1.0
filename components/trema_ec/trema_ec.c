@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <math.h>
 
 static const char *TAG = "trema_ec";
 
@@ -48,53 +49,43 @@ bool trema_ec_init(void)
 
 bool trema_ec_read(float *ec)
 {
-    // Check if sensor is initialized
     if (!sensor_initialized) {
         if (!trema_ec_init()) {
-            ESP_LOGD(TAG, "EC sensor not connected, using stub values");
-            // Use stub values when sensor is not connected
-            *ec = stub_ec;
+            ESP_LOGD(TAG, "EC sensor not connected, returning NAN");
+            *ec = NAN;
             use_stub_values = true;
-            return true; // Return true to indicate success with stub values
+            return false;
         }
     }
     
-    // Request EC measurement
-    data[0] = REG_TDS_EC; // Register address for EC measurement
+    data[0] = REG_TDS_EC;
     if (i2c_bus_write(TREMA_EC_ADDR, data, 1) != ESP_OK) {
-        ESP_LOGD(TAG, "EC sensor read failed, using stub values");
-        // Use stub values when sensor communication fails
-        *ec = stub_ec;
+        ESP_LOGD(TAG, "EC sensor read failed, returning NAN");
+        *ec = NAN;
         use_stub_values = true;
-        return true; // Return true to indicate success with stub values
+        return false;
     }
     
     vTaskDelay(pdMS_TO_TICKS(20));
     
-    // Read the EC value (2 bytes)
     if (i2c_bus_read(TREMA_EC_ADDR, data, 2) != ESP_OK) {
-        ESP_LOGD(TAG, "EC sensor read failed, using stub values");
-        // Use stub values when sensor communication fails
-        *ec = stub_ec;
+        ESP_LOGD(TAG, "EC sensor read failed, returning NAN");
+        *ec = NAN;
         use_stub_values = true;
-        return true; // Return true to indicate success with stub values
+        return false;
     }
     
-    // Convert the 2-byte value to float
-    // EC value is stored as integer in thousandths (multiply by 0.001)
-    // The sensor returns value in mS/cm (milliSiemens per centimeter)
     uint16_t ec_raw = ((uint16_t)data[1] << 8) | data[0];
     *ec = (float)ec_raw * 0.001f;
     
-    // Validate EC range (typical range for hydroponics is 0.1 - 5.0 mS/cm)
     if (*ec < 0.0f || *ec > 10.0f) {
-        ESP_LOGW(TAG, "Invalid EC value: %.3f mS/cm, using stub value", *ec);
-        *ec = stub_ec;
+        ESP_LOGW(TAG, "Invalid EC value: %.3f mS/cm, returning NAN", *ec);
+        *ec = NAN;
         use_stub_values = true;
-    } else {
-        use_stub_values = false;
+        return false;
     }
     
+    use_stub_values = false;
     return true;
 }
 

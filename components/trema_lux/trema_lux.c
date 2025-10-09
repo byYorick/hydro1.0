@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <math.h>
 
 static const char *TAG = "trema_lux";
 
@@ -70,38 +71,30 @@ bool trema_lux_read(uint16_t *lux)
         return false;
     }
     
-    // If we're using stub values, return the stub value immediately
     if (use_stub_values) {
-        *lux = stub_lux;
-        return true;
+        return false;
     }
     
-    // Try to read from the iarduino DSL sensor
     *lux = iarduino_dsl_get_lux();
     
-    // Check if we got a valid reading
     if (*lux > 0) {
         return true;
     }
     
-    // Fall back to the original method
-    uint8_t cmd = 0x02; // TREMA_LUX_CMD_READ_LUX
+    uint8_t cmd = 0x02;
     if (i2c_bus_write(0x21, &cmd, 1) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to send read command to LUX sensor, using stub values");
-        *lux = stub_lux;
+        ESP_LOGW(TAG, "Failed to send read command to LUX sensor");
         use_stub_values = true;
-        return true; // Return true to indicate success with stub values
+        return false;
     }
     
-    // Wait for conversion
     vTaskDelay(pdMS_TO_TICKS(20));
 
     uint8_t raw[2];
     if (i2c_bus_read(0x21, raw, 2) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to read LUX value from sensor, using stub values");
-        *lux = stub_lux;
+        ESP_LOGW(TAG, "Failed to read LUX value from sensor");
         use_stub_values = true;
-        return true; // Return true to indicate success with stub values
+        return false;
     }
     
     *lux = (raw[0] << 8) | raw[1];
