@@ -44,7 +44,7 @@ static bool long_press_detected = false;
 
 // Button debouncing
 static int64_t last_button_event_time = 0;
-static const int64_t BUTTON_DEBOUNCE_MS = 50; // 50мс дебаунс для кнопки
+static const int64_t BUTTON_DEBOUNCE_MS = 100; // 100мс дебаунс для надежной работы
 
 // Semaphores for button handling
 static SemaphoreHandle_t button_press_sem = NULL;
@@ -182,27 +182,34 @@ void encoder_init(void)
 
 static void encoder_button_isr_handler(void *arg)
 {
-    // Дебаунсинг: игнорируем события, происходящие слишком быстро
-    int64_t current_time = esp_timer_get_time() / 1000; // Конвертируем в миллисекунды
+    int64_t current_time = esp_timer_get_time() / 1000;
+    
+    // Дебаунсинг: игнорируем события слишком быстро после предыдущего
     if (current_time - last_button_event_time < BUTTON_DEBOUNCE_MS) {
-        return; // Игнорируем слишком частые события (дребезг контактов)
+        return;
     }
-    last_button_event_time = current_time;
     
     // Проверяем состояние кнопки
     bool current_state = gpio_get_level(enc_sw_pin);
     
-    // Cannot use ESP_LOGI in ISR - causes blocking!
+    // Двойная проверка с небольшой задержкой (busy-wait, безопасно для ISR)
+    for (volatile int i = 0; i < 1000; i++); // ~1мс на 240MHz
+    bool confirmed_state = gpio_get_level(enc_sw_pin);
     
-    if (current_state == 0) { // Кнопка нажата (active low)
-        // Даем семафор нажатия
+    // Если состояние изменилось - это помеха, игнорируем
+    if (current_state != confirmed_state) {
+        return;
+    }
+    
+    last_button_event_time = current_time;
+    
+    if (confirmed_state == 0) { // Кнопка нажата (active low)
         if (button_press_sem != NULL) {
             BaseType_t xHigherPriorityTaskWoken = pdFALSE;
             xSemaphoreGiveFromISR(button_press_sem, &xHigherPriorityTaskWoken);
             portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
         }
     } else { // Кнопка отпущена
-        // Даем семафор отпускания
         if (button_release_sem != NULL) {
             BaseType_t xHigherPriorityTaskWoken = pdFALSE;
             xSemaphoreGiveFromISR(button_release_sem, &xHigherPriorityTaskWoken);
