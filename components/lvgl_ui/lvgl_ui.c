@@ -219,17 +219,11 @@ lv_style_t style_detail_container;
 lv_style_t style_detail_title;
 lv_style_t style_detail_value;
 lv_style_t style_detail_info;
-lv_style_t style_detail_value_big;  // Alias для style_detail_value (для совместимости)
+lv_style_t style_detail_value_big;
 static bool styles_initialized = false;
 
-// LEGACY REMOVED: encoder_group - управляется Screen Manager (каждый экран имеет свою группу)
-// LEGACY GROUPS REMOVED: detail_screen_groups[], settings_screen_groups[] - replaced by Screen Manager
 static QueueHandle_t sensor_data_queue = NULL;
-// LEGACY VARIABLE REMOVED: current_focus_index - replaced by Screen Manager
 static bool display_task_started = false;
-
-// LEGACY REMOVED: focus_hide_timer, focus_visible - управляется на уровне Screen Manager
-
 static sensor_data_t last_sensor_data = {0};
 static lv_coord_t sensor_history[SENSOR_COUNT][HISTORY_POINTS];
 static uint16_t sensor_history_pos[SENSOR_COUNT];
@@ -239,16 +233,12 @@ static bool sensor_snapshot_valid = false;
 /* =============================
  *  FORWARD DECLARATIONS
  * ============================= */
-// init_styles() объявлен в lvgl_styles.h
 static float get_sensor_value_by_index(const sensor_data_t *data, int index);
 static void record_sensor_value(int index, float value);
 static void update_sensor_display(sensor_data_t *data);
 static void display_update_task(void *pvParameters);
 static void encoder_task(void *pvParameters);
 static void handle_encoder_event(encoder_event_t *event);
-// LEGACY FUNCTIONS REMOVED: create_main_ui, create_sensor_card, create_status_bar,
-// sensor_card_event_cb, lvgl_set_focus, show_focus, hide_focus, reset_focus_timer,
-// focus_hide_timer_cb, update_status_badge - replaced by Screen Manager
 /* =============================
  *  PUBLIC HELPERS
  * ============================= */
@@ -473,23 +463,18 @@ void init_styles(void)  // Глобальная функция - объявле�
     ESP_LOGI(TAG, "UI styles initialized with improved color scheme for 240x320 display");
 }
 
-// LEGACY FUNCTION REMOVED: create_status_bar() - replaced by widget_create_status_bar() in main_screen.c
-// LEGACY FUNCTION REMOVED: status_timer_cb() - replaced by widget_create_status_bar() in main_screen.c
-
 static float get_sensor_value_by_index(const sensor_data_t *data, int index)
 {
     switch (index) {
         case 0: return data->ph;
         case 1: return data->ec;
-        case 2: return data->temperature;  // Используем основное поле
-        case 3: return data->humidity;     // Используем основное поле
+        case 2: return data->temperature;
+        case 3: return data->humidity;
         case 4: return data->lux;
         case 5: return data->co2;
         default: return 0.0f;
     }
 }
-
-// Удалено: configure_chart_axes (графики удалены)
 
 static void record_sensor_value(int index, float value)
 {
@@ -501,49 +486,7 @@ static void record_sensor_value(int index, float value)
         sensor_history_full[index] = true;
     }
 
-    // УДАЛЕНО: старая система обновления графиков detail_chart
-    // Теперь графики обновляются в update_sensor_display() через detail_screens[].chart
 }
-
-// LEGACY FUNCTION REMOVED: update_status_badge() - replaced by widget_sensor_card_update_value()
-// LEGACY FUNCTION REMOVED: update_detail_view() - replaced by Screen Manager
-// Детальные экраны теперь обновляются через Screen Manager в sensor_detail_screen.c
-
-// LEGACY FUNCTION REMOVED: create_sensor_card() - replaced by widget_create_sensor_card() in sensor_card.c
-
-/* =============================
- *  CORE UI BUILDERS
- * ============================= */
-// LEGACY FUNCTION REMOVED: create_main_ui() - replaced by main_screen_create() in main_screen.c
-// Главный экран теперь создается через Screen Manager System
-
-// LEGACY FUNCTION REMOVED: create_detail_ui() - replaced by Screen Manager
-// Детальные экраны теперь создаются через Screen Manager в sensor_detail_screen.c
-
-// LEGACY FUNCTIONS REMOVED: lvgl_is_detail_screen_open(), lvgl_open_detail_screen(), lvgl_close_detail_screen()
-// Детальные экраны теперь управляются через Screen Manager API:
-// - screen_show("detail_ph", NULL) для открытия
-// - screen_go_back() для закрытия
-// - screen_get_current() для проверки состояния
-
-/* =============================
- *  FOCUS MANAGEMENT
- * ============================= */
-// LEGACY FUNCTIONS REMOVED: lvgl_set_focus(), lvgl_get_focus_index(), lvgl_get_total_focus_items(), 
-// lvgl_clear_focus_group() - replaced by Screen Manager
-// Фокус теперь управляется автоматически через lv_group в каждом экземпляре экрана
-
-/* =============================
- *  FOCUS VISIBILITY CONTROL
- * ============================= */
-// LEGACY FUNCTIONS REMOVED: focus_hide_timer_cb(), show_focus(), hide_focus(), reset_focus_timer()
-// Управление видимостью фокуса теперь в Screen Manager
-
-// LEGACY FUNCTION REMOVED: set_encoder_group() - replaced by Screen Manager
-
-// Ленивая инициализация экранов датчиков убрана - используем detail_screens[] и settings_screens[]
-
-// LEGACY FUNCTION REMOVED: switch_to_screen() - replaced by Screen Manager
 
 /* =============================
  *  SENSOR DATA HANDLING
@@ -556,32 +499,23 @@ static void update_sensor_display(sensor_data_t *data)
     static int update_count = 0;
     update_count++;
     
-    // Логируем каждое 10-е обновление
     if (update_count % 10 == 0) {
         ESP_LOGI(TAG, "Updating sensors #%d: pH=%.2f EC=%.2f T=%.1f", 
                  update_count, data->ph, data->ec, data->temperature);
     }
 
-    // ИСПРАВЛЕНО: Используем новый API главного экрана через Screen Manager
     for (int i = 0; i < SENSOR_COUNT; ++i) {
         float value = get_sensor_value_by_index(data, i);
-        
-        // Обновляем через main_screen API
+
         extern esp_err_t main_screen_update_sensor(uint8_t sensor_index, float value);
         esp_err_t ret = main_screen_update_sensor(i, value);
         
-        // Логируем ошибки обновления
         if (ret != ESP_OK && update_count % 10 == 0) {
             ESP_LOGW(TAG, "Failed to update sensor %d: %s", i, esp_err_to_name(ret));
         }
         
-        // Запись в историю для графиков
         record_sensor_value(i, value);
     }
-
-    // LEGACY REMOVED: детальные экраны теперь обновляются через Screen Manager
-    
-    // LEGACY: detail_screens[] removed - replaced by Screen Manager
 }
 
 static void display_update_task(void *pvParameters)
@@ -594,11 +528,9 @@ static void display_update_task(void *pvParameters)
     int cycle_count = 0;
     
     while (1) {
-        // Обрабатываем все данные из очереди за один цикл
         bool data_processed = false;
         while (xQueueReceive(sensor_data_queue, &sensor_data, 0) == pdTRUE) {
             data_processed = true;
-            // Берем только последнее значение из очереди, игнорируя промежуточные
         }
         
         if (data_processed) {
@@ -618,22 +550,14 @@ static void display_update_task(void *pvParameters)
             }
             lvgl_unlock();
         } else {
-            // Периодически сообщаем, что задача активна
             if (cycle_count == 0 && (esp_timer_get_time() / 1000000LL) % 30 == 0) {
                 ESP_LOGD(TAG, "Display task alive, waiting for sensor data...");
             }
         }
         
-        // Обновляем дисплей каждые 200мс
         vTaskDelay(pdMS_TO_TICKS(200));
     }
 }
-
-/* =============================
- *  CALLBACK ДЛЯ pH ЭКРАНОВ
- * ============================= */
-
-// LEGACY: Callback удалён - используется screen_go_back() из Screen Manager
 
 /* =============================
  *  PUBLIC API
@@ -644,21 +568,12 @@ void lvgl_main_init(void)
     ESP_LOGI(TAG, "   Initializing UI with Screen Manager System     ");
     ESP_LOGI(TAG, "=======================================================");
     
-    // Инициализация старых компонентов (для совместимости)
-    // Инициализируем экраны pH (пока оставляем)
-    // LEGACY REMOVED: pH screens migrated to Screen Manager
-    // ph_screen_init();
-    // ph_set_close_callback(ph_return_to_main);
-    
     vTaskDelay(pdMS_TO_TICKS(100));
     
-    // ===== НОВАЯ СИСТЕМА: Screen Manager =====
     ESP_LOGI(TAG, "Initializing Screen Manager System...");
     if (lvgl_lock(1000)) {
-        // Инициализация стилей (требуется для виджетов)
         init_styles();
         
-        // Инициализируем Screen Manager и регистрируем все экраны
         esp_err_t ret = screen_system_init_all();
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "Failed to initialize Screen Manager: %s", esp_err_to_name(ret));
@@ -672,7 +587,6 @@ void lvgl_main_init(void)
         return;
     }
     
-    // КРИТИЧНО: Создаем очередь данных датчиков
     if (sensor_data_queue == NULL) {
         sensor_data_queue = xQueueCreate(SENSOR_DATA_QUEUE_SIZE, sizeof(sensor_data_t));
         if (sensor_data_queue == NULL) {
@@ -682,7 +596,6 @@ void lvgl_main_init(void)
         }
     }
     
-    // КРИТИЧНО: Запускаем задачу обновления дисплея
     if (!display_task_started) {
         TaskHandle_t display_task_handle = NULL;
         BaseType_t task_created = xTaskCreate(display_update_task, "display_update", 4096, NULL, 6, &display_task_handle);
@@ -694,10 +607,9 @@ void lvgl_main_init(void)
         }
     }
     
-    // Создаем задачу обработки энкодера
     TaskHandle_t encoder_task_handle = NULL;
-    BaseType_t task_created = xTaskCreate(encoder_task, "lvgl_encoder", 4096, NULL, 5, &encoder_task_handle);
-    if (task_created == pdPASS && encoder_task_handle != NULL) {
+    BaseType_t encoder_task_created = xTaskCreate(encoder_task, "lvgl_encoder", 4096, NULL, 5, &encoder_task_handle);
+    if (encoder_task_created == pdPASS && encoder_task_handle != NULL) {
         ESP_LOGI(TAG, "Encoder task created successfully");
     } else {
         ESP_LOGE(TAG, "FAILED to create encoder task!");
@@ -745,43 +657,19 @@ void lvgl_update_sensor_values_from_queue(sensor_data_t *data)
 }
 
 /* =============================
- *  UI NAVIGATION FUNCTIONS
- * ============================= */
-
-// LEGACY FUNCTION REMOVED: sensor_card_event_cb() - replaced by on_sensor_card_click() in main_screen.c
-
-// LEGACY FUNCTION REMOVED: create_detail_screen() - replaced by Screen Manager
-
-// LEGACY FUNCTION REMOVED: create_settings_screen() - replaced by Screen Manager
-
-// LEGACY FUNCTION REMOVED: show_screen() - replaced by Screen Manager
-
-// LEGACY FUNCTION REMOVED: back_button_event_cb() - replaced by Screen Manager
-
-// LEGACY FUNCTION REMOVED: settings_button_event_cb() - was part of create_detail_ui()
-// Настройки датчиков теперь открываются через Screen Manager в sensor_detail_screen.c
-
-// LEGACY FUNCTION REMOVED: system_settings_button_event_cb() - replaced by on_system_settings_click() in main_screen.c
-
-// LEGACY FUNCTION REMOVED: system_menu_item_event_cb() - replaced by Screen Manager
-
-/* =============================
  *  ENCODER NAVIGATION FUNCTIONS
  * ============================= */
-
-// Задача обработки энкодера
 static void encoder_task(void *pvParameters)
 {
     LV_UNUSED(pvParameters);
     
-    // Ждем, пока энкодер не будет инициализирован и очередь не станет доступной
     QueueHandle_t encoder_queue = NULL;
     ESP_LOGI(TAG, "Encoder task started, waiting for encoder initialization...");
     
     while (encoder_queue == NULL) {
         encoder_queue = encoder_get_event_queue();
         if (encoder_queue == NULL) {
-            vTaskDelay(pdMS_TO_TICKS(100)); // Ждем 100мс
+            vTaskDelay(pdMS_TO_TICKS(100));
         }
     }
     
@@ -803,19 +691,16 @@ static void encoder_task(void *pvParameters)
     }
 }
 
-// Обработка событий энкодера (УПРОЩЕННАЯ для Screen Manager)
 static void handle_encoder_event(encoder_event_t *event)
 {
     if (!encoder_navigation_enabled) {
         return;
     }
     
-    // ===== НОВАЯ СИСТЕМА: Делегируем Screen Manager =====
     screen_instance_t *current = screen_get_current();
     if (current && current->encoder_group) {
-        // Периодически очищаем скрытые элементы из группы энкодера
         static uint32_t cleanup_counter = 0;
-        if (++cleanup_counter >= 100) {  // Каждые 100 событий
+        if (++cleanup_counter >= 100) {
             cleanup_counter = 0;
             uint32_t before_count = lv_group_get_obj_count(current->encoder_group);
             int removed = screen_cleanup_hidden_elements(NULL);
@@ -826,36 +711,31 @@ static void handle_encoder_event(encoder_event_t *event)
             }
         }
         
-        // Навигация управляется группой LVGL автоматически
         switch (event->type) {
             case ENCODER_EVENT_ROTATE_CW:
                 lv_group_focus_next(current->encoder_group);
                 ESP_LOGD(TAG, "Screen Manager: focus next");
-                return;  // Обработано новой системой
+                return;
                 
             case ENCODER_EVENT_ROTATE_CCW:
                 lv_group_focus_prev(current->encoder_group);
                 ESP_LOGD(TAG, "Screen Manager: focus prev");
-                return;  // Обработано новой системой
+                return;
                 
             case ENCODER_EVENT_BUTTON_PRESS:
-                // Отправляем ENTER в группу
                 lv_group_send_data(current->encoder_group, LV_KEY_ENTER);
-                // Также отправляем CLICKED напрямую
                 lv_obj_t *focused = lv_group_get_focused(current->encoder_group);
                 if (focused) {
                     lv_obj_send_event(focused, LV_EVENT_CLICKED, NULL);
                 }
                 ESP_LOGD(TAG, "Screen Manager: button pressed");
-                return;  // Обработано новой системой
+                return;
                 
             default:
                 break;
         }
     }
     
-    // ===== LEGACY: Минимальная обработка для pH screen (если активен) =====
-    // Screen Manager не активен, используем fallback
     ESP_LOGD(TAG, "Legacy encoder handling (Screen Manager not active)");
     
     switch (event->type) {
@@ -868,7 +748,6 @@ static void handle_encoder_event(encoder_event_t *event)
             break;
             
         case ENCODER_EVENT_BUTTON_PRESS:
-            // Fallback для legacy экранов
             {
                 lv_indev_t *indev = lcd_ili9341_get_encoder_indev();
                 if (indev) {
@@ -882,33 +761,12 @@ static void handle_encoder_event(encoder_event_t *event)
             
         case ENCODER_EVENT_BUTTON_LONG_PRESS:
             ESP_LOGI(TAG, "Encoder button long press detected (disabled)");
-            // Заглушка - длинное нажатие пока отключено
-            // TODO: можно использовать для быстрого возврата на главный экран
             break;
             
         case ENCODER_EVENT_BUTTON_RELEASE:
-            // Обработка отпускания кнопки (если нужно)
             break;
             
         default:
             break;
     }
 }
-
-// LEGACY FUNCTION REMOVED: update_card_selection() - replaced by Screen Manager
-
-// LEGACY FUNCTION REMOVED: update_settings_selection() - replaced by Screen Manager
-
-// LEGACY ФУНКЦИЯ УДАЛЕНА: encoder_event_cb() - используется handle_encoder_event()
-
-// =============================================
-// ЭКРАН СИСТЕМНЫХ НАСТРОЕК
-// =============================================
-
-// LEGACY SYSTEM SCREENS REMOVED: All create_*_screen() functions - replaced by Screen Manager
-
-// LEGACY SYSTEM SCREENS REMOVED: All remaining system screens - replaced by Screen Manager
-
-// LEGACY SYSTEM SCREENS REMOVED: create_auto_control_screen() - replaced by Screen Manager
-
-// LEGACY SYSTEM SCREENS REMOVED: All remaining system screens - replaced by Screen Manager

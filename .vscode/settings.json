@@ -26,5 +26,5 @@
     }
   },
   "terminal.integrated.defaultProfile.windows": "ESP-IDF",
-  "idf.flashType": "JTAG"
+  "idf.flashType": "UART"
 }

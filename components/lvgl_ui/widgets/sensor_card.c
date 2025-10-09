@@ -8,8 +8,27 @@
 #include "esp_log.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 static const char *TAG = "WIDGET_SENSOR_CARD";
+
+// Callback для освобождения памяти при удалении карточки
+static void sensor_card_delete_cb(lv_event_t *e)
+{
+    lv_obj_t *card = lv_event_get_target(e);
+    
+    typedef struct {
+        lv_obj_t *value_label;
+        sensor_card_config_t config;
+    } card_data_t;
+    
+    card_data_t *card_data = (card_data_t*)lv_obj_get_user_data(card);
+    if (card_data) {
+        ESP_LOGD(TAG, "Freeing sensor card data for '%s'", card_data->config.name);
+        free(card_data);
+        lv_obj_set_user_data(card, NULL);
+    }
+}
 
 lv_obj_t* widget_create_sensor_card(lv_obj_t *parent, 
                                      const sensor_card_config_t *config)
@@ -44,6 +63,9 @@ lv_obj_t* widget_create_sensor_card(lv_obj_t *parent,
                            config->user_data);
     }
     
+    // КРИТИЧНО: Добавляем обработчик удаления для освобождения памяти
+    lv_obj_add_event_cb(card, sensor_card_delete_cb, LV_EVENT_DELETE, NULL);
+    
     // Название датчика - компактное
     lv_obj_t *name_label = lv_label_create(card);
     lv_obj_add_style(name_label, &style_unit, 0);
@@ -54,9 +76,15 @@ lv_obj_t* widget_create_sensor_card(lv_obj_t *parent,
     lv_obj_add_style(value_label, &style_value_large, 0);
     
     char value_text[32];
-    snprintf(value_text, sizeof(value_text), "%.*f%s", 
-             config->decimals, config->current_value,
-             config->unit ? config->unit : "");
+    // Проверка на валидность начального значения
+    if (isnan(config->current_value) || isinf(config->current_value) || config->current_value < -999.0f) {
+        snprintf(value_text, sizeof(value_text), "--%s", 
+                 config->unit ? config->unit : "");
+    } else {
+        snprintf(value_text, sizeof(value_text), "%.*f%s", 
+                 config->decimals, config->current_value,
+                 config->unit ? config->unit : "");
+    }
     lv_label_set_text(value_label, value_text);
     
     // ИСПРАВЛЕНО: Сохраняем и value_label, и config в user_data
@@ -106,7 +134,6 @@ void widget_sensor_card_update_value(lv_obj_t *card, float value)
         return;
     }
     
-    // ИСПРАВЛЕНО: Получаем структуру card_data из user_data
     typedef struct {
         lv_obj_t *value_label;
         sensor_card_config_t config;
@@ -115,11 +142,22 @@ void widget_sensor_card_update_value(lv_obj_t *card, float value)
     card_data_t *card_data = (card_data_t*)lv_obj_get_user_data(card);
     if (card_data && card_data->value_label) {
         char value_text[32];
-        snprintf(value_text, sizeof(value_text), "%.*f%s", 
-                 card_data->config.decimals, value,
-                 card_data->config.unit ? card_data->config.unit : "");
+        
+        // Проверка на валидность значения
+        if (isnan(value) || isinf(value) || value < -999.0f) {
+            // Нет данных или невалидное значение
+            snprintf(value_text, sizeof(value_text), "--%s", 
+                     card_data->config.unit ? card_data->config.unit : "");
+            ESP_LOGD(TAG, "Card value: no data (--), raw=%.2f", value);
+        } else {
+            // Нормальное значение
+            snprintf(value_text, sizeof(value_text), "%.*f%s", 
+                     card_data->config.decimals, value,
+                     card_data->config.unit ? card_data->config.unit : "");
+            ESP_LOGD(TAG, "Card value updated to %.2f", value);
+        }
+        
         lv_label_set_text(card_data->value_label, value_text);
-        ESP_LOGD(TAG, "Card value updated to %.2f", value);
     } else {
         ESP_LOGW(TAG, "Card data is NULL or invalid");
     }

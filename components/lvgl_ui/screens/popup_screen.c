@@ -1,6 +1,7 @@
 #include "popup_screen.h"
 #include "screen_manager/screen_manager.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include <string.h>
 
 // Объявление русского шрифта
@@ -25,6 +26,10 @@ typedef struct {
 // Текущий попап
 static popup_ui_t *g_current_popup = NULL;
 static lv_group_t *g_popup_group = NULL;
+
+// Механизм задержки между попапами (30 секунд после нажатия OK)
+static int64_t g_last_popup_close_time = 0;
+#define POPUP_COOLDOWN_MS 30000
 
 // Прототипы
 static lv_obj_t* popup_create(void *user_data);
@@ -74,6 +79,15 @@ void popup_show_notification(const notification_t *notification, uint32_t timeou
         return;
     }
     
+    // Проверка cooldown периода (30 секунд после закрытия предыдущего попапа)
+    int64_t now = esp_timer_get_time() / 1000;
+    int64_t time_since_close = now - g_last_popup_close_time;
+    if (g_last_popup_close_time > 0 && time_since_close < POPUP_COOLDOWN_MS) {
+        ESP_LOGW(TAG, "Popup cooldown active (%lld ms remaining), notification suppressed", 
+                 POPUP_COOLDOWN_MS - time_since_close);
+        return;
+    }
+    
     ESP_LOGI(TAG, "Showing notification popup: [%d] %s", 
              notification->type, notification->message);
     
@@ -101,6 +115,24 @@ void popup_show_error(const error_info_t *error, uint32_t timeout_ms)
     if (!error) {
         ESP_LOGW(TAG, "NULL error");
         return;
+    }
+    
+    // Проверка cooldown периода (критичные ошибки показываются всегда)
+    int64_t now = esp_timer_get_time() / 1000;
+    int64_t time_since_close = now - g_last_popup_close_time;
+    
+    if (error->level < ERROR_LEVEL_CRITICAL && 
+        g_last_popup_close_time > 0 && 
+        time_since_close < POPUP_COOLDOWN_MS) {
+        ESP_LOGW(TAG, "Popup cooldown active (%lld ms remaining), non-critical error suppressed", 
+                 POPUP_COOLDOWN_MS - time_since_close);
+        return;
+    }
+    
+    // Критичные ошибки сбрасывают cooldown
+    if (error->level >= ERROR_LEVEL_CRITICAL) {
+        ESP_LOGI(TAG, "Critical error - bypassing cooldown");
+        g_last_popup_close_time = 0;
     }
     
     ESP_LOGI(TAG, "Showing error popup: [%d] %s: %s", 
@@ -134,7 +166,11 @@ void popup_show_error(const error_info_t *error, uint32_t timeout_ms)
  */
 void popup_close(void)
 {
-    ESP_LOGI(TAG, "Closing popup");
+    ESP_LOGI(TAG, "Closing popup - starting 30s cooldown");
+    
+    // Сохраняем время закрытия для cooldown механизма
+    g_last_popup_close_time = esp_timer_get_time() / 1000;
+    
     screen_go_back();
 }
 
@@ -350,8 +386,11 @@ static void ok_button_cb(lv_event_t *e)
  */
 static void close_timer_cb(lv_timer_t *timer)
 {
-    ESP_LOGI(TAG, "Auto-close timer triggered");
-    popup_close();
+    ESP_LOGI(TAG, "Auto-close timer triggered (no cooldown)");
+    
+    // НЕ устанавливаем g_last_popup_close_time - таймер не активирует cooldown
+    // Cooldown активируется только при нажатии кнопки OK
+    screen_go_back();
 }
 
 /**

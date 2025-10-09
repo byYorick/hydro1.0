@@ -29,35 +29,27 @@ static bool is_interactive_element(lv_obj_t *obj)
         return false;
     }
     
-    // Исключаем лейблы и другие некликабельные элементы
     if (lv_obj_check_type(obj, &lv_label_class)) {
         return false;
     }
     
-    // Кнопки всегда интерактивны
     if (lv_obj_check_type(obj, &lv_button_class) || 
         lv_obj_check_type(obj, &lv_buttonmatrix_class)) {
         return true;
     }
     
-    // ИСПРАВЛЕНО: Для контейнеров проверяем наличие обработчиков событий
-    // Если у элемента есть хотя бы один обработчик, он предназначен для взаимодействия
     uint32_t event_count = lv_obj_get_event_count(obj);
     if (event_count == 0) {
-        return false;  // Нет обработчиков = не интерактивный
+        return false;
     }
     
-    // Дополнительная проверка: элемент должен быть кликабельным
     if (!lv_obj_has_flag(obj, LV_OBJ_FLAG_CLICKABLE)) {
         return false;
     }
     
-    // Проверяем размер - исключаем слишком маленькие элементы (внутренние контейнеры)
     lv_coord_t width = lv_obj_get_width(obj);
     lv_coord_t height = lv_obj_get_height(obj);
     
-    // Карточки датчиков: 115x85, кнопка SET: 35x28
-    // Исключаем элементы меньше 30x20 (это внутренние контейнеры типа status_container)
     if (width < 30 || height < 20) {
         return false;
     }
@@ -72,18 +64,7 @@ int screen_lifecycle_add_main_screen_elements(lv_obj_t *screen_obj, lv_group_t *
 
 
 /**
- * @brief Добавить интерактивные элементы в группу энкодера (итеративно)
- * 
- * Использует очередь для обхода дерева виджетов в ширину без рекурсии.
- * Начинает обход с ДЕТЕЙ корневого объекта (сам корневой объект не проверяется).
- * 
- * @param root_obj Корневой объект, чьи дети будут обойдены
- * @param group Группа энкодера
- * @param max_depth Максимальная глубина обхода (защита от зацикливания)
- * @return Количество добавленных элементов
- */
-/**
- * @brief Добавить интерактивные элементы в группу энкодера (итеративно)
+ * @brief Добавить интерактивные элементы в группу энкодера
  */
 int screen_lifecycle_add_interactive_iterative(lv_obj_t *root_obj, lv_group_t *group, int max_depth)
 {
