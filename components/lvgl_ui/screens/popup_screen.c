@@ -2,6 +2,8 @@
 #include "screen_manager/screen_manager.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <string.h>
 
 // Объявление русского шрифта
@@ -79,6 +81,12 @@ void popup_show_notification(const notification_t *notification, uint32_t timeou
         return;
     }
     
+    // Проверка: если попап уже открыт - не открываем новый
+    if (g_current_popup != NULL) {
+        ESP_LOGW(TAG, "Popup already visible, notification suppressed");
+        return;
+    }
+    
     // Проверка cooldown периода (30 секунд после закрытия предыдущего попапа)
     int64_t now = esp_timer_get_time() / 1000;
     int64_t time_since_close = now - g_last_popup_close_time;
@@ -117,6 +125,12 @@ void popup_show_error(const error_info_t *error, uint32_t timeout_ms)
         return;
     }
     
+    // Проверка: если попап уже открыт - не открываем новый (кроме критичных)
+    if (g_current_popup != NULL && error->level < ERROR_LEVEL_CRITICAL) {
+        ESP_LOGW(TAG, "Popup already visible, non-critical error suppressed");
+        return;
+    }
+    
     // Проверка cooldown периода (критичные ошибки показываются всегда)
     int64_t now = esp_timer_get_time() / 1000;
     int64_t time_since_close = now - g_last_popup_close_time;
@@ -129,10 +143,17 @@ void popup_show_error(const error_info_t *error, uint32_t timeout_ms)
         return;
     }
     
-    // Критичные ошибки сбрасывают cooldown
+    // Критичные ошибки сбрасывают cooldown и закрывают текущий попап
     if (error->level >= ERROR_LEVEL_CRITICAL) {
         ESP_LOGI(TAG, "Critical error - bypassing cooldown");
         g_last_popup_close_time = 0;
+        
+        // Закрываем текущий попап если есть
+        if (g_current_popup != NULL) {
+            ESP_LOGI(TAG, "Closing current popup for critical error");
+            popup_close();
+            vTaskDelay(pdMS_TO_TICKS(100)); // Даем время на закрытие
+        }
     }
     
     ESP_LOGI(TAG, "Showing error popup: [%d] %s: %s", 
@@ -264,8 +285,19 @@ static lv_obj_t* popup_create(void *user_data)
 static esp_err_t popup_on_show(lv_obj_t *scr, void *user_data)
 {
     popup_ui_t *ui = (popup_ui_t *)lv_obj_get_user_data(scr);
-    if (!ui || !user_data) {
-        ESP_LOGE(TAG, "Invalid popup data!");
+    if (!ui) {
+        ESP_LOGE(TAG, "Invalid popup UI!");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // Проверка: если конфиг уже заполнен - это повторный вызов
+    if (ui->config.type != 0) {
+        ESP_LOGW(TAG, "Popup already configured, ignoring repeated on_show");
+        return ESP_OK;
+    }
+    
+    if (!user_data) {
+        ESP_LOGE(TAG, "NULL user_data!");
         return ESP_ERR_INVALID_ARG;
     }
     
@@ -330,7 +362,10 @@ static esp_err_t popup_on_show(lv_obj_t *scr, void *user_data)
 static esp_err_t popup_on_hide(lv_obj_t *scr)
 {
     popup_ui_t *ui = (popup_ui_t *)lv_obj_get_user_data(scr);
-    if (!ui) return ESP_OK;
+    if (!ui) {
+        ESP_LOGD(TAG, "Popup ON_HIDE: UI already freed");
+        return ESP_OK;
+    }
     
     ESP_LOGI(TAG, "Popup ON_HIDE");
     
@@ -340,8 +375,9 @@ static esp_err_t popup_on_hide(lv_obj_t *scr)
         ui->close_timer = NULL;
     }
     
-    // ИСПРАВЛЕНО: Не удаляем группу - она управляется Screen Manager
-    // Группа автоматически очищается при уничтожении экрана
+    // Обнуляем конфигурацию для возможности повторного использования
+    memset(&ui->config, 0, sizeof(popup_config_t));
+    
     g_popup_group = NULL;
     g_current_popup = NULL;
     

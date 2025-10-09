@@ -9,6 +9,7 @@
 #include "widgets/sensor_card.h"
 #include "lvgl_styles.h"
 #include "esp_log.h"
+#include <math.h>
 
 static const char *TAG = "MAIN_SCREEN";
 
@@ -145,7 +146,7 @@ static lv_obj_t* main_screen_create(void *params)
         sensor_card_config_t card_cfg = {
             .name = sensor_names[i],
             .unit = sensor_units[i],
-            .current_value = 0.0f,
+            .current_value = NAN,  // Начальное значение - нет данных
             .decimals = decimals[i],
             .on_click = on_sensor_card_click,
             .user_data = (void*)(intptr_t)i,

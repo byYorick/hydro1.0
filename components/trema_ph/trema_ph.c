@@ -47,34 +47,28 @@ bool trema_ph_init(void)
 
 bool trema_ph_read(float *ph)
 {
-    // Check if sensor is initialized
     if (!sensor_initialized) {
         if (!trema_ph_init()) {
-            ESP_LOGD(TAG, "PH sensor not connected, using stub values");
-            // Use stub values when sensor is not connected
-            *ph = stub_ph;
+            ESP_LOGD(TAG, "PH sensor not connected, returning NAN");
+            *ph = NAN;
             use_stub_values = true;
-            return true; // Return true to indicate success with stub values
+            return false;
         }
     }
     
-    // Request pH measurement
-    data[0] = REG_PH_pH; // Register address for pH measurement
+    data[0] = REG_PH_pH;
     if (i2c_bus_write(TREMA_PH_ADDR, data, 1) != ESP_OK) {
-        ESP_LOGD(TAG, "PH sensor read failed, using stub values");
-        // Use stub values when sensor communication fails
-        *ph = stub_ph;
+        ESP_LOGD(TAG, "PH sensor read failed, returning NAN");
+        *ph = NAN;
         use_stub_values = true;
-        return true; // Return true to indicate success with stub values
+        return false;
     }
     
     vTaskDelay(pdMS_TO_TICKS(20));
     
-    // Read the pH value (2 bytes)
     if (i2c_bus_read(TREMA_PH_ADDR, data, 2) != ESP_OK) {
-        ESP_LOGD(TAG, "PH sensor read failed, using stub values");
-        // Use stub values when sensor communication fails
-        *ph = stub_ph;
+        ESP_LOGD(TAG, "PH sensor read failed, returning NAN");
+        *ph = NAN;
         use_stub_values = true;
         return true; // Return true to indicate success with stub values
     }
