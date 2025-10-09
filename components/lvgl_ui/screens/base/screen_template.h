@@ -58,6 +58,7 @@ typedef struct {
     const char *unit;                     ///< Единицы измерения
     uint8_t decimals;                     ///< Знаков после запятой
     lv_event_cb_t settings_callback;      ///< Callback для кнопки Settings
+    void *settings_user_data;             ///< User data для settings callback
     lv_event_cb_t back_callback;          ///< Callback для кнопки Back
 } template_detail_config_t;
 

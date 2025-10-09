@@ -45,6 +45,59 @@ static void on_reset_click(lv_event_t *e) {
     screen_show("reset_confirm", NULL);
 }
 
+/**
+ * @brief Callback при показе системного меню
+ */
+static esp_err_t system_menu_on_show(lv_obj_t *screen_obj, void *params)
+{
+    ESP_LOGI(TAG, "System menu shown - configuring encoder");
+    
+    // Получаем instance для доступа к encoder_group
+    screen_instance_t *inst = screen_get_by_id("system_menu");
+    if (!inst || !inst->encoder_group) {
+        ESP_LOGW(TAG, "No encoder group available");
+        return ESP_OK;
+    }
+    
+    lv_group_t *group = inst->encoder_group;
+    
+    // Добавляем все кнопки меню в группу
+    lv_obj_t *child = lv_obj_get_child(screen_obj, 0);
+    int added = 0;
+    
+    while (child != NULL) {
+        if (lv_obj_check_type(child, &lv_button_class)) {
+            lv_group_add_obj(group, child);
+            added++;
+            ESP_LOGD(TAG, "  Added button to encoder group");
+        }
+        
+        // Проверяем вложенные элементы
+        lv_obj_t *grandchild = lv_obj_get_child(child, 0);
+        while (grandchild != NULL) {
+            if (lv_obj_check_type(grandchild, &lv_button_class)) {
+                lv_group_add_obj(group, grandchild);
+                added++;
+                ESP_LOGD(TAG, "  Added nested button");
+            }
+            grandchild = lv_obj_get_child(child, lv_obj_get_index(grandchild) + 1);
+        }
+        
+        child = lv_obj_get_child(screen_obj, lv_obj_get_index(child) + 1);
+    }
+    
+    int obj_count = lv_group_get_obj_count(group);
+    ESP_LOGI(TAG, "  Encoder group has %d objects (added %d)", obj_count, added);
+    
+    // Устанавливаем фокус
+    if (obj_count > 0) {
+        lv_group_focus_next(group);
+        ESP_LOGI(TAG, "  Initial focus set");
+    }
+    
+    return ESP_OK;
+}
+
 /* =============================
  *  СОЗДАНИЕ ЭКРАНА
  * ============================= */
@@ -93,7 +146,7 @@ static lv_obj_t* system_menu_create(void *params)
         },
     };
     
-    // Используем шаблон меню
+    // Используем шаблон меню (без группы - настроится в on_show)
     template_menu_config_t menu_cfg = {
         .title = "System Settings",
         .items = items,
@@ -102,11 +155,7 @@ static lv_obj_t* system_menu_create(void *params)
         .back_callback = NULL,  // Автоматически вернется к main
     };
     
-    // Получаем группу энкодера
-    screen_instance_t *inst = screen_get_by_id("system_menu");
-    lv_group_t *group = inst ? inst->encoder_group : NULL;
-    
-    return template_create_menu_screen(&menu_cfg, group);
+    return template_create_menu_screen(&menu_cfg, NULL);
 }
 
 /* =============================
@@ -129,6 +178,7 @@ esp_err_t system_menu_screen_init(void)
         .has_status_bar = true,
         .has_back_button = true,
         .create_fn = system_menu_create,
+        .on_show = system_menu_on_show,  // Настройка encoder group
     };
     
     esp_err_t ret = screen_register(&config);
@@ -140,4 +190,3 @@ esp_err_t system_menu_screen_init(void)
     ESP_LOGI(TAG, "System menu registered successfully");
     return ESP_OK;
 }
-

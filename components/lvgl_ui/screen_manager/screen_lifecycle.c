@@ -99,6 +99,45 @@ esp_err_t screen_create_instance(const char *screen_id)
         // Не критично, продолжаем
     } else {
         lv_group_set_wrap(instance->encoder_group, true);  // Циклическая навигация
+        
+        // ВАЖНО: Добавляем все кнопки на экране в группу
+        ESP_LOGI(TAG, "Auto-adding interactive elements to encoder group...");
+        int added = 0;
+        
+        // Рекурсивно обходим дерево UI и добавляем интерактивные элементы
+        uint32_t child_count = lv_obj_get_child_count(instance->screen_obj);
+        for (uint32_t i = 0; i < child_count; i++) {
+            lv_obj_t *child = lv_obj_get_child(instance->screen_obj, i);
+            if (!child) continue;
+            
+            // Проверяем сам элемент
+            if (lv_obj_has_flag(child, LV_OBJ_FLAG_CLICKABLE) || 
+                lv_obj_check_type(child, &lv_button_class) ||
+                lv_obj_check_type(child, &lv_slider_class) ||
+                lv_obj_check_type(child, &lv_dropdown_class) ||
+                lv_obj_check_type(child, &lv_checkbox_class)) {
+                lv_group_add_obj(instance->encoder_group, child);
+                added++;
+            }
+            
+            // Проверяем вложенные элементы
+            uint32_t grandchild_count = lv_obj_get_child_count(child);
+            for (uint32_t j = 0; j < grandchild_count; j++) {
+                lv_obj_t *grandchild = lv_obj_get_child(child, j);
+                if (!grandchild) continue;
+                
+                if (lv_obj_has_flag(grandchild, LV_OBJ_FLAG_CLICKABLE) ||
+                    lv_obj_check_type(grandchild, &lv_button_class) ||
+                    lv_obj_check_type(grandchild, &lv_slider_class) ||
+                    lv_obj_check_type(grandchild, &lv_dropdown_class) ||
+                    lv_obj_check_type(grandchild, &lv_checkbox_class)) {
+                    lv_group_add_obj(instance->encoder_group, grandchild);
+                    added++;
+                }
+            }
+        }
+        
+        ESP_LOGI(TAG, "Auto-added %d interactive elements to encoder group", added);
     }
     
     instance->is_created = true;
@@ -109,8 +148,9 @@ esp_err_t screen_create_instance(const char *screen_id)
     manager->instances[manager->instance_count] = instance;
     manager->instance_count++;
     
-    ESP_LOGI(TAG, "Created screen '%s' (%d/%d instances active)", 
-             screen_id, manager->instance_count, MAX_INSTANCES);
+    ESP_LOGI(TAG, "Created screen '%s' (%d/%d instances active, %d elements in encoder group)", 
+             screen_id, manager->instance_count, MAX_INSTANCES,
+             instance->encoder_group ? lv_group_get_obj_count(instance->encoder_group) : 0);
     
     return ESP_OK;
 }

@@ -56,9 +56,17 @@ screen_base_t screen_base_create(const screen_base_config_t *config)
     // Создаем контентную область
     base.content = lv_obj_create(base.screen);
     lv_obj_remove_style_all(base.content);
-    lv_obj_set_size(base.content, LV_PCT(100), LV_PCT(100) - content_y_offset);
+    
+    // Правильно вычисляем размер (240x320 экран)
+    int screen_height = 320;
+    int content_height = screen_height - content_y_offset - 32;  // 32 = отступы экрана
+    
+    lv_obj_set_size(base.content, LV_PCT(100), content_height);
     lv_obj_align(base.content, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_pad_all(base.content, 0, 0);
+    lv_obj_set_style_pad_all(base.content, 8, 0);
+    
+    ESP_LOGI(TAG, "Content area: height=%d (screen_height=%d - offset=%d - padding=32)", 
+             content_height, screen_height, content_y_offset);
     
     ESP_LOGI(TAG, "Base screen created successfully");
     

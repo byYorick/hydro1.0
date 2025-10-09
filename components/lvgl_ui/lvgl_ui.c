@@ -2,7 +2,7 @@
 #include "lvgl.h"
 #include "lcd_ili9341.h"
 #include "encoder.h"
-#include "ph_screen.h"
+// УДАЛЕНО: #include "ph_screen.h" - все pH экраны через Screen Manager
 #include <inttypes.h>
 
 // Screen Manager System
@@ -307,7 +307,7 @@ static bool sensor_snapshot_valid = false;
  *  FORWARD DECLARATIONS
  * ============================= */
 // init_styles() объявлен в lvgl_styles.h
-static void create_main_ui(void);
+// LEGACY УДАЛЕНО
 static void create_detail_ui(int index);
 static void create_status_bar(lv_obj_t *parent, const char *title);
 static void status_timer_cb(lv_timer_t *timer);
@@ -320,9 +320,9 @@ static void update_sensor_display(sensor_data_t *data);
 static void display_update_task(void *pvParameters);
 static lv_obj_t *create_sensor_card(lv_obj_t *parent, int index);
 static void sensor_card_event_cb(lv_event_t *e);
-static void create_detail_screen(uint8_t sensor_index);
-static void create_settings_screen(uint8_t sensor_index);
-static void show_screen(screen_type_t screen);
+// LEGACY УДАЛЕНО
+// LEGACY УДАЛЕНО
+// LEGACY УДАЛЕНО
 static void focus_hide_timer_cb(lv_timer_t *timer);
 static void show_focus(void);
 static void hide_focus(void);
@@ -334,16 +334,15 @@ static void system_menu_item_event_cb(lv_event_t *e);
 static void encoder_task(void *pvParameters);
 static void handle_encoder_event(encoder_event_t *event);
 static void update_card_selection(void);
-static void update_settings_selection(void);
-static void encoder_event_cb(lv_event_t *e);
-static void create_system_settings_screen(void);
-static void create_auto_control_screen(void);
-static void create_wifi_settings_screen(void);
-static void create_display_settings_screen(void);
-static void create_data_logger_screen(void);
-static void create_system_info_screen(void);
-static void create_reset_confirm_screen(void);
-
+// LEGACY УДАЛЕНО
+// УДАЛЕНО: static void encoder_event_cb(lv_event_t *e);
+// LEGACY УДАЛЕНО
+// LEGACY УДАЛЕНО
+// LEGACY УДАЛЕНО
+// LEGACY УДАЛЕНО
+// LEGACY УДАЛЕНО
+// LEGACY УДАЛЕНО
+// LEGACY УДАЛЕНО
 /* =============================
  *  PUBLIC HELPERS
  * ============================= */
@@ -858,7 +857,7 @@ static lv_obj_t *create_sensor_card(lv_obj_t *parent, int index)
  * @brief Создание улучшенного главного экрана с правильной компоновкой для дисплея 240x320
  * Карточки расположены в 2 колонки с правильными отступами и размерами
  */
-static void create_main_ui(void)
+static void __attribute__((unused)) create_main_ui(void)
 {
     init_styles();
 
@@ -1392,12 +1391,7 @@ static void display_update_task(void *pvParameters)
  *  CALLBACK ДЛЯ pH ЭКРАНОВ
  * ============================= */
 
-// Callback для возврата из pH экранов на главный
-static void ph_return_to_main(void)
-{
-    ESP_LOGI(TAG, "Возврат из pH экранов на главный");
-    switch_to_screen(main_screen, SCREEN_MAIN, encoder_group);
-}
+// LEGACY: Callback удалён - используется screen_go_back() из Screen Manager
 
 /* =============================
  *  PUBLIC API
@@ -1410,8 +1404,9 @@ void lvgl_main_init(void)
     
     // Инициализация старых компонентов (для совместимости)
     // Инициализируем экраны pH (пока оставляем)
-    ph_screen_init();
-    ph_set_close_callback(ph_return_to_main);
+    // LEGACY REMOVED: pH screens migrated to Screen Manager
+    // ph_screen_init();
+    // ph_set_close_callback(ph_return_to_main);
     
     vTaskDelay(pdMS_TO_TICKS(100));
     
@@ -1487,27 +1482,31 @@ void lvgl_update_sensor_values_from_queue(sensor_data_t *data)
  *  UI NAVIGATION FUNCTIONS
  * ============================= */
 
-// Обработчик события клика по карточке сенсора
+// Обработчик события клика по карточке сенсора (ОБНОВЛЕНО для Screen Manager)
 static void sensor_card_event_cb(lv_event_t *e)
 {
     uint8_t sensor_index = (uint8_t)(intptr_t)lv_event_get_user_data(e);
     
-    // Создаем экран детализации если еще не создан
-    if (detail_screens[sensor_index].screen == NULL) {
-        create_detail_screen(sensor_index);
-    }
+    // Screen Manager: прямые вызовы screen_show()
+    const char *detail_screens_ids[] = {
+        "detail_ph", "detail_ec", "detail_temp",
+        "detail_humidity", "detail_lux", "detail_co2"
+    };
     
-    // Переключаемся на экран детализации
-    screen_type_t detail_screen = SCREEN_DETAIL_PH + sensor_index;
-    show_screen(detail_screen);
+    if (sensor_index < SENSOR_COUNT) {
+        ESP_LOGI(TAG, "Opening detail screen for sensor %d via Screen Manager", sensor_index);
+        screen_show(detail_screens_ids[sensor_index], NULL);
+    }
 }
 
 // Создание экрана детализации для сенсора
-static void create_detail_screen(uint8_t sensor_index)
+static void __attribute__((unused)) create_detail_screen(uint8_t sensor_index)
 {
     // Для pH используем специальный детализированный экран
+    // LEGACY: pH detail screen migrated to Screen Manager
+    // sensor_index 0 (pH) handled by Screen Manager automatically
     if (sensor_index == 0) {
-        ph_show_detail_screen();
+        ESP_LOGW(TAG, "LEGACY call to pH detail - ignoring");
         return;
     }
     
@@ -1602,7 +1601,7 @@ static void create_detail_screen(uint8_t sensor_index)
 }
 
 // Создание экрана настроек для сенсора
-static void create_settings_screen(uint8_t sensor_index)
+static void __attribute__((unused)) create_settings_screen(uint8_t sensor_index)
 {
     const sensor_meta_t *meta = &SENSOR_META[sensor_index];
     settings_screen_t *settings = &settings_screens[sensor_index];
@@ -1686,7 +1685,7 @@ static void create_settings_screen(uint8_t sensor_index)
 }
 
 // Переключение экранов
-static void show_screen(screen_type_t screen)
+static void __attribute__((unused)) show_screen(screen_type_t screen)
 {
     if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
         if (screen < SCREEN_DETAIL_PH || screen > SCREEN_DETAIL_CO2) {
@@ -1706,9 +1705,10 @@ static void show_screen(screen_type_t screen)
             target_group = encoder_group;
             break;
         case SCREEN_DETAIL_PH:
-            ph_show_detail_screen();
-            target_group = ph_get_detail_group();
-            target_screen_obj = ph_get_detail_screen();
+            // LEGACY: Use Screen Manager instead
+            ESP_LOGW(TAG, "LEGACY pH detail - use screen_show(\"detail_ph\", NULL)");
+            target_group = NULL;
+            target_screen_obj = NULL;
             break;
         case SCREEN_DETAIL_EC:
         case SCREEN_DETAIL_TEMP:
@@ -1725,9 +1725,10 @@ static void show_screen(screen_type_t screen)
             break;
         }
         case SCREEN_SETTINGS_PH:
-            ph_show_settings_screen();
-            target_group = ph_get_settings_group();
-            target_screen_obj = ph_get_settings_screen();
+            // LEGACY: Use Screen Manager instead
+            ESP_LOGW(TAG, "LEGACY pH settings - use screen_show(\"settings_ph\", NULL)");
+            target_group = NULL;
+            target_screen_obj = NULL;
             break;
         case SCREEN_SETTINGS_EC:
         case SCREEN_SETTINGS_TEMP:
@@ -1744,58 +1745,22 @@ static void show_screen(screen_type_t screen)
             break;
         }
         case SCREEN_CALIBRATION:
-            ph_show_calibration_screen();
-            target_group = ph_get_calibration_group();
-            target_screen_obj = ph_get_calibration_screen();
+            // LEGACY: Use Screen Manager instead
+            ESP_LOGW(TAG, "LEGACY pH calibration - use Screen Manager");
+            target_group = NULL;
+            target_screen_obj = NULL;
             break;
         case SCREEN_SYSTEM_STATUS:
-            if (system_settings_screen == NULL) {
-                create_system_settings_screen();
-            }
-            target_screen_obj = system_settings_screen;
-            target_group = system_settings_group;
-            break;
         case SCREEN_AUTO_CONTROL:
-            if (auto_control_screen == NULL) {
-                create_auto_control_screen();
-            }
-            target_screen_obj = auto_control_screen;
-            target_group = auto_control_group;
-            break;
         case SCREEN_WIFI_SETTINGS:
-            if (wifi_settings_screen == NULL) {
-                create_wifi_settings_screen();
-            }
-            target_screen_obj = wifi_settings_screen;
-            target_group = wifi_settings_group;
-            break;
         case SCREEN_DISPLAY_SETTINGS:
-            if (display_settings_screen == NULL) {
-                create_display_settings_screen();
-            }
-            target_screen_obj = display_settings_screen;
-            target_group = display_settings_group;
-            break;
         case SCREEN_DATA_LOGGER_SETTINGS:
-            if (data_logger_screen == NULL) {
-                create_data_logger_screen();
-            }
-            target_screen_obj = data_logger_screen;
-            target_group = data_logger_group;
-            break;
         case SCREEN_SYSTEM_INFO:
-            if (system_info_screen == NULL) {
-                create_system_info_screen();
-            }
-            target_screen_obj = system_info_screen;
-            target_group = system_info_group;
-            break;
         case SCREEN_RESET_CONFIRM:
-            if (reset_confirm_screen == NULL) {
-                create_reset_confirm_screen();
-            }
-            target_screen_obj = reset_confirm_screen;
-            target_group = reset_confirm_group;
+            // LEGACY: Эти экраны мигрированы на Screen Manager
+            ESP_LOGW(TAG, "LEGACY system screen access! Use screen_show() instead.");
+            target_screen_obj = NULL;
+            target_group = NULL;
             break;
         default:
             break;
@@ -1891,23 +1856,18 @@ static void settings_button_event_cb(lv_event_t *e)
     show_screen(settings_screen);
 }
 
-// Обработчик кнопки "SET" в строке состояния
+// Обработчик кнопки "SET" в строке состояния (ОБНОВЛЕНО для Screen Manager)
 static void system_settings_button_event_cb(lv_event_t *e)
 {
     LV_UNUSED(e);
     
-    ESP_LOGI(TAG, "System settings button clicked");
+    ESP_LOGI(TAG, "System settings button clicked - opening via Screen Manager");
     
-    // Создаем экран системных настроек если еще не создан
-    if (system_settings_screen == NULL) {
-        create_system_settings_screen();
-    }
-    
-    // Переключаемся на экран системных настроек
-    show_screen(SCREEN_SYSTEM_STATUS);
+    // Screen Manager: прямой вызов
+    screen_show("system_menu", NULL);
 }
 
-// Обработчик пунктов меню системных настроек
+// Обработчик пунктов меню системных настроек (ОБНОВЛЕНО для Screen Manager)
 static void system_menu_item_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
@@ -1924,47 +1884,20 @@ static void system_menu_item_event_cb(lv_event_t *e)
     
     uint8_t item_index = (uint8_t)(intptr_t)lv_event_get_user_data(e);
     
-    ESP_LOGI(TAG, "System menu item %d activated (code=%d)", item_index, code);
+    ESP_LOGI(TAG, "System menu item %d activated (code=%d) - Screen Manager", item_index, code);
     
-    switch (item_index) {
-        case 0:  // Auto Control
-            if (auto_control_screen == NULL) {
-                create_auto_control_screen();
-            }
-            show_screen(SCREEN_AUTO_CONTROL);
-            break;
-        case 1:  // WiFi Settings
-            if (wifi_settings_screen == NULL) {
-                create_wifi_settings_screen();
-            }
-            show_screen(SCREEN_WIFI_SETTINGS);
-            break;
-        case 2:  // Display Settings
-            if (display_settings_screen == NULL) {
-                create_display_settings_screen();
-            }
-            show_screen(SCREEN_DISPLAY_SETTINGS);
-            break;
-        case 3:  // Data Logger
-            if (data_logger_screen == NULL) {
-                create_data_logger_screen();
-            }
-            show_screen(SCREEN_DATA_LOGGER_SETTINGS);
-            break;
-        case 4:  // System Info
-            if (system_info_screen == NULL) {
-                create_system_info_screen();
-            }
-            show_screen(SCREEN_SYSTEM_INFO);
-            break;
-        case 5:  // Reset to Defaults
-            if (reset_confirm_screen == NULL) {
-                create_reset_confirm_screen();
-            }
-            show_screen(SCREEN_RESET_CONFIRM);
-            break;
-        default:
-            break;
+    // Screen Manager: прямые вызовы экранов
+    const char *system_screens[] = {
+        "auto_control",      // 0
+        "wifi_settings",     // 1
+        "display_settings",  // 2
+        "data_logger",       // 3
+        "system_info",       // 4
+        "reset_confirm"      // 5
+    };
+    
+    if (item_index < 6) {
+        screen_show(system_screens[item_index], NULL);
     }
 }
 
@@ -2108,7 +2041,7 @@ static void update_card_selection(void)
 }
 
 // Обновление выделения пунктов настроек
-static void update_settings_selection(void)
+static void __attribute__((unused)) update_settings_selection(void)
 {
     if (current_screen < SCREEN_SETTINGS_PH || current_screen > SCREEN_SETTINGS_CO2) {
         return;
@@ -2143,59 +2076,7 @@ static void update_settings_selection(void)
     }
 }
 
-// Обработчик событий энкодера
-static void encoder_event_cb(lv_event_t *e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
-    uint32_t key = lv_event_get_key(e);
-    
-    // Обрабатываем события кнопки энкодера
-    if (code == LV_EVENT_KEY) {
-        switch (key) {
-            case LV_KEY_ENTER:
-                if (current_screen == SCREEN_MAIN) {
-                    screen_type_t detail_screen_type = SCREEN_DETAIL_PH + selected_card_index;
-                    show_screen(detail_screen_type);
-                } else if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
-                    int sensor_index = current_screen - SCREEN_DETAIL_PH;
-                    screen_type_t settings_screen_type = SCREEN_SETTINGS_PH + sensor_index;
-                    show_screen(settings_screen_type);
-                }
-                break;
-                
-            case LV_KEY_ESC:
-                if (current_screen >= SCREEN_DETAIL_PH && current_screen <= SCREEN_DETAIL_CO2) {
-                    show_screen(SCREEN_MAIN);
-                } else if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
-                    int sensor_index = current_screen - SCREEN_SETTINGS_PH;
-                    screen_type_t detail_screen_type = SCREEN_DETAIL_PH + sensor_index;
-                    show_screen(detail_screen_type);
-                }
-                break;
-        }
-    }
-    
-    // Обрабатываем события вращения энкодера
-    // ОТКЛЮЧЕНО: теперь навигация на главном экране обрабатывается через handle_encoder_event()
-    // с использованием lv_group_focus_next/prev для поддержки кнопки SET
-    if (code == LV_EVENT_VALUE_CHANGED) {
-        if (last_encoder_diff > 0) {
-            // На главном экране навигация теперь через lv_group_focus_next()
-            if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
-                selected_settings_item = (selected_settings_item + 1) % 5;
-                update_settings_selection();
-            }
-            last_encoder_diff = 0;
-        } else if (last_encoder_diff < 0) {
-            // На главном экране навигация теперь через lv_group_focus_prev()
-            if (current_screen >= SCREEN_SETTINGS_PH && current_screen <= SCREEN_SETTINGS_CO2) {
-                selected_settings_item = (selected_settings_item - 1 + 5) % 5;
-                update_settings_selection();
-            }
-            last_encoder_diff = 0;
-        }
-    }
-}
+// LEGACY ФУНКЦИЯ УДАЛЕНА: encoder_event_cb() - используется handle_encoder_event()
 
 // =============================================
 // ЭКРАН СИСТЕМНЫХ НАСТРОЕК
@@ -2204,7 +2085,7 @@ static void encoder_event_cb(lv_event_t *e)
 /**
  * @brief Создание экрана общих настроек системы
  */
-static void create_system_settings_screen(void)
+static void __attribute__((unused)) create_system_settings_screen(void)
 {
     if (system_settings_screen != NULL) {
         ESP_LOGI(TAG, "System settings screen already exists");
@@ -2318,7 +2199,7 @@ static void auto_control_switch_event_cb(lv_event_t *e)
     }
 }
 
-static void create_auto_control_screen(void)
+static void __attribute__((unused)) create_auto_control_screen(void)
 {
     if (auto_control_screen != NULL) {
         ESP_LOGI(TAG, "Auto control screen already exists");
@@ -2427,7 +2308,7 @@ static void create_auto_control_screen(void)
 // ЭКРАН WIFI SETTINGS
 // =============================================
 
-static void create_wifi_settings_screen(void)
+static void __attribute__((unused)) create_wifi_settings_screen(void)
 {
     if (wifi_settings_screen != NULL) {
         ESP_LOGI(TAG, "WiFi settings screen already exists");
@@ -2529,7 +2410,7 @@ static void brightness_slider_event_cb(lv_event_t *e)
     ESP_LOGI(TAG, "Display brightness set to %ld%%", value);
 }
 
-static void create_display_settings_screen(void)
+static void __attribute__((unused)) create_display_settings_screen(void)
 {
     if (display_settings_screen != NULL) {
         ESP_LOGI(TAG, "Display settings screen already exists");
@@ -2634,7 +2515,7 @@ static void data_logger_save_event_cb(lv_event_t *e)
     }
 }
 
-static void create_data_logger_screen(void)
+static void __attribute__((unused)) create_data_logger_screen(void)
 {
     if (data_logger_screen != NULL) {
         ESP_LOGI(TAG, "Data logger screen already exists");
@@ -2736,7 +2617,7 @@ static void create_data_logger_screen(void)
 // ЭКРАН SYSTEM INFO
 // =============================================
 
-static void create_system_info_screen(void)
+static void __attribute__((unused)) create_system_info_screen(void)
 {
     if (system_info_screen != NULL) {
         ESP_LOGI(TAG, "System info screen already exists");
@@ -2875,7 +2756,7 @@ static void reset_confirm_no_event_cb(lv_event_t *e)
     show_screen(SCREEN_SYSTEM_STATUS);
 }
 
-static void create_reset_confirm_screen(void)
+static void __attribute__((unused)) create_reset_confirm_screen(void)
 {
     if (reset_confirm_screen != NULL) {
         ESP_LOGI(TAG, "Reset confirm screen already exists");

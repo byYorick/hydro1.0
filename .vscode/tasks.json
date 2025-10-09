@@ -37,7 +37,7 @@
             "command": "cmd",
             "args": [
                 "/c",
-                "C:\\Espressif\\idf_cmd_init.bat esp-idf-ab7213b7273352b64422b1f400ff27a0 && idf.py build"
+                "C:\\Espressif\\idf_cmd_init.bat esp-idf-1dcc643656a1439837fdf6ab63363005 && idf.py build"
             ],
             "group": "build",
             "presentation": {
@@ -68,7 +68,7 @@
             "command": "cmd",
             "args": [
                 "/c",
-                "C:\\Espressif\\idf_cmd_init.bat esp-idf-ab7213b7273352b64422b1f400ff27a0 && idf.py flash"
+                "C:\\Espressif\\idf_cmd_init.bat esp-idf-1dcc643656a1439837fdf6ab63363005 && idf.py flash"
             ],
             "group": "build",
             "presentation": {
@@ -87,7 +87,7 @@
             "command": "cmd",
             "args": [
                 "/c",
-                "C:\\Espressif\\idf_cmd_init.bat esp-idf-ab7213b7273352b64422b1f400ff27a0 && idf.py monitor"
+                "C:\\Espressif\\idf_cmd_init.bat esp-idf-1dcc643656a1439837fdf6ab63363005 && idf.py monitor"
             ],
             "group": "test",
             "presentation": {
@@ -106,7 +106,7 @@
             "command": "cmd",
             "args": [
                 "/c",
-                "C:\\Espressif\\idf_cmd_init.bat esp-idf-ab7213b7273352b64422b1f400ff27a0 && idf.py build flash monitor"
+                "C:\\Espressif\\idf_cmd_init.bat esp-idf-1dcc643656a1439837fdf6ab63363005 && idf.py build flash monitor"
             ],
             "group": "build",
             "presentation": {

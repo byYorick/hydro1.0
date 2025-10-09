@@ -13,6 +13,82 @@
 static const char *TAG = "SYSTEM_SCREENS";
 
 /* =============================
+ *  ОБЩИЙ CALLBACK для всех системных экранов
+ * ============================= */
+
+/**
+ * @brief Универсальный callback для добавления кнопки "Назад" в группу
+ */
+static esp_err_t system_screen_on_show(lv_obj_t *screen_obj, void *params)
+{
+    const char *screen_id = (const char*)params;
+    if (!screen_id) {
+        ESP_LOGW(TAG, "No screen ID in params");
+        return ESP_OK;
+    }
+    
+    ESP_LOGI(TAG, "System screen '%s' shown - configuring encoder", screen_id);
+    
+    // Получаем instance для доступа к encoder_group
+    screen_instance_t *inst = screen_get_by_id(screen_id);
+    if (!inst || !inst->encoder_group) {
+        ESP_LOGW(TAG, "No encoder group available for %s", screen_id);
+        return ESP_OK;
+    }
+    
+    lv_group_t *group = inst->encoder_group;
+    
+    // Добавляем все интерактивные элементы
+    lv_obj_t *child = lv_obj_get_child(screen_obj, 0);
+    int added = 0;
+    
+    while (child != NULL) {
+        if (lv_obj_check_type(child, &lv_button_class)) {
+            lv_group_add_obj(group, child);
+            added++;
+        }
+        else if (lv_obj_check_type(child, &lv_slider_class)) {
+            lv_group_add_obj(group, child);
+            added++;
+        }
+        else if (lv_obj_check_type(child, &lv_dropdown_class)) {
+            lv_group_add_obj(group, child);
+            added++;
+        }
+        else if (lv_obj_check_type(child, &lv_checkbox_class)) {
+            lv_group_add_obj(group, child);
+            added++;
+        }
+        
+        // Вложенные элементы
+        lv_obj_t *grandchild = lv_obj_get_child(child, 0);
+        while (grandchild != NULL) {
+            if (lv_obj_check_type(grandchild, &lv_button_class) ||
+                lv_obj_check_type(grandchild, &lv_slider_class) ||
+                lv_obj_check_type(grandchild, &lv_dropdown_class) ||
+                lv_obj_check_type(grandchild, &lv_checkbox_class)) {
+                lv_group_add_obj(group, grandchild);
+                added++;
+            }
+            grandchild = lv_obj_get_child(child, lv_obj_get_index(grandchild) + 1);
+        }
+        
+        child = lv_obj_get_child(screen_obj, lv_obj_get_index(child) + 1);
+    }
+    
+    int obj_count = lv_group_get_obj_count(group);
+    ESP_LOGI(TAG, "  Encoder group: %d objects (added %d)", obj_count, added);
+    
+    // Устанавливаем фокус
+    if (obj_count > 0) {
+        lv_group_focus_next(group);
+        ESP_LOGI(TAG, "  Focus set");
+    }
+    
+    return ESP_OK;
+}
+
+/* =============================
  *  AUTO CONTROL SCREEN
  * ============================= */
 
@@ -163,12 +239,52 @@ static lv_obj_t* reset_confirm_create(void *params)
 }
 
 /* =============================
+ *  SYSTEM STATUS SCREEN
+ * ============================= */
+
+static lv_obj_t* system_status_create(void *params)
+{
+    ESP_LOGI(TAG, "Creating system status screen");
+    
+    screen_base_config_t cfg = {
+        .title = "System Status",
+        .has_status_bar = true,
+        .has_back_button = true,
+        .back_callback = NULL,
+    };
+    
+    screen_base_t base = screen_base_create(&cfg);
+    
+    lv_obj_t *label = lv_label_create(base.content);
+    lv_obj_add_style(label, &style_label, 0);
+    lv_label_set_text(label, "System Status\n\n(Placeholder)");
+    lv_obj_center(label);
+    
+    return base.screen;
+}
+
+/* =============================
  *  РЕГИСТРАЦИЯ
  * ============================= */
 
 esp_err_t system_screens_register_all(void)
 {
     ESP_LOGI(TAG, "Registering all system screens");
+    
+    // System Status
+    screen_config_t status_cfg = {
+        .id = "system_status",
+        .title = "System Status",
+        .category = SCREEN_CATEGORY_INFO,
+        .parent_id = "system_menu",
+        .can_go_back = true,
+        .lazy_load = true,
+        .destroy_on_hide = true,
+        .create_fn = system_status_create,
+        .on_show = system_screen_on_show,
+        .user_data = (void*)"system_status",
+    };
+    screen_register(&status_cfg);
     
     // Auto Control
     screen_config_t auto_cfg = {
@@ -178,8 +294,10 @@ esp_err_t system_screens_register_all(void)
         .parent_id = "system_menu",
         .can_go_back = true,
         .lazy_load = true,
-        .destroy_on_hide = true,  // Освобождать память
+        .destroy_on_hide = true,
         .create_fn = auto_control_create,
+        .on_show = system_screen_on_show,
+        .user_data = (void*)"auto_control",
     };
     screen_register(&auto_cfg);
     
@@ -193,6 +311,8 @@ esp_err_t system_screens_register_all(void)
         .lazy_load = true,
         .destroy_on_hide = true,
         .create_fn = wifi_settings_create,
+        .on_show = system_screen_on_show,
+        .user_data = (void*)"wifi_settings",
     };
     screen_register(&wifi_cfg);
     
@@ -206,6 +326,8 @@ esp_err_t system_screens_register_all(void)
         .lazy_load = true,
         .destroy_on_hide = true,
         .create_fn = display_settings_create,
+        .on_show = system_screen_on_show,
+        .user_data = (void*)"display_settings",
     };
     screen_register(&display_cfg);
     
@@ -219,6 +341,8 @@ esp_err_t system_screens_register_all(void)
         .lazy_load = true,
         .destroy_on_hide = true,
         .create_fn = data_logger_create,
+        .on_show = system_screen_on_show,
+        .user_data = (void*)"data_logger",
     };
     screen_register(&logger_cfg);
     
@@ -232,6 +356,8 @@ esp_err_t system_screens_register_all(void)
         .lazy_load = true,
         .destroy_on_hide = true,
         .create_fn = system_info_create,
+        .on_show = system_screen_on_show,
+        .user_data = (void*)"system_info",
     };
     screen_register(&info_cfg);
     
@@ -245,10 +371,11 @@ esp_err_t system_screens_register_all(void)
         .lazy_load = true,
         .destroy_on_hide = true,
         .create_fn = reset_confirm_create,
+        .on_show = system_screen_on_show,
+        .user_data = (void*)"reset_confirm",
     };
     screen_register(&reset_cfg);
     
-    ESP_LOGI(TAG, "All 6 system screens registered");
+    ESP_LOGI(TAG, "All 7 system screens registered");
     return ESP_OK;
 }
-

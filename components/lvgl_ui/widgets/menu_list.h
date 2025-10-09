@@ -9,6 +9,9 @@
 
 #include "lvgl.h"
 
+// Объявление русского шрифта
+LV_FONT_DECLARE(montserrat_ru)
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -1,10 +1,8 @@
 idf_component_register(
     SRCS 
-        # Legacy files
+        # Core UI
         "lvgl_ui.c"
-        "ui_manager.c"
-        "sensor_screens_optimized.c"
-        "ph_screen.c"
+        # LEGACY УДАЛЕНО: ui_manager.c, sensor_screens_optimized.c, ph_screen.c
         
         # Screen Manager Core
         "screen_manager/screen_registry.c"
@@ -29,6 +27,7 @@ idf_component_register(
         "widgets/status_bar.c"
         "widgets/menu_list.c"
         "widgets/sensor_card.c"
+        "widgets/notification_popup.c"
         
     INCLUDE_DIRS 
         "."
@@ -48,5 +47,6 @@ idf_component_register(
         nvs_flash
         config_manager
         data_logger
+        notification_system
 )
 
