@@ -18,7 +18,7 @@ static int32_t accumulated_delta = 0;
 
 // Время последнего события поворота для дебаунсинга
 static int64_t last_rotation_time = 0;
-static const int64_t ROTATION_DEBOUNCE_MS = 50; // Минимальный интервал между событиями поворота
+static const int64_t ROTATION_DEBOUNCE_MS = 80; // Увеличили до 80мс для более стабильной работы
 
 // Encoder pin definitions (will be passed from main app)
 static int enc_a_pin = -1;
@@ -41,6 +41,10 @@ static QueueHandle_t encoder_event_queue = NULL;
 static bool button_pressed = false;
 static int64_t button_press_time = 0;
 static bool long_press_detected = false;
+
+// Button debouncing
+static int64_t last_button_event_time = 0;
+static const int64_t BUTTON_DEBOUNCE_MS = 50; // 50мс дебаунс для кнопки
 
 // Semaphores for button handling
 static SemaphoreHandle_t button_press_sem = NULL;
@@ -178,11 +182,17 @@ void encoder_init(void)
 
 static void encoder_button_isr_handler(void *arg)
 {
+    // Дебаунсинг: игнорируем события, происходящие слишком быстро
+    int64_t current_time = esp_timer_get_time() / 1000; // Конвертируем в миллисекунды
+    if (current_time - last_button_event_time < BUTTON_DEBOUNCE_MS) {
+        return; // Игнорируем слишком частые события (дребезг контактов)
+    }
+    last_button_event_time = current_time;
+    
     // Проверяем состояние кнопки
     bool current_state = gpio_get_level(enc_sw_pin);
     
     // В ISR нельзя использовать ESP_LOGI - это вызывает блокировку!
-    // Убираем все логирование из ISR
     
     if (current_state == 0) { // Кнопка нажата (active low)
         // Даем семафор нажатия
@@ -217,19 +227,19 @@ static void encoder_button_task(void *arg)
             
             // НЕ отправляем событие нажатия сразу - ждем отпускания!
             
-            // Ждем отпускания или длинного нажатия
+            // Ждем отпускания кнопки
             while (button_pressed) {
-                // Проверяем на длинное нажатие
+                // ОТКЛЮЧЕНО: проверка на длинное нажатие
+                // Пока отключаем эту функцию для стабильной работы
+                // TODO: можно вернуть для дополнительных функций
+                /*
                 if (!long_press_detected) {
                     int64_t current_time = esp_timer_get_time() / 1000;
                     int64_t press_duration = current_time - button_press_time;
                     
                     if (press_duration >= long_press_duration_ms) {
                         long_press_detected = true;
-                        
                         ESP_LOGI(TAG, "Button long press detected");
-                        
-                        // Отправляем событие длинного нажатия
                         encoder_event_t long_event = {
                             .type = ENCODER_EVENT_BUTTON_LONG_PRESS,
                             .value = 1
@@ -237,6 +247,7 @@ static void encoder_button_task(void *arg)
                         xQueueSend(encoder_event_queue, &long_event, 0);
                     }
                 }
+                */
                 
                 // Проверяем семафор отпускания с коротким таймаутом
                 if (xSemaphoreTake(button_release_sem, pdMS_TO_TICKS(50)) == pdTRUE) {

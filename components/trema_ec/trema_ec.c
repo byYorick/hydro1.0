@@ -90,6 +90,9 @@ bool trema_ec_read(float *ec)
     if (*ec < 0.0f || *ec > 10.0f) {
         ESP_LOGW(TAG, "Invalid EC value: %.3f mS/cm, using stub value", *ec);
         *ec = stub_ec;
+        use_stub_values = true;
+    } else {
+        use_stub_values = false;
     }
     
     return true;

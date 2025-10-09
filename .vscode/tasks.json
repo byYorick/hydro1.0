@@ -7,13 +7,13 @@
             "command": "C:\\Windows\\system32\\cmd.exe",
             "args": [
                 "/k",
-                "C:\\Espressif\\idf_cmd_init.bat esp-idf-ab7213b7273352b64422b1f400ff27a0"
+                "C:\\Espressif\\idf_cmd_init.bat esp-idf-29323a3f5a0574597d6dbaa0af20c775"
             ],
             "windows": {
                 "command": "C:\\Windows\\system32\\cmd.exe",
                 "args": [
                     "/k",
-                    "C:\\Espressif\\idf_cmd_init.bat esp-idf-ab7213b7273352b64422b1f400ff27a0"
+                    "C:\\Espressif\\idf_cmd_init.bat esp-idf-29323a3f5a0574597d6dbaa0af20c775"
                 ]
             },
             "group": {

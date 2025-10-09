@@ -58,16 +58,23 @@
 
 // Компоненты системы управления
 #include "config_manager.h"
+#include "system_interfaces.h"
 #include "notification_system.h"
+#include "error_handler.h"
 #include "data_logger.h"
 #include "task_scheduler.h"
 #include "ph_ec_controller.h"
+#include "system_interfaces.h"
 
 // Драйверы оборудования
 #include "lcd_ili9341.h"
 #include "encoder.h"
 #include "i2c_bus.h"
-#include "lvgl_main.h"
+#include "lvgl_ui.h"
+
+// Объявление русского шрифта (после включения lvgl)
+#include "lvgl.h"
+LV_FONT_DECLARE(montserrat_ru);
 
 // Датчики (для инициализации)
 #include "sht3x.h"
@@ -112,6 +119,9 @@ static bool system_initialized = false;
 /// Дескрипторы задач (управляются модулем system_tasks)
 static system_task_handles_t task_handles = {0};
 
+/// Кэш системной конфигурации
+static system_config_t g_system_config = {0};
+
 /*******************************************************************************
  * ПРОТОТИПЫ ФУНКЦИЙ
  ******************************************************************************/
@@ -128,6 +138,7 @@ static void notification_callback(const notification_t *notification);
 static void task_event_callback(uint32_t task_id, task_status_t status);
 static void pump_event_callback(pump_index_t pump, bool started);
 static void correction_event_callback(const char *type, float current, float target);
+static void log_callback(const data_logger_entry_t *entry);
 
 // Вспомогательные функции
 static void print_system_info(void);
@@ -205,7 +216,13 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to initialize task context. System cannot continue.");
         return;
     }
-    
+
+    // Передаем конфигурацию в контекст задач
+    esp_err_t cfg_ret = system_tasks_set_config(&g_system_config);
+    if (cfg_ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to share configuration with tasks: %s", esp_err_to_name(cfg_ret));
+    }
+
     // ========== ЭТАП 6.1: Создание FreeRTOS задач ==========
     ESP_LOGI(TAG, "[6.1/7] Creating FreeRTOS tasks...");
     if (system_tasks_create_all(&task_handles) != ESP_OK) {
@@ -235,9 +252,8 @@ void app_main(void)
     notification_system(NOTIFICATION_INFO, "System Started", 
                        NOTIF_SOURCE_SYSTEM);
     
-    // Логируем запуск системы (отключено)
-    // data_logger_log_system_event(LOG_LEVEL_INFO, 
-    //                              "System started successfully - v" APP_VERSION);
+    data_logger_log_system_event(LOG_LEVEL_INFO,
+                                 "System started successfully - v" APP_VERSION);
     
     // ========== ОСНОВНОЙ ЦИКЛ ==========
     // Главный цикл - просто поддерживает работу системы
@@ -464,17 +480,32 @@ static esp_err_t init_pumps(void)
  * 
  * @return ESP_OK при успехе, код ошибки при неудаче
  */
+
 static esp_err_t init_system_components(void)
 {
     esp_err_t ret;
-    
-    // Config Manager: Управление конфигурацией
+
     ret = config_manager_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize config manager: %s", esp_err_to_name(ret));
         return ret;
     }
-    ESP_LOGI(TAG, "  ✓ Config Manager initialized");
+
+    ret = config_load(&g_system_config);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load system configuration: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  ✓ Config Manager initialized (auto mode: %s)",
+             g_system_config.auto_control_enabled ? "ON" : "OFF");
+
+    // Interfaces: базовые адаптеры датчиков и исполнительных устройств
+    ret = system_interfaces_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize system interfaces: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  ✓ System interfaces initialized");
     
     // Notification System: Система уведомлений
     ret = notification_system_init(100); // Максимум 100 уведомлений
@@ -485,15 +516,32 @@ static esp_err_t init_system_components(void)
     notification_set_callback(notification_callback);
     ESP_LOGI(TAG, "  ✓ Notification System initialized");
     
-    // Data Logger: Логирование данных (временно отключено для экономии памяти)
-    // ret = data_logger_init(MAX_LOG_ENTRIES);
-    // if (ret != ESP_OK) {
-    //     ESP_LOGE(TAG, "Failed to initialize data logger: %s", esp_err_to_name(ret));
-    //     return ret;
-    // }
-    // data_logger_set_callback(log_callback);
-    // data_logger_set_auto_cleanup(true, LOG_AUTO_CLEANUP_DAYS);
-    ESP_LOGW(TAG, "  ! Data Logger disabled (insufficient memory)");
+    // Error Handler: Централизованная обработка ошибок
+    ret = error_handler_init(true); // Включаем всплывающие окна
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize error handler: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    // Устанавливаем русский шрифт для отображения кириллицы
+    error_handler_set_font(&montserrat_ru);
+    ESP_LOGI(TAG, "  ✓ Error Handler initialized (with Cyrillic support)");
+    
+    // Data Logger: Логирование данных
+    ret = data_logger_init(MAX_LOG_ENTRIES);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize data logger: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    data_logger_set_callback(log_callback);
+    
+    // Включаем автоматическую очистку старых записей (3 дня)
+    data_logger_set_auto_cleanup(true, 3);
+    ESP_LOGI(TAG, "Data logger auto-cleanup enabled (keep last 3 days)");
+    ret = data_logger_load_from_nvs();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "  ! Failed to restore logs from NVS: %s", esp_err_to_name(ret));
+    }
+    ESP_LOGI(TAG, "  ✓ Data Logger initialized (capacity: %d)", MAX_LOG_ENTRIES);
     
     // Task Scheduler: Планировщик задач
     ret = task_scheduler_init();
@@ -503,8 +551,7 @@ static esp_err_t init_system_components(void)
     }
     task_scheduler_set_event_callback(task_event_callback);
     ESP_LOGI(TAG, "  ✓ Task Scheduler initialized");
-    
-    // pH/EC Controller: Контроллер коррекции
+
     ret = ph_ec_controller_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize pH/EC controller: %s", esp_err_to_name(ret));
@@ -512,10 +559,15 @@ static esp_err_t init_system_components(void)
     }
     ph_ec_controller_set_pump_callback(pump_event_callback);
     ph_ec_controller_set_correction_callback(correction_event_callback);
+    ret = ph_ec_controller_apply_config(&g_system_config);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "  ! Failed to apply controller config: %s", esp_err_to_name(ret));
+    }
     ESP_LOGI(TAG, "  ✓ pH/EC Controller initialized");
-    
+
     return ESP_OK;
 }
+
 
 /*******************************************************************************
  * CALLBACK ФУНКЦИИ
@@ -529,10 +581,22 @@ static void notification_callback(const notification_t *notification)
     if (notification == NULL) {
         return;
     }
-    
+
     ESP_LOGI(TAG, "Notification [%s]: %s",
              notification_type_to_string(notification->type),
              notification->message);
+}
+
+static void log_callback(const data_logger_entry_t *entry)
+{
+    if (entry == NULL) {
+        return;
+    }
+
+    ESP_LOGD(TAG, "Log[%lu] %s: %s",
+             (unsigned long)entry->id,
+             data_logger_type_to_string(entry->type),
+             entry->message);
 }
 
 /**

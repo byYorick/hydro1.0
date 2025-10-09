@@ -23,8 +23,8 @@
 #include "lvgl.h"
 
 #include "lcd_ili9341.h"
-// Используем правильный путь к заголовочному файлу lvgl_main
-#include "../lvgl_main/lvgl_main.h"
+// Используем правильный путь к заголовочному файлу lvgl_ui
+#include "../lvgl_ui/lvgl_ui.h"
 #include "../encoder/encoder.h"
 
 // Используем SPI2 для подключения дисплея
@@ -170,18 +170,33 @@ static void lvgl_task_handler(void *pvParameters)
 // Добавляем глобальную переменную для энкодера LVGL 9.x
 static lv_indev_t *encoder_indev = NULL;
 
-// Заглушка для регистрации encoder input device в LVGL
-// ВАЖНО: Фактическая обработка энкодера выполняется в encoder_task (lvgl_main.c)
-// для реализации кастомной навигации по UI
+// Статическая переменная для передачи enc_diff из encoder_task в LVGL
+static volatile int32_t encoder_diff = 0;
+
+// Функция для установки значения enc_diff (вызывается из encoder_task)
+void lcd_ili9341_set_encoder_diff(int32_t diff)
+{
+    encoder_diff = diff;
+}
+
+// Функция чтения энкодера для LVGL
+// Считывает события вращения и передает их в LVGL для автоматической навигации по группам
 static void encoder_read(lv_indev_t *indev, lv_indev_data_t *data)
 {
     // Initialize the data structure
     data->state = LV_INDEV_STATE_RELEASED;
     data->key = 0;
-    data->enc_diff = 0;
     
-    // Обработка событий энкодера выполняется в encoder_task (lvgl_main.c)
-    // который читает из encoder_get_event_queue() и вызывает handle_encoder_event()
+    // Передаем значение вращения в LVGL
+    data->enc_diff = encoder_diff;
+    
+    // Сбрасываем после чтения
+    if (encoder_diff != 0) {
+        encoder_diff = 0;
+    }
+    
+    // Кастомная обработка энкодера для навигации на главном экране
+    // выполняется в encoder_task (lvgl_main.c)
 }
 
 // Инициализация дисплея LCD ILI9341
@@ -370,9 +385,10 @@ lv_display_t* lcd_ili9341_init(void)
     
     // Инициализация энкодера как устройства ввода LVGL 9.x
     ESP_LOGI("LCD", "Initialize encoder as LVGL input device");
-    lv_indev_t *encoder_indev = lv_indev_create();
+    encoder_indev = lv_indev_create();  // Используем глобальную переменную!
     lv_indev_set_type(encoder_indev, LV_INDEV_TYPE_ENCODER);
     lv_indev_set_read_cb(encoder_indev, encoder_read);
+    ESP_LOGI("LCD", "Encoder indev created: %p", (void*)encoder_indev);
     
     // Примечание: группа будет установлена для энкодера в lvgl_main_init
     

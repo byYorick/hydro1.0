@@ -1,12 +1,13 @@
 idf_component_register(
-    SRCS "app_main.c"
+    SRCS "app_main.c" "montserrat14_ru.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
         driver
         freertos
         nvs_flash
         spi_flash
-        lvgl
+        lvgl__lvgl
+        lvgl_ui
         system_tasks
         i2c_bus
         sht3x
@@ -14,16 +15,15 @@ idf_component_register(
         trema_ph
         trema_ec
         trema_lux
-        lvgl_main
         encoder
         peristaltic_pump
         lcd_ili9341
         trema_relay
-        sensor_screens
-        ui_manager
         config_manager
         notification_system
+        error_handler
         data_logger
         task_scheduler
+        system_interfaces
         ph_ec_controller
 )

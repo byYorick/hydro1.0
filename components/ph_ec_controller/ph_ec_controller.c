@@ -1,11 +1,12 @@
 #include "ph_ec_controller.h"
-#include "peristaltic_pump.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "driver/gpio.h"
 #include <string.h>
 #include <math.h>
+#include "peristaltic_pump.h"
+#include "system_interfaces.h"
 
 static const char *TAG = "PH_EC_CTRL";
 
@@ -22,6 +23,8 @@ static ph_ec_pump_callback_t g_pump_callback = NULL;
 static ph_ec_correction_callback_t g_correction_callback = NULL;
 static float g_current_ph = 7.0f;
 static float g_current_ec = 1.0f;
+static void (*g_pump_init_fn)(int, int) = pump_init;
+static void (*g_pump_run_fn)(int, int, uint32_t) = pump_run_ms;
 
 // Имена насосов
 static const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
@@ -46,6 +49,29 @@ static const struct {
     {PUMP_WATER_IA, PUMP_WATER_IB}
 };
 
+static void notify_pump_callback(pump_index_t pump_idx, bool started)
+{
+    if (g_pump_callback != NULL) {
+        g_pump_callback(pump_idx, started);
+    }
+}
+
+static esp_err_t run_pump_with_interface(pump_index_t pump_idx, uint32_t duration_ms)
+{
+    const actuator_interface_t *actuator = system_interfaces_get_actuator_interface();
+    notify_pump_callback(pump_idx, true);
+
+    esp_err_t err = ESP_OK;
+    if (actuator != NULL && actuator->run_pump_ms != NULL) {
+        err = actuator->run_pump_ms(pump_idx, duration_ms);
+    } else {
+        pump_run_ms(PUMP_PINS[pump_idx].ia_pin, PUMP_PINS[pump_idx].ib_pin, duration_ms);
+    }
+
+    notify_pump_callback(pump_idx, false);
+    return err;
+}
+
 esp_err_t ph_ec_controller_init(void)
 {
     // Создаем mutex
@@ -55,9 +81,12 @@ esp_err_t ph_ec_controller_init(void)
         return ESP_ERR_NO_MEM;
     }
 
+    g_pump_init_fn = pump_init;
+    g_pump_run_fn = pump_run_ms;
+
     // Инициализируем все насосы
     for (int i = 0; i < PUMP_INDEX_COUNT; i++) {
-        pump_init(PUMP_PINS[i].ia_pin, PUMP_PINS[i].ib_pin);
+        g_pump_init_fn(PUMP_PINS[i].ia_pin, PUMP_PINS[i].ib_pin);
         
         // Устанавливаем конфигурацию по умолчанию
         g_pump_configs[i].enabled = true;
@@ -104,6 +133,33 @@ esp_err_t ph_ec_controller_set_pump_config(pump_index_t pump_idx,
     xSemaphoreGive(g_mutex);
 
     ESP_LOGI(TAG, "Pump %d config updated", pump_idx);
+    return ESP_OK;
+}
+
+esp_err_t ph_ec_controller_apply_config(const system_config_t *config)
+{
+    if (config == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (xSemaphoreTake(g_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    for (int i = 0; i < PUMP_INDEX_COUNT; i++) {
+        g_pump_configs[i] = config->pump_config[i];
+    }
+
+    g_ph_params.target_ph = config->sensor_config[SENSOR_INDEX_PH].target_value;
+    g_ec_params.target_ec = config->sensor_config[SENSOR_INDEX_EC].target_value;
+
+    g_ph_auto_mode = config->auto_control_enabled;
+    g_ec_auto_mode = config->auto_control_enabled;
+
+    xSemaphoreGive(g_mutex);
+
+    ESP_LOGI(TAG, "Controller config applied (auto mode: %s)",
+             config->auto_control_enabled ? "ON" : "OFF");
     return ESP_OK;
 }
 
@@ -185,7 +241,7 @@ esp_err_t ph_ec_controller_correct_ph(float current_ph)
              current_ph, g_ph_params.target_ph, PUMP_NAMES[pump_idx], 
              (unsigned long)duration_ms);
     
-    pump_run_ms(PUMP_PINS[pump_idx].ia_pin, PUMP_PINS[pump_idx].ib_pin, duration_ms);
+    run_pump_with_interface(pump_idx, duration_ms);
 
     return ESP_OK;
 }
@@ -220,8 +276,7 @@ esp_err_t ph_ec_controller_correct_ec(float current_ec)
         ESP_LOGI(TAG, "Correcting EC with water: %.2f -> %.2f (duration: %lums)",
                  current_ec, g_ec_params.target_ec, (unsigned long)duration_ms);
         
-        pump_run_ms(PUMP_PINS[PUMP_INDEX_WATER].ia_pin, 
-                   PUMP_PINS[PUMP_INDEX_WATER].ib_pin, duration_ms);
+        run_pump_with_interface(PUMP_INDEX_WATER, duration_ms);
     } else {
         // EC ниже целевого, нужно добавить питательные вещества
         float correction = fminf(error, g_ec_params.max_correction_step);
@@ -241,18 +296,15 @@ esp_err_t ph_ec_controller_correct_ec(float current_ec)
 
         // Запускаем насосы последовательно
         if (duration_a > 0) {
-            pump_run_ms(PUMP_PINS[PUMP_INDEX_EC_A].ia_pin,
-                       PUMP_PINS[PUMP_INDEX_EC_A].ib_pin, duration_a);
+            run_pump_with_interface(PUMP_INDEX_EC_A, duration_a);
             vTaskDelay(pdMS_TO_TICKS(500)); // Небольшая пауза между насосами
         }
         if (duration_b > 0) {
-            pump_run_ms(PUMP_PINS[PUMP_INDEX_EC_B].ia_pin,
-                       PUMP_PINS[PUMP_INDEX_EC_B].ib_pin, duration_b);
+            run_pump_with_interface(PUMP_INDEX_EC_B, duration_b);
             vTaskDelay(pdMS_TO_TICKS(500));
         }
         if (duration_c > 0) {
-            pump_run_ms(PUMP_PINS[PUMP_INDEX_EC_C].ia_pin,
-                       PUMP_PINS[PUMP_INDEX_EC_C].ib_pin, duration_c);
+            run_pump_with_interface(PUMP_INDEX_EC_C, duration_c);
         }
     }
 

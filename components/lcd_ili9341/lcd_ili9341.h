@@ -52,6 +52,13 @@ void lvgl_unlock(void);
  */
 lv_indev_t* lcd_ili9341_get_encoder_indev(void);
 
+/**
+ * @brief Установить значение вращения энкодера для передачи в LVGL
+ * 
+ * @param diff Разница вращения (+1 для CW, -1 для CCW)
+ */
+void lcd_ili9341_set_encoder_diff(int32_t diff);
+
 #ifdef __cplusplus
 }
 #endif
