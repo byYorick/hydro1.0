@@ -36,6 +36,15 @@ void pump_init(int gpio_pin);
 void pump_run_ms(int gpio_pin, uint32_t ms);
 
 /**
+ * @brief Включить насос (без таймера)
+ * 
+ * Просто включает насос, не останавливает автоматически
+ * 
+ * @param gpio_pin GPIO пин для управления насосом
+ */
+void pump_start(int gpio_pin);
+
+/**
  * @brief Принудительная остановка насоса
  * 
  * Немедленно выключает насос (GPIO LOW)
@@ -43,6 +52,14 @@ void pump_run_ms(int gpio_pin, uint32_t ms);
  * @param gpio_pin GPIO пин для управления насосом
  */
 void pump_stop(int gpio_pin);
+
+/**
+ * @brief Проверить, работает ли насос
+ * 
+ * @param gpio_pin GPIO пин для управления насосом
+ * @return true если насос включен
+ */
+bool pump_is_running(int gpio_pin);
 
 #ifdef __cplusplus
 }

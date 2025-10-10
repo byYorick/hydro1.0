@@ -80,18 +80,44 @@ void pump_run_ms(int gpio_pin, uint32_t ms)
 }
 
 /**
- * @brief Остановка насоса
+ * @brief Включить насос (без таймера)
  * @param gpio_pin GPIO пин управления насосом
  */
-void pump_stop(int gpio_pin)
+void pump_start(int gpio_pin)
 {
-    // Проверка корректности номера пина
     if (gpio_pin < 0 || gpio_pin >= GPIO_NUM_MAX) {
         ESP_LOGE(TAG, "Неверный GPIO пин: %d", gpio_pin);
         return;
     }
     
-    // Выключение насоса
+    gpio_set_level(gpio_pin, 1);
+    ESP_LOGI(TAG, "GPIO%d: насос включен", gpio_pin);
+}
+
+/**
+ * @brief Остановка насоса
+ * @param gpio_pin GPIO пин управления насосом
+ */
+void pump_stop(int gpio_pin)
+{
+    if (gpio_pin < 0 || gpio_pin >= GPIO_NUM_MAX) {
+        ESP_LOGE(TAG, "Неверный GPIO пин: %d", gpio_pin);
+        return;
+    }
+    
     gpio_set_level(gpio_pin, 0);
-    ESP_LOGI(TAG, "GPIO%d: насос принудительно остановлен", gpio_pin);
+    ESP_LOGI(TAG, "GPIO%d: насос остановлен", gpio_pin);
+}
+
+/**
+ * @brief Проверить состояние насоса
+ * @param gpio_pin GPIO пин управления насосом
+ */
+bool pump_is_running(int gpio_pin)
+{
+    if (gpio_pin < 0 || gpio_pin >= GPIO_NUM_MAX) {
+        return false;
+    }
+    
+    return gpio_get_level(gpio_pin) == 1;
 }

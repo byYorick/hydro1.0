@@ -1,6 +1,6 @@
 /**
  * @file pumps_manual_screen.c
- * @brief Реализация экрана ручного управления насосами
+ * @brief Реализация экрана ручного управления насосами с асинхронной работой
  */
 
 #include "pumps_manual_screen.h"
@@ -10,6 +10,7 @@
 #include "../../widgets/encoder_value_edit.h"
 #include "pump_manager.h"
 #include "config_manager.h"
+#include "peristaltic_pump.h"
 #include "montserrat14_ru.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -17,53 +18,108 @@
 
 static const char *TAG = "PUMPS_MANUAL_SCREEN";
 
-// Имена насосов
 static const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
-    "pH UP",
-    "pH DOWN",
-    "EC A",
-    "EC B",
-    "EC C",
-    "Water"
+    "pH UP", "pH DOWN", "EC A", "EC B", "EC C", "Water"
+};
+
+// GPIO пины насосов
+static const int PUMP_PINS[PUMP_INDEX_COUNT] = {
+    PUMP_PH_UP_PIN,
+    PUMP_PH_DOWN_PIN,
+    PUMP_EC_A_PIN,
+    PUMP_EC_B_PIN,
+    PUMP_EC_C_PIN,
+    PUMP_WATER_PIN
 };
 
 // UI элементы
 static lv_obj_t *g_screen = NULL;
 static lv_obj_t *g_duration_inputs[PUMP_INDEX_COUNT] = {NULL};
+static lv_obj_t *g_start_buttons[PUMP_INDEX_COUNT] = {NULL};
+static lv_obj_t *g_button_labels[PUMP_INDEX_COUNT] = {NULL};
+
+// Состояние насосов
+static bool g_pump_running[PUMP_INDEX_COUNT] = {false};
+static lv_timer_t *g_pump_timers[PUMP_INDEX_COUNT] = {NULL};
 
 /* =============================
- *  POPUP ПОДТВЕРЖДЕНИЯ
+ *  УПРАВЛЕНИЕ НАСОСАМИ
  * ============================= */
 
 /**
- * @brief Показать информацию и запустить насос
+ * @brief Callback таймера - останавливает насос по истечении времени
  */
-static void show_pump_confirmation(pump_index_t pump_idx, uint32_t duration_ms)
+static void pump_timer_callback(lv_timer_t *timer)
 {
-    // Получение статистики для отображения
-    pump_stats_t stats;
-    pump_manager_get_stats(pump_idx, &stats);
+    pump_index_t pump_idx = (pump_index_t)(intptr_t)lv_timer_get_user_data(timer);
     
-    // Получение суточного объема
-    float daily_volume = 0;
-    pump_manager_get_daily_volume(pump_idx, &daily_volume);
+    // Остановить насос
+    pump_stop(PUMP_PINS[pump_idx]);
+    g_pump_running[pump_idx] = false;
     
-    // Получение конфигурации для лимитов
-    const system_config_t *config = config_manager_get_cached();
-    uint32_t max_daily = config ? config->pump_pid[pump_idx].max_daily_volume : 0;
+    // Обновить кнопку
+    if (g_button_labels[pump_idx]) {
+        lv_label_set_text(g_button_labels[pump_idx], "Старт");
+    }
+    if (g_start_buttons[pump_idx]) {
+        lv_obj_set_style_bg_color(g_start_buttons[pump_idx], lv_color_hex(0x4CAF50), 0);
+    }
     
-    // Расчет cooldown
-    uint64_t now_ms = esp_timer_get_time() / 1000ULL;
-    uint64_t elapsed_ms = now_ms - stats.last_run_time;
-    uint32_t cooldown_ms = config ? config->pump_pid[pump_idx].cooldown_time_ms : 0;
-    int cooldown_remaining = (int)((cooldown_ms - elapsed_ms) / 1000);
-    if (cooldown_remaining < 0) cooldown_remaining = 0;
+    // Удалить таймер
+    lv_timer_del(timer);
+    g_pump_timers[pump_idx] = NULL;
     
-    ESP_LOGI(TAG, "Запуск насоса %s: cooldown=%d сек, суточный=%.1f/%.lu мл",
-             PUMP_NAMES[pump_idx], cooldown_remaining, daily_volume, (unsigned long)max_daily);
+    ESP_LOGI(TAG, "Насос %s остановлен автоматически", PUMP_NAMES[pump_idx]);
+}
+
+/**
+ * @brief Запустить насос асинхронно
+ */
+static void start_pump_async(pump_index_t pump_idx, uint32_t duration_ms)
+{
+    // Включить насос
+    pump_start(PUMP_PINS[pump_idx]);
+    g_pump_running[pump_idx] = true;
     
-    // Прямой запуск насоса
-    pump_manager_run_direct(pump_idx, duration_ms);
+    // Обновить кнопку
+    if (g_button_labels[pump_idx]) {
+        lv_label_set_text(g_button_labels[pump_idx], "Стоп");
+    }
+    if (g_start_buttons[pump_idx]) {
+        lv_obj_set_style_bg_color(g_start_buttons[pump_idx], lv_color_hex(0xF44336), 0);
+    }
+    
+    // Создать таймер для автоматической остановки
+    g_pump_timers[pump_idx] = lv_timer_create(pump_timer_callback, duration_ms, (void*)(intptr_t)pump_idx);
+    lv_timer_set_repeat_count(g_pump_timers[pump_idx], 1);  // Однократный
+    
+    ESP_LOGI(TAG, "Насос %s запущен на %lu мс", PUMP_NAMES[pump_idx], (unsigned long)duration_ms);
+}
+
+/**
+ * @brief Остановить насос немедленно
+ */
+static void stop_pump_immediately(pump_index_t pump_idx)
+{
+    // Остановить насос
+    pump_stop(PUMP_PINS[pump_idx]);
+    g_pump_running[pump_idx] = false;
+    
+    // Обновить кнопку
+    if (g_button_labels[pump_idx]) {
+        lv_label_set_text(g_button_labels[pump_idx], "Старт");
+    }
+    if (g_start_buttons[pump_idx]) {
+        lv_obj_set_style_bg_color(g_start_buttons[pump_idx], lv_color_hex(0x4CAF50), 0);
+    }
+    
+    // Удалить таймер если есть
+    if (g_pump_timers[pump_idx]) {
+        lv_timer_del(g_pump_timers[pump_idx]);
+        g_pump_timers[pump_idx] = NULL;
+    }
+    
+    ESP_LOGI(TAG, "Насос %s остановлен вручную", PUMP_NAMES[pump_idx]);
 }
 
 /* =============================
@@ -71,23 +127,24 @@ static void show_pump_confirmation(pump_index_t pump_idx, uint32_t duration_ms)
  * ============================= */
 
 /**
- * @brief Callback для кнопки старта насоса
+ * @brief Callback для кнопки старт/стоп насоса
  */
-static void on_pump_start_click(lv_event_t *e)
+static void on_pump_toggle_click(lv_event_t *e)
 {
     pump_index_t pump_idx = (pump_index_t)(intptr_t)lv_event_get_user_data(e);
     
-    // Получить длительность из виджета
-    uint32_t duration_ms = 5000;
-    if (g_duration_inputs[pump_idx] != NULL) {
-        duration_ms = (uint32_t)widget_encoder_value_get(g_duration_inputs[pump_idx]);
+    if (g_pump_running[pump_idx]) {
+        // Насос работает - остановить
+        stop_pump_immediately(pump_idx);
+    } else {
+        // Насос остановлен - запустить
+        uint32_t duration_ms = 5000;
+        if (g_duration_inputs[pump_idx] != NULL) {
+            duration_ms = (uint32_t)widget_encoder_value_get(g_duration_inputs[pump_idx]);
+        }
+        
+        start_pump_async(pump_idx, duration_ms);
     }
-    
-    ESP_LOGI(TAG, "Запрос запуска насоса %s на %lu мс", 
-             PUMP_NAMES[pump_idx], (unsigned long)duration_ms);
-    
-    // Показать popup подтверждения
-    show_pump_confirmation(pump_idx, duration_ms);
 }
 
 /**
@@ -97,8 +154,11 @@ static void on_stop_all_click(lv_event_t *e)
 {
     ESP_LOGI(TAG, "Остановка всех насосов");
     
-    // TODO: Реализовать остановку всех насосов
-    // Пока просто логируем
+    for (int i = 0; i < PUMP_INDEX_COUNT; i++) {
+        if (g_pump_running[i]) {
+            stop_pump_immediately((pump_index_t)i);
+        }
+    }
 }
 
 /* =============================
@@ -109,7 +169,6 @@ lv_obj_t* pumps_manual_screen_create(void *context)
 {
     ESP_LOGI(TAG, "Создание экрана ручного управления");
     
-    // Создание контейнера экрана
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x1a1a1a), 0);
     g_screen = screen;
@@ -168,16 +227,18 @@ lv_obj_t* pumps_manual_screen_create(void *context)
         lv_obj_set_size(duration_widget, 60, 30);
         g_duration_inputs[i] = duration_widget;
         
-        // Кнопка "Старт"
-        lv_obj_t *start_btn = lv_btn_create(pump_item);
-        lv_obj_set_size(start_btn, 60, 30);
-        lv_obj_set_style_bg_color(start_btn, lv_color_hex(0x4CAF50), 0);
-        lv_obj_add_event_cb(start_btn, on_pump_start_click, LV_EVENT_CLICKED, (void*)(intptr_t)i);
-        lv_obj_add_event_cb(start_btn, on_pump_start_click, LV_EVENT_PRESSED, (void*)(intptr_t)i);
+        // Кнопка "Старт/Стоп"
+        lv_obj_t *toggle_btn = lv_btn_create(pump_item);
+        lv_obj_set_size(toggle_btn, 60, 30);
+        lv_obj_set_style_bg_color(toggle_btn, lv_color_hex(0x4CAF50), 0);
+        lv_obj_add_event_cb(toggle_btn, on_pump_toggle_click, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+        lv_obj_add_event_cb(toggle_btn, on_pump_toggle_click, LV_EVENT_PRESSED, (void*)(intptr_t)i);
+        g_start_buttons[i] = toggle_btn;
         
-        lv_obj_t *start_label = lv_label_create(start_btn);
-        lv_label_set_text(start_label, "Старт");
-        lv_obj_center(start_label);
+        lv_obj_t *btn_label = lv_label_create(toggle_btn);
+        lv_label_set_text(btn_label, "Старт");
+        lv_obj_center(btn_label);
+        g_button_labels[i] = btn_label;
     }
     
     // Кнопка "Стоп все"
@@ -200,4 +261,3 @@ lv_obj_t* pumps_manual_screen_create(void *context)
     
     return screen;
 }
-
