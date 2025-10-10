@@ -24,8 +24,6 @@ static ph_ec_pump_callback_t g_pump_callback = NULL;
 static ph_ec_correction_callback_t g_correction_callback = NULL;
 static float g_current_ph = 7.0f;
 static float g_current_ec = 1.0f;
-static void (*g_pump_init_fn)(int, int) = pump_init;
-static void (*g_pump_run_fn)(int, int, uint32_t) = pump_run_ms;
 
 // Имена насосов
 static const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
@@ -37,17 +35,14 @@ static const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
     "Water"
 };
 
-// Конфигурация GPIO для насосов
-static const struct {
-    int ia_pin;
-    int ib_pin;
-} PUMP_PINS[PUMP_INDEX_COUNT] = {
-    {PUMP_PH_UP_IA, PUMP_PH_UP_IB},
-    {PUMP_PH_DOWN_IA, PUMP_PH_DOWN_IB},
-    {PUMP_EC_A_IA, PUMP_EC_A_IB},
-    {PUMP_EC_B_IA, PUMP_EC_B_IB},
-    {PUMP_EC_C_IA, PUMP_EC_C_IB},
-    {PUMP_WATER_IA, PUMP_WATER_IB}
+// GPIO пины для насосов (один пин на насос - через оптопару)
+static const int PUMP_PINS[PUMP_INDEX_COUNT] = {
+    PUMP_PH_UP_PIN,
+    PUMP_PH_DOWN_PIN,
+    PUMP_EC_A_PIN,
+    PUMP_EC_B_PIN,
+    PUMP_EC_C_PIN,
+    PUMP_WATER_PIN
 };
 
 static void notify_pump_callback(pump_index_t pump_idx, bool started)
@@ -68,7 +63,7 @@ static esp_err_t run_pump_with_interface(pump_index_t pump_idx, uint32_t duratio
     if (actuator != NULL && actuator->run_pump_ms != NULL) {
         err = actuator->run_pump_ms(pump_idx, duration_ms);
     } else {
-        pump_run_ms(PUMP_PINS[pump_idx].ia_pin, PUMP_PINS[pump_idx].ib_pin, duration_ms);
+        pump_run_ms(PUMP_PINS[pump_idx], duration_ms);
     }
 
     notify_pump_callback(pump_idx, false);
@@ -84,12 +79,9 @@ esp_err_t ph_ec_controller_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    g_pump_init_fn = pump_init;
-    g_pump_run_fn = pump_run_ms;
-
     // Инициализируем все насосы
     for (int i = 0; i < PUMP_INDEX_COUNT; i++) {
-        g_pump_init_fn(PUMP_PINS[i].ia_pin, PUMP_PINS[i].ib_pin);
+        pump_init(PUMP_PINS[i]);
         
         // Устанавливаем конфигурацию по умолчанию
         g_pump_configs[i].enabled = true;

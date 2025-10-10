@@ -12,18 +12,14 @@ static sensor_interface_t g_sensor_interface = {0};
 static actuator_interface_t g_actuator_interface = {0};
 static bool g_initialized = false;
 
-typedef struct {
-    int ia_pin;
-    int ib_pin;
-} pump_pin_pair_t;
-
-static const pump_pin_pair_t s_pump_pins[PUMP_INDEX_COUNT] = {
-    {PUMP_PH_UP_IA, PUMP_PH_UP_IB},
-    {PUMP_PH_DOWN_IA, PUMP_PH_DOWN_IB},
-    {PUMP_EC_A_IA, PUMP_EC_A_IB},
-    {PUMP_EC_B_IA, PUMP_EC_B_IB},
-    {PUMP_EC_C_IA, PUMP_EC_C_IB},
-    {PUMP_WATER_IA, PUMP_WATER_IB},
+// GPIO пины для насосов (один пин на насос - через оптопару)
+static const int s_pump_pins[PUMP_INDEX_COUNT] = {
+    PUMP_PH_UP_PIN,
+    PUMP_PH_DOWN_PIN,
+    PUMP_EC_A_PIN,
+    PUMP_EC_B_PIN,
+    PUMP_EC_C_PIN,
+    PUMP_WATER_PIN,
 };
 
 static bool default_read_temperature_humidity(float *temperature, float *humidity)
@@ -74,7 +70,7 @@ static esp_err_t default_run_pump_ms(pump_index_t pump, uint32_t duration_ms)
     if (pump >= PUMP_INDEX_COUNT) {
         return ESP_ERR_INVALID_ARG;
     }
-    pump_run_ms(s_pump_pins[pump].ia_pin, s_pump_pins[pump].ib_pin, duration_ms);
+    pump_run_ms(s_pump_pins[pump], duration_ms);
     return ESP_OK;
 }
 

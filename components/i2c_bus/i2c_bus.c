@@ -1,11 +1,53 @@
 #include "i2c_bus.h"
 #include "error_handler.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "i2c_bus";
 
 i2c_master_bus_handle_t i2c_bus_handle = NULL;
 SemaphoreHandle_t i2c_bus_mutex = NULL;
+
+// Счетчик последовательных ошибок для каждого устройства (защита от спама)
+#define MAX_I2C_DEVICES 8
+static struct {
+    uint8_t addr;
+    uint32_t error_count;
+    uint32_t last_error_tick;
+} i2c_error_tracker[MAX_I2C_DEVICES] = {0};
+
+// Проверка, нужно ли логировать ошибку (не спамить)
+static bool should_log_i2c_error(uint8_t dev_addr) {
+    uint32_t now = xTaskGetTickCount();
+    
+    for (int i = 0; i < MAX_I2C_DEVICES; i++) {
+        if (i2c_error_tracker[i].addr == dev_addr || i2c_error_tracker[i].addr == 0) {
+            if (i2c_error_tracker[i].addr == 0) {
+                i2c_error_tracker[i].addr = dev_addr;
+            }
+            
+            // Если прошло меньше 10 секунд (10000 тиков) с последней ошибки
+            uint32_t elapsed_ticks = now - i2c_error_tracker[i].last_error_tick;
+            if (elapsed_ticks < pdMS_TO_TICKS(10000)) {
+                i2c_error_tracker[i].error_count++;
+                
+                // Логируем только каждую 10-ю ошибку
+                if (i2c_error_tracker[i].error_count % 10 == 0) {
+                    i2c_error_tracker[i].last_error_tick = now;
+                    return true;
+                }
+                return false;
+            } else {
+                // Прошло больше 10 секунд - сбрасываем счетчик
+                i2c_error_tracker[i].error_count = 1;
+                i2c_error_tracker[i].last_error_tick = now;
+                return true;
+            }
+        }
+    }
+    return true; // По умолчанию логируем
+}
 
 esp_err_t i2c_bus_init(void)
 {
@@ -77,8 +119,11 @@ esp_err_t i2c_bus_write(uint8_t dev_addr, const uint8_t *data, size_t len)
     // Perform the write transaction with timeout
     err = i2c_master_transmit(dev_handle, data, len, 1000); // 1 second timeout
     if (err != ESP_OK) {
-        ERROR_CHECK_I2C(err, TAG, "Ошибка записи на устройство 0x%02X", dev_addr);
-        ESP_LOGW(TAG, "Failed to write to device 0x%02X: %s", dev_addr, esp_err_to_name(err));
+        // Логируем ошибку только если нужно (защита от спама)
+        if (should_log_i2c_error(dev_addr)) {
+            ERROR_CHECK_I2C(err, TAG, "Ошибка записи на устройство 0x%02X", dev_addr);
+            ESP_LOGW(TAG, "Failed to write to device 0x%02X: %s", dev_addr, esp_err_to_name(err));
+        }
     }
 
     // Remove the device handle
@@ -126,7 +171,10 @@ esp_err_t i2c_bus_read(uint8_t dev_addr, uint8_t *data, size_t len)
     // Perform the read transaction with timeout
     err = i2c_master_receive(dev_handle, data, len, 1000); // 1 second timeout
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to read from device 0x%02X: %s", dev_addr, esp_err_to_name(err));
+        // Логируем ошибку только если нужно (защита от спама)
+        if (should_log_i2c_error(dev_addr)) {
+            ESP_LOGW(TAG, "Failed to read from device 0x%02X: %s", dev_addr, esp_err_to_name(err));
+        }
     }
 
     // Remove the device handle

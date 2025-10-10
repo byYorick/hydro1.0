@@ -444,13 +444,13 @@ static esp_err_t init_pumps(void)
     // Примечание: Инициализация перистальтических насосов и их конфигурация
     // выполняется в ph_ec_controller_init(), который будет вызван позже
     // в init_system_components(). Здесь только логируем пины для справки.
-    ESP_LOGI(TAG, "  Peristaltic pumps (will be initialized in pH/EC controller):");
-    ESP_LOGI(TAG, "    - pH UP:   GPIO%d, GPIO%d", PUMP_PH_UP_IA, PUMP_PH_UP_IB);
-    ESP_LOGI(TAG, "    - pH DOWN: GPIO%d, GPIO%d", PUMP_PH_DOWN_IA, PUMP_PH_DOWN_IB);
-    ESP_LOGI(TAG, "    - EC A:    GPIO%d, GPIO%d", PUMP_EC_A_IA, PUMP_EC_A_IB);
-    ESP_LOGI(TAG, "    - EC B:    GPIO%d, GPIO%d", PUMP_EC_B_IA, PUMP_EC_B_IB);
-    ESP_LOGI(TAG, "    - EC C:    GPIO%d, GPIO%d", PUMP_EC_C_IA, PUMP_EC_C_IB);
-    ESP_LOGI(TAG, "    - WATER:   GPIO%d, GPIO%d", PUMP_WATER_IA, PUMP_WATER_IB);
+    ESP_LOGI(TAG, "  Peristaltic pumps (via optocoupler, initialized in pump_manager):");
+    ESP_LOGI(TAG, "    - pH UP:   GPIO%d", PUMP_PH_UP_PIN);
+    ESP_LOGI(TAG, "    - pH DOWN: GPIO%d", PUMP_PH_DOWN_PIN);
+    ESP_LOGI(TAG, "    - EC A:    GPIO%d", PUMP_EC_A_PIN);
+    ESP_LOGI(TAG, "    - EC B:    GPIO%d", PUMP_EC_B_PIN);
+    ESP_LOGI(TAG, "    - EC C:    GPIO%d", PUMP_EC_C_PIN);
+    ESP_LOGI(TAG, "    - WATER:   GPIO%d", PUMP_WATER_PIN);
     
     // Инициализация реле
     esp_err_t ret = trema_relay_init();

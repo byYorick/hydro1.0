@@ -7,6 +7,7 @@
 #include "screen_manager/screen_manager.h"
 #include "../../widgets/back_button.h"
 #include "../../widgets/status_bar.h"
+#include "../../widgets/encoder_value_edit.h"
 #include "pump_manager.h"
 #include "config_manager.h"
 #include "montserrat14_ru.h"
@@ -76,15 +77,10 @@ static void on_pump_start_click(lv_event_t *e)
 {
     pump_index_t pump_idx = (pump_index_t)(intptr_t)lv_event_get_user_data(e);
     
-    // Получить длительность из поля ввода (по умолчанию 5000 мс)
+    // Получить длительность из виджета
     uint32_t duration_ms = 5000;
     if (g_duration_inputs[pump_idx] != NULL) {
-        const char *text = lv_textarea_get_text(g_duration_inputs[pump_idx]);
-        if (text != NULL && text[0] != '\0') {
-            duration_ms = (uint32_t)atoi(text);
-            if (duration_ms < 100) duration_ms = 100;
-            if (duration_ms > 30000) duration_ms = 30000;
-        }
+        duration_ms = (uint32_t)widget_encoder_value_get(g_duration_inputs[pump_idx]);
     }
     
     ESP_LOGI(TAG, "Запрос запуска насоса %s на %lu мс", 
@@ -158,13 +154,19 @@ lv_obj_t* pumps_manual_screen_create(void *context)
         lv_obj_set_style_text_color(name_label, lv_color_white(), 0);
         lv_obj_set_width(name_label, 60);
         
-        // Поле ввода времени (мс)
-        lv_obj_t *duration_input = lv_textarea_create(pump_item);
-        lv_obj_set_size(duration_input, 60, 30);
-        lv_textarea_set_text(duration_input, "5000");
-        lv_textarea_set_one_line(duration_input, true);
-        lv_textarea_set_max_length(duration_input, 5);
-        g_duration_inputs[i] = duration_input;
+        // Виджет времени (редактируемый энкодером)
+        encoder_value_config_t duration_cfg = {
+            .min_value = 100,
+            .max_value = 30000,
+            .step = 100,
+            .initial_value = 5000,
+            .decimals = 0,
+            .unit = "мс",
+            .edit_color = lv_color_hex(0xFFC107),
+        };
+        lv_obj_t *duration_widget = widget_encoder_value_create(pump_item, &duration_cfg);
+        lv_obj_set_size(duration_widget, 60, 30);
+        g_duration_inputs[i] = duration_widget;
         
         // Кнопка "Старт"
         lv_obj_t *start_btn = lv_btn_create(pump_item);

@@ -43,6 +43,7 @@ idf_component_register(
         "widgets/menu_list.c"
         "widgets/sensor_card.c"
         "widgets/notification_popup.c"
+        "widgets/encoder_value_edit.c"
         
     INCLUDE_DIRS 
         "."

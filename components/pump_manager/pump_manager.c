@@ -20,16 +20,14 @@
 static const char *TAG = "PUMP_MANAGER";
 
 // GPIO пины для насосов (из system_config.h)
-static const struct {
-    int ia_pin;
-    int ib_pin;
-} PUMP_PINS[PUMP_INDEX_COUNT] = {
-    {PUMP_PH_UP_IA, PUMP_PH_UP_IB},
-    {PUMP_PH_DOWN_IA, PUMP_PH_DOWN_IB},
-    {PUMP_EC_A_IA, PUMP_EC_A_IB},
-    {PUMP_EC_B_IA, PUMP_EC_B_IB},
-    {PUMP_EC_C_IA, PUMP_EC_C_IB},
-    {PUMP_WATER_IA, PUMP_WATER_IB}
+// Каждый насос управляется одним GPIO через оптопару
+static const int PUMP_PINS[PUMP_INDEX_COUNT] = {
+    PUMP_PH_UP_PIN,
+    PUMP_PH_DOWN_PIN,
+    PUMP_EC_A_PIN,
+    PUMP_EC_B_PIN,
+    PUMP_EC_C_PIN,
+    PUMP_WATER_PIN
 };
 
 // Имена насосов
@@ -164,8 +162,8 @@ static esp_err_t run_pump_with_retry(pump_index_t pump_idx, uint32_t duration_ms
         ESP_LOGI(TAG, "Запуск насоса %s, попытка %d/%d, длительность %lu мс",
                  PUMP_NAMES[pump_idx], attempt + 1, MAX_RETRIES, (unsigned long)duration_ms);
         
-        // Попытка запуска
-        pump_run_ms(PUMP_PINS[pump_idx].ia_pin, PUMP_PINS[pump_idx].ib_pin, duration_ms);
+        // Попытка запуска через оптопару (один пин)
+        pump_run_ms(PUMP_PINS[pump_idx], duration_ms);
         
         // Проверка успешности (в данной реализации pump_run_ms не возвращает ошибки)
         // Считаем успешным если не было исключения
@@ -293,7 +291,7 @@ esp_err_t pump_manager_init(void) {
     
     // Инициализация насосов
     for (int i = 0; i < PUMP_INDEX_COUNT; i++) {
-        pump_init(PUMP_PINS[i].ia_pin, PUMP_PINS[i].ib_pin);
+        pump_init(PUMP_PINS[i]);
         
         // Инициализация PID контроллеров с дефолтными значениями
         memset(&g_pid_controllers[i], 0, sizeof(pid_controller_t));
@@ -640,8 +638,8 @@ esp_err_t pump_manager_run_direct(pump_index_t pump_idx, uint32_t duration_ms) {
     ESP_LOGI(TAG, "Прямой запуск насоса %s на %lu мс", 
              PUMP_NAMES[pump_idx], (unsigned long)duration_ms);
     
-    // Прямой запуск без PID и большинства проверок
-    pump_run_ms(PUMP_PINS[pump_idx].ia_pin, PUMP_PINS[pump_idx].ib_pin, duration_ms);
+    // Прямой запуск без PID и большинства проверок (через оптопару)
+    pump_run_ms(PUMP_PINS[pump_idx], duration_ms);
     
     // Обновление статистики
     if (xSemaphoreTake(g_pump_mutexes[pump_idx], pdMS_TO_TICKS(1000)) == pdTRUE) {

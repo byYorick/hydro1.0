@@ -696,12 +696,12 @@ static void encoder_task(void *pvParameters)
     encoder_event_t event;
     while (1) {
         if (xQueueReceive(encoder_queue, &event, pdMS_TO_TICKS(100)) == pdTRUE) {
-            // Увеличенный timeout для lazy loading экранов
-            if (!lvgl_lock(500)) {
-                ESP_LOGW(TAG, "Failed to acquire LVGL lock for encoder event");
+            // Увеличенный timeout для lazy loading экранов (до 2 секунд для сложных экранов)
+            if (!lvgl_lock(2000)) {
+                ESP_LOGW(TAG, "Failed to acquire LVGL lock for encoder event after 2s");
                 // Возвращаем событие в очередь для повторной обработки
                 xQueueSendToFront(encoder_queue, &event, 0);
-                vTaskDelay(pdMS_TO_TICKS(50));
+                vTaskDelay(pdMS_TO_TICKS(100));
                 continue;
             }
             
@@ -710,6 +710,9 @@ static void encoder_task(void *pvParameters)
             }
             lvgl_unlock();
         }
+        
+        // Задержка для предотвращения watchdog timeout
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
