@@ -60,9 +60,9 @@ extern "C" {
 /*******************************************************************************
  * КОНФИГУРАЦИЯ ЭНКОДЕРА (для управления UI)
  ******************************************************************************/
-#define ENCODER_PIN_A           1           // CLK (A) пин энкодера
-#define ENCODER_PIN_B           2           // DT (B) пин энкодера
-#define ENCODER_PIN_SW          3           // SW (кнопка) пин энкодера
+#define ENCODER_PIN_A           4           // CLK (A) пин энкодера
+#define ENCODER_PIN_B           5           // DT (B) пин энкодера
+#define ENCODER_PIN_SW          6           // SW (кнопка) пин энкодера
 
 #define ENCODER_LONG_PRESS_MS   2000        // Длительность длинного нажатия (2 сек)
 #define ENCODER_DEBOUNCE_MS     50          // Время дебаунса (мс)
@@ -77,16 +77,16 @@ extern "C" {
  ******************************************************************************/
 
 // Насос pH UP (повышение pH)
-#define PUMP_PH_UP_IA           4           // Управление IA
-#define PUMP_PH_UP_IB           5           // Управление IB
+#define PUMP_PH_UP_IA           35          // Управление IA (изменено с 4 - для энкодера)
+#define PUMP_PH_UP_IB           36          // Управление IB (изменено с 5 - для энкодера)
 
 // Насос pH DOWN (понижение pH)
-#define PUMP_PH_DOWN_IA         6           // Управление IA
+#define PUMP_PH_DOWN_IA         37          // Управление IA (изменено с 6 - для энкодера)
 #define PUMP_PH_DOWN_IB         7           // Управление IB
 
 // Насос EC A (раствор A)
 #define PUMP_EC_A_IA            8           // Управление IA
-#define PUMP_EC_A_IB            13          // Управление IB
+#define PUMP_EC_A_IB            38          // Управление IB (изменено с 13 - конфликт с LCD backlight)
 
 // Насос EC B (раствор B)
 #define PUMP_EC_B_IA            16          // Управление IA
@@ -402,6 +402,7 @@ typedef struct {
  */
 typedef struct {
     bool auto_control_enabled;    // Включен ли автоматический контроль
+    uint8_t display_brightness;   // Яркость дисплея (0-100%)
     sensor_config_t sensor_config[SENSOR_COUNT];  // Конфигурация датчиков
     pump_config_t pump_config[PUMP_INDEX_COUNT];  // Конфигурация насосов
 } system_config_t;

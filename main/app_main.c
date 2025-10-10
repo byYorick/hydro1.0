@@ -496,8 +496,17 @@ static esp_err_t init_system_components(void)
         ESP_LOGE(TAG, "Failed to load system configuration: %s", esp_err_to_name(ret));
         return ret;
     }
-    ESP_LOGI(TAG, "  [OK] Config Manager initialized (auto mode: %s)",
-             g_system_config.auto_control_enabled ? "ON" : "OFF");
+    ESP_LOGI(TAG, "  [OK] Config Manager initialized (auto mode: %s, brightness: %d%%)",
+             g_system_config.auto_control_enabled ? "ON" : "OFF",
+             g_system_config.display_brightness);
+    
+    // Применяем сохраненную яркость дисплея
+    if (g_system_config.display_brightness > 0) {
+        lcd_ili9341_set_brightness(g_system_config.display_brightness);
+        ESP_LOGI(TAG, "  Display brightness restored to %d%%", g_system_config.display_brightness);
+    } else {
+        ESP_LOGW(TAG, "  Display brightness is 0, keeping default 80%%");
+    }
 
     // Interfaces: базовые адаптеры датчиков и исполнительных устройств
     ret = system_interfaces_init();

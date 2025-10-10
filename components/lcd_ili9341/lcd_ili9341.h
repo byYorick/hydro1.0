@@ -21,6 +21,13 @@ lv_display_t* lcd_ili9341_init(void);
 void lcd_ili9341_set_brightness(uint8_t brightness);
 
 /**
+ * @brief Получение текущей яркости дисплея
+ * 
+ * @return uint8_t Уровень яркости (0-100)
+ */
+uint8_t lcd_ili9341_get_brightness(void);
+
+/**
  * @brief Обновление значений датчиков на дисплее (устаревшая функция)
  * 
  * @param ph Значение pH

@@ -9,6 +9,8 @@
 #include "widgets/back_button.h"
 #include "lvgl_styles.h"
 #include "esp_log.h"
+#include "lcd_ili9341.h"
+#include "config_manager.h"
 
 static const char *TAG = "SYSTEM_SCREENS";
 
@@ -142,12 +144,39 @@ static lv_obj_t* wifi_settings_create(void *params)
  *  DISPLAY SETTINGS SCREEN
  * ============================= */
 
+// Callback для изменения яркости
+static void brightness_slider_event_cb(lv_event_t *e)
+{
+    lv_obj_t *slider = lv_event_get_target(e);
+    lv_obj_t *label = (lv_obj_t*)lv_event_get_user_data(e);
+    
+    int32_t value = lv_slider_get_value(slider);
+    
+    // Обновляем текст
+    lv_label_set_text_fmt(label, "%d%%", (int)value);
+    
+    // Применяем яркость
+    lcd_ili9341_set_brightness((uint8_t)value);
+    
+    // Сохраняем в конфигурацию
+    system_config_t config;
+    if (config_load(&config) == ESP_OK) {
+        config.display_brightness = (uint8_t)value;
+        esp_err_t ret = config_save(&config);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to save brightness: %s", esp_err_to_name(ret));
+        } else {
+            ESP_LOGI(TAG, "Brightness saved: %d%%", (int)value);
+        }
+    }
+}
+
 static lv_obj_t* display_settings_create(void *params)
 {
     ESP_LOGI(TAG, "Creating display settings screen");
     
     screen_base_config_t cfg = {
-        .title = "Display Settings",
+        .title = "Display",
         .has_status_bar = true,
         .has_back_button = true,
         .back_callback = NULL,
@@ -155,10 +184,53 @@ static lv_obj_t* display_settings_create(void *params)
     
     screen_base_t base = screen_base_create(&cfg);
     
-    lv_obj_t *label = lv_label_create(base.content);
-    lv_obj_add_style(label, &style_label, 0);
-    lv_label_set_text(label, "Display Configuration\n\n(Placeholder)");
-    lv_obj_center(label);
+    // Получаем текущую яркость
+    uint8_t current_brightness = lcd_ili9341_get_brightness();
+    
+    // Контейнер для настроек яркости
+    lv_obj_t *container = lv_obj_create(base.content);
+    lv_obj_set_size(container, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(container, lv_color_hex(0x1A2332), 0);
+    lv_obj_set_style_border_width(container, 0, 0);
+    lv_obj_set_style_pad_all(container, 15, 0);
+    lv_obj_align(container, LV_ALIGN_TOP_MID, 0, 10);
+    
+    // Заголовок "Яркость"
+    lv_obj_t *title_label = lv_label_create(container);
+    lv_label_set_text(title_label, "Brightness");
+    lv_obj_set_style_text_color(title_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(title_label, LV_ALIGN_TOP_LEFT, 0, 0);
+    
+    // Метка со значением яркости
+    lv_obj_t *value_label = lv_label_create(container);
+    lv_label_set_text_fmt(value_label, "%d%%", current_brightness);
+    lv_obj_set_style_text_color(value_label, lv_color_hex(0x00D4AA), 0);
+    lv_obj_set_style_text_font(value_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(value_label, LV_ALIGN_TOP_RIGHT, 0, 0);
+    
+    // Слайдер яркости
+    lv_obj_t *slider = lv_slider_create(container);
+    lv_obj_set_width(slider, LV_PCT(100));
+    lv_slider_set_range(slider, 10, 100);  // От 10% до 100%
+    lv_slider_set_value(slider, current_brightness, LV_ANIM_OFF);
+    lv_obj_align(slider, LV_ALIGN_TOP_MID, 0, 40);
+    
+    // Стиль слайдера
+    lv_obj_set_style_bg_color(slider, lv_color_hex(0x2D3E50), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(0x00D4AA), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(0x00D4AA), LV_PART_KNOB);
+    lv_obj_set_style_pad_all(slider, 8, LV_PART_KNOB);
+    
+    // Добавляем событие
+    lv_obj_add_event_cb(slider, brightness_slider_event_cb, LV_EVENT_VALUE_CHANGED, value_label);
+    
+    // Подсказка
+    lv_obj_t *hint_label = lv_label_create(container);
+    lv_label_set_text(hint_label, "Rotate encoder to adjust");
+    lv_obj_set_style_text_color(hint_label, lv_color_hex(0xB0BEC5), 0);
+    lv_obj_set_style_text_font(hint_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(hint_label, LV_ALIGN_TOP_MID, 0, 70);
     
     return base.screen;
 }

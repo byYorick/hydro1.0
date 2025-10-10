@@ -31,6 +31,7 @@ static void config_set_defaults(system_config_t *config)
 
     memset(config, 0, sizeof(system_config_t));
     config->auto_control_enabled = true;
+    config->display_brightness = 80;  // Яркость дисплея по умолчанию 80%
 
     const float sensor_targets[SENSOR_COUNT] = {
         PH_TARGET_DEFAULT,

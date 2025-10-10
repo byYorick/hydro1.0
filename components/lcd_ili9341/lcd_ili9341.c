@@ -17,6 +17,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
+#include "driver/ledc.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_lcd_ili9341.h"
@@ -52,7 +53,14 @@
 // Номер пина выбора микросхемы (CS)
 #define PIN_NUM_LCD_CS   10
 // Номер пина управления подсветкой
-#define PIN_NUM_BK_LIGHT 15
+#define PIN_NUM_BK_LIGHT 13
+
+// Конфигурация PWM для управления подсветкой
+#define LCD_LEDC_TIMER         LEDC_TIMER_0
+#define LCD_LEDC_MODE          LEDC_LOW_SPEED_MODE
+#define LCD_LEDC_CHANNEL       LEDC_CHANNEL_0
+#define LCD_LEDC_DUTY_RES      LEDC_TIMER_8_BIT  // 8-бит разрешение (0-255)
+#define LCD_LEDC_FREQUENCY     5000              // Частота PWM 5 кГц
 
 // Горизонтальное разрешение дисплея (в пикселях)
 #define LCD_H_RES              240
@@ -74,6 +82,8 @@
 static SemaphoreHandle_t lvgl_mux = NULL;
 // Дескриптор задачи LVGL для отладки
 static TaskHandle_t lvgl_task_handle = NULL;
+// Текущая яркость дисплея (0-100%)
+static uint8_t current_brightness = 80;
 
 // Предварительные объявления функций
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx);
@@ -211,13 +221,45 @@ lv_display_t* lcd_ili9341_init(void)
     // Выводим информацию о начале инициализации дисплея
     ESP_LOGI("LCD", "Initializing LCD ILI9341 display");
 
-    // Настройка пина управления подсветкой как выход
-    gpio_config_t bk_gpio_config = {
-        .mode = GPIO_MODE_OUTPUT,
-        .pin_bit_mask = 1ULL << PIN_NUM_BK_LIGHT
+    // Настройка PWM для управления подсветкой
+    ESP_LOGI("LCD", "Configuring PWM for backlight control");
+    
+    // Конфигурация таймера LEDC
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode       = LCD_LEDC_MODE,
+        .duty_resolution  = LCD_LEDC_DUTY_RES,
+        .timer_num        = LCD_LEDC_TIMER,
+        .freq_hz          = LCD_LEDC_FREQUENCY,
+        .clk_cfg          = LEDC_AUTO_CLK
     };
-    // Применяем конфигурацию пина
-    ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
+    ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+    ESP_LOGI("LCD", "LEDC timer configured");
+    
+    // Конфигурация канала LEDC
+    ledc_channel_config_t ledc_channel = {
+        .speed_mode     = LCD_LEDC_MODE,
+        .channel        = LCD_LEDC_CHANNEL,
+        .timer_sel      = LCD_LEDC_TIMER,
+        .intr_type      = LEDC_INTR_DISABLE,
+        .gpio_num       = PIN_NUM_BK_LIGHT,
+        .duty           = 204,  // Начинаем с яркостью 80% (204/255)
+        .hpoint         = 0
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
+    ESP_LOGI("LCD", "LEDC channel configured on GPIO%d with initial duty 204", PIN_NUM_BK_LIGHT);
+    
+    // Небольшая задержка для стабилизации PWM
+    vTaskDelay(pdMS_TO_TICKS(10));
+    
+    // Устанавливаем fade service для более надежной работы
+    ESP_ERROR_CHECK(ledc_fade_func_install(0));
+    
+    // Дополнительная проверка - читаем установленное значение
+    uint32_t verify_duty = ledc_get_duty(LCD_LEDC_MODE, LCD_LEDC_CHANNEL);
+    ESP_LOGI("LCD", "PWM backlight initialized at 80%% brightness (verified duty: %lu)", verify_duty);
+    
+    // Сохраняем текущую яркость
+    current_brightness = 80;
 
     // Создаем мьютекс для LVGL
     lvgl_mux = xSemaphoreCreateRecursiveMutex();
@@ -324,11 +366,8 @@ lv_display_t* lcd_ili9341_init(void)
     // Включаем дисплей
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
-    // Включаем подсветку LCD
-    // Выводим информацию о включении подсветки
-    ESP_LOGI("LCD", "Turn on LCD backlight");
-    // Устанавливаем оптимальную яркость для лучшего качества отображения
-    lcd_ili9341_set_brightness(80);
+    // Подсветка LCD уже включена через PWM при инициализации (80% яркость)
+    ESP_LOGI("LCD", "LCD backlight is ON");
     
     // Выводим информацию об инициализации библиотеки LVGL
     ESP_LOGI("LCD", "Initialize LVGL library");
@@ -462,13 +501,26 @@ void lcd_ili9341_set_brightness(uint8_t brightness)
     }
     
     // Преобразуем процент в PWM значение (0-255)
-    uint32_t pwm_value = (brightness * 255) / 100;
+    uint32_t duty = (brightness * 255) / 100;
     
-    // Устанавливаем уровень сигнала для подсветки
-    // Для простоты используем цифровой выход, но можно заменить на PWM
-    gpio_set_level(PIN_NUM_BK_LIGHT, (pwm_value > 127) ? LCD_BK_LIGHT_ON_LEVEL : LCD_BK_LIGHT_OFF_LEVEL);
+    // Устанавливаем PWM duty cycle для подсветки
+    ESP_ERROR_CHECK(ledc_set_duty(LCD_LEDC_MODE, LCD_LEDC_CHANNEL, duty));
+    ESP_ERROR_CHECK(ledc_update_duty(LCD_LEDC_MODE, LCD_LEDC_CHANNEL));
     
-    ESP_LOGI("LCD", "Display brightness set to %d%%", brightness);
+    // Сохраняем текущую яркость
+    current_brightness = brightness;
+    
+    // Читаем текущее значение для проверки
+    uint32_t current_duty = ledc_get_duty(LCD_LEDC_MODE, LCD_LEDC_CHANNEL);
+    
+    ESP_LOGI("LCD", "Display brightness set to %d%% (duty: %lu, verified: %lu)", 
+             brightness, duty, current_duty);
+}
+
+// Функция получения текущей яркости дисплея
+uint8_t lcd_ili9341_get_brightness(void)
+{
+    return current_brightness;
 }
 
 // Функция получения устройства ввода энкодера
