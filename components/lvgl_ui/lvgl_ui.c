@@ -11,6 +11,7 @@
 #include "lvgl_styles.h"
 #include "../error_handler/error_handler.h"
 // Используем только встроенные шрифты LVGL
+#include "montserrat14_ru.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -287,7 +288,7 @@ void init_styles(void)  // Глобальная функция - объявле�
     // Стиль основного заголовка - крупный и четкий
     lv_style_init(&style_title);
     lv_style_set_text_color(&style_title, COLOR_TEXT);
-    lv_style_set_text_font(&style_title, &lv_font_montserrat_14);
+    lv_style_set_text_font(&style_title, &montserrat_ru);
     lv_style_set_text_opa(&style_title, LV_OPA_COVER);
     lv_style_set_pad_ver(&style_title, 8);
 
@@ -322,20 +323,20 @@ void init_styles(void)  // Глобальная функция - объявле�
     // Стиль больших значений датчиков - яркий и читаемый
     lv_style_init(&style_value_large);
     lv_style_set_text_color(&style_value_large, COLOR_ACCENT_SOFT);
-    lv_style_set_text_font(&style_value_large, &lv_font_montserrat_14);
+    lv_style_set_text_font(&style_value_large, &montserrat_ru);
     lv_style_set_text_opa(&style_value_large, LV_OPA_COVER);
     lv_style_set_pad_ver(&style_value_large, 4);
 
     // Стиль единиц измерения - компактный
     lv_style_init(&style_unit);
     lv_style_set_text_color(&style_unit, COLOR_TEXT_MUTED);
-    lv_style_set_text_font(&style_unit, &lv_font_montserrat_14); // Используем доступный шрифт
+    lv_style_set_text_font(&style_unit, &montserrat_ru); // Русский шрифт с кириллицей
     lv_style_set_text_opa(&style_unit, LV_OPA_COVER);
 
     // Стиль названий датчиков - читаемый шрифт
     lv_style_init(&style_label);
     lv_style_set_text_color(&style_label, COLOR_TEXT);
-    lv_style_set_text_font(&style_label, &lv_font_montserrat_14); // Используется из LVGL
+    lv_style_set_text_font(&style_label, &montserrat_ru); // Русский шрифт с кириллицей
     lv_style_set_text_opa(&style_label, LV_OPA_COVER);
 
     // Стиль статусных индикаторов
@@ -423,28 +424,28 @@ void init_styles(void)  // Глобальная функция - объявле�
     // Стиль заголовка детализации
     lv_style_init(&style_detail_title);
     lv_style_set_text_color(&style_detail_title, COLOR_TEXT);
-    lv_style_set_text_font(&style_detail_title, &lv_font_montserrat_14);
+    lv_style_set_text_font(&style_detail_title, &montserrat_ru);
     lv_style_set_text_opa(&style_detail_title, LV_OPA_COVER);
     lv_style_set_pad_ver(&style_detail_title, 8);
 
     // Стиль значения в детализации - очень крупный
     lv_style_init(&style_detail_value);
     lv_style_set_text_color(&style_detail_value, COLOR_ACCENT_SOFT);
-    lv_style_set_text_font(&style_detail_value, &lv_font_montserrat_14);
+    lv_style_set_text_font(&style_detail_value, &montserrat_ru);
     lv_style_set_text_opa(&style_detail_value, LV_OPA_COVER);
     lv_style_set_pad_ver(&style_detail_value, 8);
 
     // Стиль очень крупного значения в детализации (алиас для style_detail_value)
     lv_style_init(&style_detail_value_big);
     lv_style_set_text_color(&style_detail_value_big, COLOR_ACCENT_SOFT);
-    lv_style_set_text_font(&style_detail_value_big, &lv_font_montserrat_14);  // Используем доступный шрифт (14)
+    lv_style_set_text_font(&style_detail_value_big, &montserrat_ru);  // Русский шрифт с кириллицей
     lv_style_set_text_opa(&style_detail_value_big, LV_OPA_COVER);
     lv_style_set_pad_ver(&style_detail_value_big, 12);
 
     // Стиль дополнительной информации
     lv_style_init(&style_detail_info);
     lv_style_set_text_color(&style_detail_info, COLOR_TEXT_MUTED);
-    lv_style_set_text_font(&style_detail_info, &lv_font_montserrat_14);
+    lv_style_set_text_font(&style_detail_info, &montserrat_ru);
     lv_style_set_text_opa(&style_detail_info, LV_OPA_COVER);
 
     // =============================================

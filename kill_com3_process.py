@@ -2,7 +2,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Скрипт для завершения процессов, использующих COM3 порт
+Скрипт для завершения процессов, использующих COM10 порт
 """
 
 import subprocess
@@ -11,9 +11,9 @@ import os
 import signal
 import psutil
 
-def find_com3_processes():
-    """Найти процессы, использующие COM3 порт"""
-    com3_processes = []
+def find_com10_processes():
+    """Найти процессы, использующие COM10 порт"""
+    com10_processes = []
     
     try:
         # Поиск через netstat
@@ -21,19 +21,19 @@ def find_com3_processes():
         lines = result.stdout.split('\n')
         
         for line in lines:
-            if 'COM3' in line or ':COM3' in line:
+            if 'COM10' in line:
                 parts = line.split()
                 if len(parts) >= 5:
                     try:
                         pid = int(parts[-1])
-                        com3_processes.append(pid)
+                        com10_processes.append(pid)
                         print(f"Найден процесс с PID {pid}: {line.strip()}")
                     except ValueError:
                         continue
     except Exception as e:
         print(f"Ошибка при поиске через netstat: {e}")
     
-    return com3_processes
+    return com10_processes
 
 def kill_process(pid):
     """Завершить процесс по PID"""
@@ -88,18 +88,18 @@ def find_serial_related_processes():
     return related_processes
 
 def main():
-    print("=== Скрипт завершения процессов COM3 ===\n")
+    print("=== Скрипт завершения процессов COM10 ===\n")
     
-    # Поиск процессов, использующих COM3
-    print("1. Поиск процессов, использующих COM3...")
-    com3_pids = find_com3_processes()
+    # Поиск процессов, использующих COM10
+    print("1. Поиск процессов, использующих COM10...")
+    com10_pids = find_com10_processes()
     
-    if com3_pids:
-        print(f"\nНайдено {len(com3_pids)} процессов, использующих COM3")
-        for pid in com3_pids:
+    if com10_pids:
+        print(f"\nНайдено {len(com10_pids)} процессов, использующих COM10")
+        for pid in com10_pids:
             kill_process(pid)
     else:
-        print("Процессы, использующие COM3, не найдены")
+        print("Процессы, использующие COM10, не найдены")
     
     # Поиск связанных процессов
     print("\n2. Поиск связанных с COM портами процессов...")
@@ -117,9 +117,9 @@ def main():
     
     # Финальная проверка
     print("\n3. Финальная проверка...")
-    final_check = find_com3_processes()
+    final_check = find_com10_processes()
     if final_check:
-        print("❌ COM3 все еще занят следующими процессами:")
+        print("❌ COM10 все еще занят следующими процессами:")
         for pid in final_check:
             try:
                 proc = psutil.Process(pid)
@@ -127,7 +127,7 @@ def main():
             except:
                 print(f"  Неизвестный процесс (PID: {pid})")
     else:
-        print("✅ COM3 порт свободен!")
+        print("✅ COM10 порт свободен!")
     
     print("\nСкрипт завершен.")
 

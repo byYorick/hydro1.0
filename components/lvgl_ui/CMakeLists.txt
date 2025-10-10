@@ -23,6 +23,19 @@ idf_component_register(
         "screens/system/system_menu_screen.c"
         "screens/system/system_screens.c"
         
+        # Pump screens
+        "screens/pumps/pumps_status_screen.c"
+        "screens/pumps/pumps_manual_screen.c"
+        "screens/pumps/pump_calibration_screen.c"
+        
+        # PID screens
+        "screens/pid/pid_main_screen.c"
+        "screens/pid/pid_detail_screen.c"
+        "screens/pid/pid_tuning_screen.c"
+        "screens/pid/pid_advanced_screen.c"
+        "screens/pid/pid_thresholds_screen.c"
+        "screens/pid/pid_graph_screen.c"
+        
         # Widgets
         "widgets/back_button.c"
         "widgets/status_bar.c"
@@ -37,7 +50,14 @@ idf_component_register(
         "screens/base"
         "screens/sensor"
         "screens/system"
+        "screens/pumps"
+        "screens/pid"
         "widgets"
+        
+    REQUIRES
+        pump_manager
+        config_manager
+        data_logger
         
     PRIV_REQUIRES 
         lvgl__lvgl 
@@ -46,8 +66,6 @@ idf_component_register(
         main 
         ph_ec_controller
         nvs_flash
-        config_manager
-        data_logger
         notification_system
         error_handler
 )

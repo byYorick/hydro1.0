@@ -64,6 +64,7 @@
 #include "data_logger.h"
 #include "task_scheduler.h"
 #include "ph_ec_controller.h"
+#include "pump_manager.h"
 #include "system_interfaces.h"
 
 // Драйверы оборудования
@@ -560,6 +561,22 @@ static esp_err_t init_system_components(void)
     }
     task_scheduler_set_event_callback(task_event_callback);
     ESP_LOGI(TAG, "  [OK] Task Scheduler initialized");
+
+    // Инициализация Pump Manager с PID контроллерами
+    ret = pump_manager_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize pump manager: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  [OK] Pump Manager initialized (6 pumps with PID)");
+    
+    // Применение конфигурации PID из NVS
+    ret = pump_manager_apply_config(&g_system_config);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "  [WARN] Failed to apply pump manager config: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "  [OK] Pump Manager config applied from NVS");
+    }
 
     ret = ph_ec_controller_init();
     if (ret != ESP_OK) {

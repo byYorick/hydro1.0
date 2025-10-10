@@ -8,6 +8,7 @@
 #include "screens/base/screen_base.h"
 #include "widgets/back_button.h"
 #include "lvgl_styles.h"
+#include "montserrat14_ru.h"
 #include "esp_log.h"
 #include "lcd_ili9341.h"
 #include "config_manager.h"
@@ -199,14 +200,14 @@ static lv_obj_t* display_settings_create(void *params)
     lv_obj_t *title_label = lv_label_create(container);
     lv_label_set_text(title_label, "Brightness");
     lv_obj_set_style_text_color(title_label, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(title_label, &montserrat_ru, 0);
     lv_obj_align(title_label, LV_ALIGN_TOP_LEFT, 0, 0);
     
     // Метка со значением яркости
     lv_obj_t *value_label = lv_label_create(container);
     lv_label_set_text_fmt(value_label, "%d%%", current_brightness);
     lv_obj_set_style_text_color(value_label, lv_color_hex(0x00D4AA), 0);
-    lv_obj_set_style_text_font(value_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(value_label, &montserrat_ru, 0);
     lv_obj_align(value_label, LV_ALIGN_TOP_RIGHT, 0, 0);
     
     // Слайдер яркости
@@ -229,7 +230,7 @@ static lv_obj_t* display_settings_create(void *params)
     lv_obj_t *hint_label = lv_label_create(container);
     lv_label_set_text(hint_label, "Rotate encoder to adjust");
     lv_obj_set_style_text_color(hint_label, lv_color_hex(0xB0BEC5), 0);
-    lv_obj_set_style_text_font(hint_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(hint_label, &montserrat_ru, 0);
     lv_obj_align(hint_label, LV_ALIGN_TOP_MID, 0, 70);
     
     return base.screen;

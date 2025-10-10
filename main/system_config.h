@@ -398,6 +398,39 @@ typedef struct {
 } pump_config_t;
 
 /**
+ * @brief Конфигурация PID контроллера для насоса
+ */
+typedef struct {
+    // Основные PID коэффициенты
+    float kp;                    // Пропорциональный коэффициент
+    float ki;                    // Интегральный коэффициент
+    float kd;                    // Дифференциальный коэффициент
+    
+    // Лимиты выхода
+    float output_min;            // Минимальный выход (мл)
+    float output_max;            // Максимальный выход (мл)
+    
+    // Расширенные параметры
+    float deadband;              // Мертвая зона (не корректировать если ошибка < deadband)
+    float integral_max;          // Максимальное значение интеграла (anti-windup)
+    float sample_time_ms;        // Время выборки для PID (мс)
+    
+    // Ограничения безопасности
+    float max_dose_per_cycle;    // Максимальная доза за один цикл (мл)
+    uint32_t cooldown_time_ms;   // Время между коррекциями (мс)
+    uint32_t max_daily_volume;   // Максимальный суточный объем (мл)
+    
+    // Режимы работы
+    bool enabled;                // Включен ли PID
+    bool auto_reset_integral;    // Автосброс интеграла при смене знака ошибки
+    bool use_derivative_filter;  // Использовать фильтр для D-компоненты
+    
+    // Пороги срабатывания PID
+    float activation_threshold;   // Порог активации PID (разница от целевого значения)
+    float deactivation_threshold; // Порог деактивации (когда считать что достигли цели)
+} pid_config_t;
+
+/**
  * @brief Основная конфигурация системы
  */
 typedef struct {
@@ -405,6 +438,7 @@ typedef struct {
     uint8_t display_brightness;   // Яркость дисплея (0-100%)
     sensor_config_t sensor_config[SENSOR_COUNT];  // Конфигурация датчиков
     pump_config_t pump_config[PUMP_INDEX_COUNT];  // Конфигурация насосов
+    pid_config_t pump_pid[PUMP_INDEX_COUNT];      // PID конфигурация для насосов
 } system_config_t;
 
 #ifdef __cplusplus

@@ -79,6 +79,68 @@ static void config_set_defaults(system_config_t *config)
         pump_cfg->cooldown_ms = PUMP_COOLDOWN_MS;
         pump_cfg->concentration_factor = 1.0f;
     }
+
+    // Инициализация PID конфигураций для насосов
+    // pH UP/DOWN: Kp=2.0, Ki=0.5, Kd=0.1
+    for (int i = PUMP_INDEX_PH_UP; i <= PUMP_INDEX_PH_DOWN; i++) {
+        config->pump_pid[i].kp = 2.0f;
+        config->pump_pid[i].ki = 0.5f;
+        config->pump_pid[i].kd = 0.1f;
+        config->pump_pid[i].output_min = 1.0f;
+        config->pump_pid[i].output_max = 50.0f;
+        config->pump_pid[i].deadband = 0.05f;
+        config->pump_pid[i].integral_max = 100.0f;
+        config->pump_pid[i].sample_time_ms = 5000.0f;
+        config->pump_pid[i].max_dose_per_cycle = 10.0f;
+        config->pump_pid[i].cooldown_time_ms = 60000;
+        config->pump_pid[i].max_daily_volume = 500;
+        config->pump_pid[i].enabled = false;
+        config->pump_pid[i].auto_reset_integral = true;
+        config->pump_pid[i].use_derivative_filter = false;
+        // Пороги срабатывания для pH
+        config->pump_pid[i].activation_threshold = 0.3f;      // Начинать коррекцию при отклонении >0.3 pH
+        config->pump_pid[i].deactivation_threshold = 0.05f;   // Цель достигнута при отклонении <0.05 pH
+    }
+    
+    // EC A/B/C: Kp=1.5, Ki=0.3, Kd=0.05
+    for (int i = PUMP_INDEX_EC_A; i <= PUMP_INDEX_EC_C; i++) {
+        config->pump_pid[i].kp = 1.5f;
+        config->pump_pid[i].ki = 0.3f;
+        config->pump_pid[i].kd = 0.05f;
+        config->pump_pid[i].output_min = 1.0f;
+        config->pump_pid[i].output_max = 100.0f;
+        config->pump_pid[i].deadband = 0.1f;
+        config->pump_pid[i].integral_max = 200.0f;
+        config->pump_pid[i].sample_time_ms = 10000.0f;
+        config->pump_pid[i].max_dose_per_cycle = 20.0f;
+        config->pump_pid[i].cooldown_time_ms = 120000;
+        config->pump_pid[i].max_daily_volume = 1000;
+        config->pump_pid[i].enabled = false;
+        config->pump_pid[i].auto_reset_integral = true;
+        config->pump_pid[i].use_derivative_filter = false;
+        // Пороги срабатывания для EC
+        config->pump_pid[i].activation_threshold = 0.2f;      // Начинать коррекцию при отклонении >0.2 EC
+        config->pump_pid[i].deactivation_threshold = 0.05f;   // Цель достигнута при отклонении <0.05 EC
+    }
+    
+    // Water: Kp=1.0, Ki=0.2, Kd=0.0
+    config->pump_pid[PUMP_INDEX_WATER].kp = 1.0f;
+    config->pump_pid[PUMP_INDEX_WATER].ki = 0.2f;
+    config->pump_pid[PUMP_INDEX_WATER].kd = 0.0f;
+    config->pump_pid[PUMP_INDEX_WATER].output_min = 5.0f;
+    config->pump_pid[PUMP_INDEX_WATER].output_max = 200.0f;
+    config->pump_pid[PUMP_INDEX_WATER].deadband = 0.05f;
+    config->pump_pid[PUMP_INDEX_WATER].integral_max = 150.0f;
+    config->pump_pid[PUMP_INDEX_WATER].sample_time_ms = 10000.0f;
+    config->pump_pid[PUMP_INDEX_WATER].max_dose_per_cycle = 50.0f;
+    config->pump_pid[PUMP_INDEX_WATER].cooldown_time_ms = 120000;
+    config->pump_pid[PUMP_INDEX_WATER].max_daily_volume = 2000;
+    config->pump_pid[PUMP_INDEX_WATER].enabled = false;
+    config->pump_pid[PUMP_INDEX_WATER].auto_reset_integral = true;
+    config->pump_pid[PUMP_INDEX_WATER].use_derivative_filter = false;
+    // Пороги срабатывания для Water (используется для разбавления EC)
+    config->pump_pid[PUMP_INDEX_WATER].activation_threshold = 0.2f;      // Начинать коррекцию при отклонении >0.2 EC
+    config->pump_pid[PUMP_INDEX_WATER].deactivation_threshold = 0.05f;   // Цель достигнута при отклонении <0.05 EC
 }
 
 static esp_err_t config_save_locked(const system_config_t *config)
@@ -238,4 +300,12 @@ const system_config_t *config_manager_get_cached(void)
         return NULL;
     }
     return &s_cached_config;
+}
+
+void config_manager_get_defaults(system_config_t *config)
+{
+    if (config == NULL) {
+        return;
+    }
+    config_set_defaults(config);
 }

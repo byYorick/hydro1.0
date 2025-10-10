@@ -45,6 +45,21 @@ static void on_reset_click(lv_event_t *e) {
     screen_show("reset_confirm", NULL);
 }
 
+static void on_pumps_status_click(lv_event_t *e) {
+    ESP_LOGI(TAG, "Pumps Status clicked");
+    screen_show("pumps_status", NULL);
+}
+
+static void on_pid_settings_click(lv_event_t *e) {
+    ESP_LOGI(TAG, "PID Settings clicked");
+    screen_show("pid_main", NULL);
+}
+
+static void on_pump_calibration_click(lv_event_t *e) {
+    ESP_LOGI(TAG, "Pump Calibration clicked");
+    screen_show("pump_calibration", NULL);
+}
+
 /**
  * @brief Callback при показе системного меню
  */
@@ -76,6 +91,24 @@ static lv_obj_t* system_menu_create(void *params)
     
     // Пункты системного меню - компактные с символами LVGL
     menu_item_config_t items[] = {
+        {
+            .text = "Статус насосов",
+            .icon = LV_SYMBOL_CHARGE,
+            .callback = on_pumps_status_click,
+            .user_data = NULL,
+        },
+        {
+            .text = "PID Настройки",
+            .icon = LV_SYMBOL_SETTINGS,
+            .callback = on_pid_settings_click,
+            .user_data = NULL,
+        },
+        {
+            .text = "Калибровка",
+            .icon = LV_SYMBOL_EDIT,
+            .callback = on_pump_calibration_click,
+            .user_data = NULL,
+        },
         {
             .text = "Auto Control",
             .icon = LV_SYMBOL_PLAY,

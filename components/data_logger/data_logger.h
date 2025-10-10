@@ -161,6 +161,46 @@ esp_err_t data_logger_set_auto_cleanup(bool enabled, uint32_t days);
  */
 const char* data_logger_type_to_string(log_record_type_t type);
 
+/**
+ * @brief Логирование статистики насоса на SD карту (pump_stats.csv)
+ * @param pump Индекс насоса
+ * @param volume_ml Объем (мл)
+ * @param duration_ms Длительность (мс)
+ * @return ESP_OK при успехе
+ */
+esp_err_t data_logger_log_pump_stats(uint8_t pump, float volume_ml, uint32_t duration_ms);
+
+/**
+ * @brief Логирование PID коррекции (буферизация + JSON формат)
+ * @param pump Индекс насоса
+ * @param setpoint Целевое значение
+ * @param current Текущее значение
+ * @param p_term P-компонента
+ * @param i_term I-компонента
+ * @param d_term D-компонента
+ * @param output_ml Выход (мл)
+ * @param status Статус ("OK", "ERROR", "DAILY_LIMIT_EXCEEDED", etc.)
+ * @return ESP_OK при успехе
+ */
+esp_err_t data_logger_log_pid_correction(uint8_t pump, float setpoint, float current,
+                                          float p_term, float i_term, float d_term,
+                                          float output_ml, const char* status);
+
+/**
+ * @brief Принудительный flush буфера PID логов на SD
+ * @return ESP_OK при успехе
+ */
+esp_err_t data_logger_flush_pid_logs(void);
+
+/**
+ * @brief Логирование калибровки насоса
+ * @param pump Индекс насоса
+ * @param old_flow_rate Старый расход (мл/сек)
+ * @param new_flow_rate Новый расход (мл/сек)
+ * @return ESP_OK при успехе
+ */
+esp_err_t data_logger_log_pump_calibration(uint8_t pump, float old_flow_rate, float new_flow_rate);
+
 // Константы для совместимости
 #define LOG_AUTO_CLEANUP_DAYS 7
 

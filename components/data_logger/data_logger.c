@@ -518,3 +518,147 @@ const char* data_logger_type_to_string(log_record_type_t type)
         default: return "unknown";
     }
 }
+
+// ============================================================================
+// PID LOGGING FUNCTIONS (SD Card)
+// ============================================================================
+
+#define PID_LOG_BUFFER_SIZE 10
+
+typedef struct {
+    uint8_t pump;
+    float setpoint;
+    float current;
+    float p_term;
+    float i_term;
+    float d_term;
+    float output_ml;
+    char status[32];
+    uint32_t timestamp;
+} pid_log_entry_t;
+
+static pid_log_entry_t g_pid_log_buffer[PID_LOG_BUFFER_SIZE];
+static uint8_t g_pid_log_count = 0;
+static SemaphoreHandle_t g_pid_log_mutex = NULL;
+
+static const char* PUMP_NAMES_FOR_LOG[] = {
+    "pH_UP", "pH_DOWN", "EC_A", "EC_B", "EC_C", "Water"
+};
+
+static esp_err_t ensure_pid_log_mutex(void) {
+    if (g_pid_log_mutex == NULL) {
+        g_pid_log_mutex = xSemaphoreCreateMutex();
+        if (g_pid_log_mutex == NULL) {
+            ESP_LOGE(TAG, "Failed to create PID log mutex");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    return ESP_OK;
+}
+
+esp_err_t data_logger_log_pid_correction(uint8_t pump, float setpoint, float current,
+                                          float p_term, float i_term, float d_term,
+                                          float output_ml, const char* status) {
+    if (pump >= 6 || status == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (ensure_pid_log_mutex() != ESP_OK) {
+        return ESP_FAIL;
+    }
+    
+    if (xSemaphoreTake(g_pid_log_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    // Добавление в буфер
+    if (g_pid_log_count < PID_LOG_BUFFER_SIZE) {
+        pid_log_entry_t *entry = &g_pid_log_buffer[g_pid_log_count];
+        entry->pump = pump;
+        entry->setpoint = setpoint;
+        entry->current = current;
+        entry->p_term = p_term;
+        entry->i_term = i_term;
+        entry->d_term = d_term;
+        entry->output_ml = output_ml;
+        strncpy(entry->status, status, sizeof(entry->status) - 1);
+        entry->status[sizeof(entry->status) - 1] = '\0';
+        entry->timestamp = (uint32_t)time(NULL);
+        
+        g_pid_log_count++;
+        
+        // Автоматический flush при заполнении буфера
+        if (g_pid_log_count >= PID_LOG_BUFFER_SIZE) {
+            ESP_LOGI(TAG, "PID log buffer full, flushing to SD");
+            xSemaphoreGive(g_pid_log_mutex);
+            return data_logger_flush_pid_logs();
+        }
+    }
+    
+    xSemaphoreGive(g_pid_log_mutex);
+    return ESP_OK;
+}
+
+esp_err_t data_logger_flush_pid_logs(void) {
+    if (ensure_pid_log_mutex() != ESP_OK) {
+        return ESP_FAIL;
+    }
+    
+    if (xSemaphoreTake(g_pid_log_mutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    if (g_pid_log_count == 0) {
+        xSemaphoreGive(g_pid_log_mutex);
+        return ESP_OK;
+    }
+    
+    ESP_LOGI(TAG, "Flushing %d PID log entries to SD", g_pid_log_count);
+    
+    // TODO: Реальная запись на SD карту
+    // Пока просто логируем в ESP_LOG
+    for (int i = 0; i < g_pid_log_count; i++) {
+        pid_log_entry_t *entry = &g_pid_log_buffer[i];
+        ESP_LOGI(TAG, "PID[%s]: target=%.2f curr=%.2f P=%.2f I=%.2f D=%.2f out=%.2f status=%s",
+                 PUMP_NAMES_FOR_LOG[entry->pump],
+                 entry->setpoint, entry->current,
+                 entry->p_term, entry->i_term, entry->d_term,
+                 entry->output_ml, entry->status);
+    }
+    
+    // Очистка буфера
+    g_pid_log_count = 0;
+    
+    xSemaphoreGive(g_pid_log_mutex);
+    return ESP_OK;
+}
+
+esp_err_t data_logger_log_pump_stats(uint8_t pump, float volume_ml, uint32_t duration_ms) {
+    if (pump >= 6) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // TODO: Реальная запись на SD карту в pump_stats.csv
+    // Пока просто логируем
+    ESP_LOGI(TAG, "Pump stats[%s]: volume=%.2f ml, duration=%lu ms",
+             PUMP_NAMES_FOR_LOG[pump], volume_ml, (unsigned long)duration_ms);
+    
+    return ESP_OK;
+}
+
+esp_err_t data_logger_log_pump_calibration(uint8_t pump, float old_flow_rate, float new_flow_rate) {
+    if (pump >= 6) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // TODO: Реальная запись на SD карту
+    // Пока просто логируем
+    ESP_LOGI(TAG, "Pump calibration[%s]: old_rate=%.3f ml/s, new_rate=%.3f ml/s",
+             PUMP_NAMES_FOR_LOG[pump], old_flow_rate, new_flow_rate);
+    
+    // Также логируем как системное событие
+    char msg[128];
+    snprintf(msg, sizeof(msg), "Калибровка %s: %.3f -> %.3f мл/с",
+             PUMP_NAMES_FOR_LOG[pump], old_flow_rate, new_flow_rate);
+    return data_logger_log_system_event(LOG_LEVEL_INFO, msg);
+}

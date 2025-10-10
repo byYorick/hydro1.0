@@ -1,4 +1,5 @@
 #include "ph_ec_controller.h"
+#include "pump_manager.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -56,6 +57,8 @@ static void notify_pump_callback(pump_index_t pump_idx, bool started)
     }
 }
 
+// Устаревшая функция - теперь используется pump_manager
+static esp_err_t run_pump_with_interface(pump_index_t pump_idx, uint32_t duration_ms) __attribute__((unused));
 static esp_err_t run_pump_with_interface(pump_index_t pump_idx, uint32_t duration_ms)
 {
     const actuator_interface_t *actuator = system_interfaces_get_actuator_interface();
@@ -209,41 +212,23 @@ esp_err_t ph_ec_controller_correct_ph(float current_ph)
         return ESP_ERR_TIMEOUT;
     }
 
-    float error = current_ph - g_ph_params.target_ph;
+    float target_ph = g_ph_params.target_ph;
     
-    // Проверяем мертвую зону
-    if (fabsf(error) < g_ph_params.deadband) {
-        xSemaphoreGive(g_mutex);
-        return ESP_OK; // В пределах нормы
-    }
-
     // Определяем какой насос использовать
     pump_index_t pump_idx;
-    if (error > 0) {
+    if (current_ph > target_ph) {
         pump_idx = PUMP_INDEX_PH_DOWN; // pH выше целевого, нужно понизить
     } else {
         pump_idx = PUMP_INDEX_PH_UP; // pH ниже целевого, нужно повысить
     }
 
-    // Вычисляем длительность работы насоса
-    float correction = fminf(fabsf(error), g_ph_params.max_correction_step);
-    uint32_t duration_ms = (uint32_t)(correction * 1000.0f / 
-                                      g_pump_configs[pump_idx].flow_rate_ml_per_sec);
-    
-    // Ограничиваем длительность
-    duration_ms = fmaxf(duration_ms, g_pump_configs[pump_idx].min_duration_ms);
-    duration_ms = fminf(duration_ms, g_pump_configs[pump_idx].max_duration_ms);
-
     xSemaphoreGive(g_mutex);
 
-    // Запускаем насос
-    ESP_LOGI(TAG, "Correcting pH: %.2f -> %.2f (pump: %s, duration: %lums)",
-             current_ph, g_ph_params.target_ph, PUMP_NAMES[pump_idx], 
-             (unsigned long)duration_ms);
+    // PID расчет и выполнение через pump_manager
+    ESP_LOGI(TAG, "Коррекция pH через PID: текущ=%.2f цель=%.2f насос=%s",
+             current_ph, target_ph, PUMP_NAMES[pump_idx]);
     
-    run_pump_with_interface(pump_idx, duration_ms);
-
-    return ESP_OK;
+    return pump_manager_compute_and_execute(pump_idx, current_ph, target_ph);
 }
 
 esp_err_t ph_ec_controller_correct_ec(float current_ec)
@@ -256,59 +241,41 @@ esp_err_t ph_ec_controller_correct_ec(float current_ec)
         return ESP_ERR_TIMEOUT;
     }
 
-    float error = g_ec_params.target_ec - current_ec;
+    float target_ec = g_ec_params.target_ec;
+    float error = target_ec - current_ec;
 
-    // Проверяем мертвую зону
-    if (fabsf(error) < g_ec_params.deadband) {
-        xSemaphoreGive(g_mutex);
-        return ESP_OK; // В пределах нормы
-    }
+    xSemaphoreGive(g_mutex);
 
     if (error < 0) {
         // EC выше целевого, нужно разбавить водой
-        uint32_t duration_ms = (uint32_t)(fabsf(error) * 1000.0f / 
-                                          g_pump_configs[PUMP_INDEX_WATER].flow_rate_ml_per_sec);
-        duration_ms = fmaxf(duration_ms, g_pump_configs[PUMP_INDEX_WATER].min_duration_ms);
-        duration_ms = fminf(duration_ms, g_pump_configs[PUMP_INDEX_WATER].max_duration_ms);
-
-        xSemaphoreGive(g_mutex);
-
-        ESP_LOGI(TAG, "Correcting EC with water: %.2f -> %.2f (duration: %lums)",
-                 current_ec, g_ec_params.target_ec, (unsigned long)duration_ms);
+        ESP_LOGI(TAG, "Коррекция EC водой через PID: текущ=%.2f цель=%.2f",
+                 current_ec, target_ec);
         
-        run_pump_with_interface(PUMP_INDEX_WATER, duration_ms);
+        return pump_manager_compute_and_execute(PUMP_INDEX_WATER, current_ec, target_ec);
     } else {
         // EC ниже целевого, нужно добавить питательные вещества
-        float correction = fminf(error, g_ec_params.max_correction_step);
+        // Запускаем все три насоса EC последовательно через PID
+        ESP_LOGI(TAG, "Коррекция EC питательными веществами через PID: текущ=%.2f цель=%.2f",
+                 current_ec, target_ec);
+
+        esp_err_t result = ESP_OK;
         
-        // Вычисляем длительность для каждого компонента
-        uint32_t duration_a = (uint32_t)(correction * g_ec_params.ratio_a * 1000.0f /
-                                         g_pump_configs[PUMP_INDEX_EC_A].flow_rate_ml_per_sec);
-        uint32_t duration_b = (uint32_t)(correction * g_ec_params.ratio_b * 1000.0f /
-                                         g_pump_configs[PUMP_INDEX_EC_B].flow_rate_ml_per_sec);
-        uint32_t duration_c = (uint32_t)(correction * g_ec_params.ratio_c * 1000.0f /
-                                         g_pump_configs[PUMP_INDEX_EC_C].flow_rate_ml_per_sec);
+        // EC A
+        esp_err_t err_a = pump_manager_compute_and_execute(PUMP_INDEX_EC_A, current_ec, target_ec);
+        if (err_a != ESP_OK) result = err_a;
+        vTaskDelay(pdMS_TO_TICKS(500)); // Небольшая пауза между насосами
+        
+        // EC B
+        esp_err_t err_b = pump_manager_compute_and_execute(PUMP_INDEX_EC_B, current_ec, target_ec);
+        if (err_b != ESP_OK) result = err_b;
+        vTaskDelay(pdMS_TO_TICKS(500));
+        
+        // EC C
+        esp_err_t err_c = pump_manager_compute_and_execute(PUMP_INDEX_EC_C, current_ec, target_ec);
+        if (err_c != ESP_OK) result = err_c;
 
-        xSemaphoreGive(g_mutex);
-
-        ESP_LOGI(TAG, "Correcting EC with nutrients: %.2f -> %.2f",
-                 current_ec, g_ec_params.target_ec);
-
-        // Запускаем насосы последовательно
-        if (duration_a > 0) {
-            run_pump_with_interface(PUMP_INDEX_EC_A, duration_a);
-            vTaskDelay(pdMS_TO_TICKS(500)); // Небольшая пауза между насосами
-        }
-        if (duration_b > 0) {
-            run_pump_with_interface(PUMP_INDEX_EC_B, duration_b);
-            vTaskDelay(pdMS_TO_TICKS(500));
-        }
-        if (duration_c > 0) {
-            run_pump_with_interface(PUMP_INDEX_EC_C, duration_c);
-        }
+        return result;
     }
-
-    return ESP_OK;
 }
 
 esp_err_t ph_ec_controller_set_auto_mode(bool ph_auto, bool ec_auto)

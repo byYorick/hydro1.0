@@ -26,4 +26,5 @@ idf_component_register(
         task_scheduler
         system_interfaces
         ph_ec_controller
+        pump_manager
 )
