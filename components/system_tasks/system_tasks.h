@@ -26,6 +26,11 @@ typedef struct {
     TaskHandle_t data_logger_task;
     TaskHandle_t scheduler_task;
     TaskHandle_t ph_ec_task;
+    TaskHandle_t mqtt_publish_task;
+    TaskHandle_t telegram_task;
+    TaskHandle_t sd_logging_task;
+    TaskHandle_t ai_correction_task;
+    TaskHandle_t mesh_heartbeat_task;
 } system_task_handles_t;
 
 typedef struct {

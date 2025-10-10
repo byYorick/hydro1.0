@@ -17,7 +17,6 @@
 #include "mobile_app_interface.h"
 #include "esp_log.h"
 #include "esp_http_server.h"
-// #include "esp_websocket_server.h" // TODO: Implement websocket server or remove
 #include "esp_bt.h"
 #include "esp_gap_ble_api.h"
 #include "esp_gatts_api.h"
@@ -50,7 +49,6 @@ static SemaphoreHandle_t mobile_interface_mutex = NULL;
 static QueueHandle_t command_queue = NULL;
 static EventGroupHandle_t connection_event_group = NULL;
 static httpd_handle_t http_server = NULL;
-// static esp_websocket_handle_t websocket_server = NULL; // TODO: Implement websocket server
 
 /// Константы мобильного интерфейса
 #define MOBILE_COMMAND_QUEUE_SIZE 10
@@ -85,6 +83,18 @@ static mobile_command_handler_t command_handler = NULL;
 static mobile_error_handler_t error_handler = NULL;
 static void *command_handler_ctx = NULL;
 static void *error_handler_ctx = NULL;
+
+// Прототипы внутренних функций
+static esp_err_t start_http_server(void);
+static void register_rest_api_handlers(void);
+static esp_err_t http_get_sensor_data_handler(httpd_req_t *req);
+static esp_err_t http_get_system_status_handler(httpd_req_t *req);
+static esp_err_t http_get_settings_handler(httpd_req_t *req);
+static esp_err_t http_update_settings_handler(httpd_req_t *req);
+static esp_err_t http_get_history_handler(httpd_req_t *req);
+static esp_err_t http_send_control_command_handler(httpd_req_t *req);
+static esp_err_t http_authenticate_handler(httpd_req_t *req);
+static esp_err_t http_get_device_info_handler(httpd_req_t *req);
 
 /**
  * @brief Инициализация мобильного интерфейса
@@ -141,22 +151,6 @@ esp_err_t mobile_app_interface_init(network_mode_t mode) {
                 ESP_LOGE(TAG, "Ошибка запуска HTTP сервера");
                 goto cleanup;
             }
-
-            // Запуск WebSocket сервера
-            ret = start_websocket_server();
-            if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "Ошибка запуска WebSocket сервера");
-                goto cleanup;
-            }
-            break;
-
-        case NETWORK_MODE_BLE:
-            // Инициализация Bluetooth LE
-            ret = start_ble_server();
-            if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "Ошибка запуска BLE сервера");
-                goto cleanup;
-            }
             break;
 
         default:
@@ -196,17 +190,6 @@ esp_err_t mobile_app_interface_deinit(void) {
                 httpd_stop(http_server);
                 http_server = NULL;
             }
-
-            // Остановка WebSocket сервера
-            // if (websocket_server != NULL) { // TODO: Implement websocket server
-                // esp_websocket_server_stop(websocket_server); // TODO: Implement websocket server
-                websocket_server = NULL;
-            }
-            break;
-
-        case NETWORK_MODE_BLE:
-            // Остановка BLE сервера
-            stop_ble_server();
             break;
 
         default:
@@ -817,202 +800,7 @@ static esp_err_t http_get_device_info_handler(httpd_req_t *req) {
     return ret;
 }
 
-/**
- * @brief Запуск WebSocket сервера для реального времени
- */
-static esp_err_t start_websocket_server(void) {
-    esp_err_t ret = ESP_OK;
 
-    esp_websocket_config_t ws_config = {
-        .port = 8081,
-        .max_connections = MOBILE_MAX_CONNECTIONS,
-        .max_frame_size = 4096,
-        .stack_size = 6144,  // Увеличенный стек для ESP32S3
-    };
-
-    // websocket_server = esp_websocket_server_start(&ws_config); // TODO: Implement websocket server
-    if (websocket_server == NULL) {
-        ESP_LOGE(TAG, "Ошибка запуска WebSocket сервера");
-        return ESP_FAIL;
-    }
-
-    // Регистрация обработчиков WebSocket событий
-    // esp_websocket_server_register_on_connect(websocket_server, websocket_connect_handler); // TODO: Implement websocket server
-    // esp_websocket_server_register_on_disconnect(websocket_server, websocket_disconnect_handler); // TODO: Implement websocket server
-    // esp_websocket_server_register_on_message(websocket_server, websocket_message_handler); // TODO: Implement websocket server
-
-    ESP_LOGI(TAG, "WebSocket сервер запущен на порту %d", ws_config.port);
-
-    return ret;
-}
-
-/**
- * @brief Обработчик подключения WebSocket клиента
- */
-static void websocket_connect_handler(esp_websocket_handle_t ws_handle, void *arg) {
-    ESP_LOGI(TAG, "WebSocket клиент подключен");
-
-    // Устанавливаем флаг подключения
-    xEventGroupSetBits(connection_event_group, MOBILE_CONNECTED_BIT);
-}
-
-/**
- * @brief Обработчик отключения WebSocket клиента
- */
-static void websocket_disconnect_handler(esp_websocket_handle_t ws_handle, void *arg) {
-    ESP_LOGI(TAG, "WebSocket клиент отключен");
-
-    // Устанавливаем флаг отключения
-    xEventGroupSetBits(connection_event_group, MOBILE_DISCONNECTED_BIT);
-}
-
-/**
- * @brief Обработчик сообщений WebSocket
- */
-static void websocket_message_handler(esp_websocket_handle_t ws_handle, esp_websocket_frame_t *frame, void *arg) {
-    ESP_LOGV(TAG, "Получено WebSocket сообщение: %d байт", frame->len);
-
-    if (frame->type == WS_TEXT_FRAME) {
-        // Обрабатываем текстовые сообщения
-        char *message = malloc(frame->len + 1);
-        if (message) {
-            memcpy(message, frame->data, frame->len);
-            message[frame->len] = '\0';
-
-            process_websocket_message(message);
-
-            free(message);
-        }
-    }
-}
-
-/**
- * @brief Обработка WebSocket сообщения
- */
-static void process_websocket_message(const char *message) {
-    cJSON *root = cJSON_Parse(message);
-    if (root == NULL) {
-        ESP_LOGW(TAG, "Некорректный JSON в WebSocket сообщении");
-        return;
-    }
-
-    cJSON *type = cJSON_GetObjectItem(root, "type");
-    if (type == NULL) {
-        cJSON_Delete(root);
-        return;
-    }
-
-    if (strcmp(type->valuestring, "get_sensor_data") == 0) {
-        // Запрос данных датчиков
-        send_websocket_sensor_data();
-    } else if (strcmp(type->valuestring, "control_command") == 0) {
-        // Команда управления
-        process_websocket_command(root);
-    } else if (strcmp(type->valuestring, "subscribe") == 0) {
-        // Подписка на обновления
-        process_websocket_subscription(root);
-    }
-
-    cJSON_Delete(root);
-}
-
-/**
- * @brief Отправка данных датчиков через WebSocket
- */
-static void send_websocket_sensor_data(void) {
-    // if (websocket_server == NULL) return; // TODO: Implement websocket server
-
-    cJSON *root = cJSON_CreateObject();
-    if (root == NULL) return;
-
-    cJSON_AddStringToObject(root, "type", "sensor_data");
-    cJSON_AddNumberToObject(root, "timestamp", esp_timer_get_time() / 1000);
-
-    // Данные датчиков (заглушка)
-    cJSON *data = cJSON_CreateObject();
-    cJSON_AddNumberToObject(data, "ph", 6.8);
-    cJSON_AddNumberToObject(data, "ec", 1.5);
-    cJSON_AddNumberToObject(data, "temperature", 24.5);
-    cJSON_AddNumberToObject(data, "humidity", 65.0);
-    cJSON_AddNumberToObject(data, "lux", 500);
-    cJSON_AddNumberToObject(data, "co2", 450);
-    cJSON_AddItemToObject(root, "data", data);
-
-    char *json_string = cJSON_PrintUnformatted(root);
-    if (json_string) {
-        // esp_websocket_server_send_text(websocket_server, json_string, strlen(json_string)); // TODO: Implement websocket server
-        free(json_string);
-    }
-
-    cJSON_Delete(root);
-}
-
-/**
- * @brief Обработка команды управления через WebSocket
- */
-static void process_websocket_command(cJSON *root) {
-    cJSON *command_type = cJSON_GetObjectItem(root, "command_type");
-    cJSON *parameters = cJSON_GetObjectItem(root, "parameters");
-
-    if (command_type && parameters) {
-        ESP_LOGI(TAG, "WebSocket команда: %s", command_type->valuestring);
-
-        // Создаем структуру команды
-        mobile_control_command_t command;
-        command.command_id = esp_random();
-        strncpy(command.command_type, command_type->valuestring, sizeof(command.command_type) - 1);
-        strncpy(command.parameters, parameters->valuestring, sizeof(command.parameters) - 1);
-        command.timestamp = esp_timer_get_time() / 1000;
-        command.executed = false;
-
-        // Отправляем в очередь обработки
-        if (xQueueSend(command_queue, &command, pdMS_TO_TICKS(1000)) != pdTRUE) {
-            ESP_LOGW(TAG, "Очередь команд переполнена");
-        }
-    }
-}
-
-/**
- * @brief Обработка подписки на обновления через WebSocket
- */
-static void process_websocket_subscription(cJSON *root) {
-    cJSON *events = cJSON_GetObjectItem(root, "events");
-
-    if (events && cJSON_IsArray(events)) {
-        ESP_LOGI(TAG, "Подписка на события через WebSocket");
-
-        // Обрабатываем массив событий для подписки
-        int array_size = cJSON_GetArraySize(events);
-        for (int i = 0; i < array_size; i++) {
-            cJSON *event = cJSON_GetArrayItem(events, i);
-            if (event && cJSON_IsString(event)) {
-                ESP_LOGI(TAG, "Подписка на событие: %s", event->valuestring);
-            }
-        }
-    }
-}
-
-/**
- * @brief Запуск Bluetooth LE сервера
- */
-static esp_err_t start_ble_server(void) {
-    esp_err_t ret = ESP_OK;
-
-    // Здесь будет реализация Bluetooth LE GATT сервера
-    // для мобильных устройств
-
-    ESP_LOGI(TAG, "Bluetooth LE сервер запущен для мобильных устройств");
-
-    return ret;
-}
-
-/**
- * @brief Остановка Bluetooth LE сервера
- */
-static void stop_ble_server(void) {
-    // Остановка BLE сервера
-    ESP_LOGI(TAG, "Bluetooth LE сервер остановлен");
-}
 
 /**
  * @brief Отправка данных датчиков в мобильное приложение
@@ -1028,34 +816,9 @@ esp_err_t mobile_app_send_sensor_data(const mobile_sensor_data_t *data) {
 
     xSemaphoreTake(mobile_interface_mutex, portMAX_DELAY);
 
-    // Отправка через WebSocket
-    // if (websocket_server != NULL) { // TODO: Implement websocket server
-        cJSON *root = cJSON_CreateObject();
-        if (root) {
-            cJSON_AddStringToObject(root, "type", "sensor_data");
-            cJSON_AddNumberToObject(root, "timestamp", data->timestamp);
-
-            cJSON *sensor_data = cJSON_CreateObject();
-            cJSON_AddNumberToObject(sensor_data, "ph", data->ph);
-            cJSON_AddNumberToObject(sensor_data, "ec", data->ec);
-            cJSON_AddNumberToObject(sensor_data, "temperature", data->temperature);
-            cJSON_AddNumberToObject(sensor_data, "humidity", data->humidity);
-            cJSON_AddNumberToObject(sensor_data, "lux", data->lux);
-            cJSON_AddNumberToObject(sensor_data, "co2", data->co2);
-            cJSON_AddBoolToObject(sensor_data, "ph_alarm", data->ph_alarm);
-            cJSON_AddBoolToObject(sensor_data, "ec_alarm", data->ec_alarm);
-            cJSON_AddBoolToObject(sensor_data, "temp_alarm", data->temp_alarm);
-            cJSON_AddItemToObject(root, "data", sensor_data);
-
-            char *json_string = cJSON_PrintUnformatted(root);
-            if (json_string) {
-                // esp_websocket_server_send_text(websocket_server, json_string, strlen(json_string)); // TODO: Implement websocket server
-                free(json_string);
-            }
-
-            cJSON_Delete(root);
-        }
-    // } // TODO: Implement websocket server
+    // TODO: Отправка данных через MQTT будет реализована в mqtt_client компоненте
+    ESP_LOGD(TAG, "Данные датчиков готовы к отправке: pH=%.2f, EC=%.2f, Temp=%.2f", 
+             data->ph, data->ec, data->temperature);
 
     xSemaphoreGive(mobile_interface_mutex);
     return ESP_OK;
@@ -1169,25 +932,8 @@ esp_err_t mobile_app_send_notification(const char *type, const char *message, ui
 
     xSemaphoreTake(mobile_interface_mutex, portMAX_DELAY);
 
-    // Отправка уведомления через WebSocket
-    // if (websocket_server != NULL) { // TODO: Implement websocket server
-        cJSON *root = cJSON_CreateObject();
-        if (root) {
-            cJSON_AddStringToObject(root, "type", "notification");
-            cJSON_AddStringToObject(root, "notification_type", type);
-            cJSON_AddStringToObject(root, "message", message);
-            cJSON_AddNumberToObject(root, "priority", priority);
-            cJSON_AddNumberToObject(root, "timestamp", esp_timer_get_time() / 1000);
-
-            char *json_string = cJSON_PrintUnformatted(root);
-            if (json_string) {
-                // esp_websocket_server_send_text(websocket_server, json_string, strlen(json_string)); // TODO: Implement websocket server
-                free(json_string);
-            }
-
-            cJSON_Delete(root);
-        }
-    // } // TODO: Implement websocket server
+    // TODO: Отправка уведомлений через MQTT и Telegram будет реализована позже
+    ESP_LOGI(TAG, "Уведомление [%s] приоритет %d: %s", type, priority, message);
 
     xSemaphoreGive(mobile_interface_mutex);
     return ESP_OK;

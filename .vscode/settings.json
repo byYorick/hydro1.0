@@ -1,11 +1,11 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
-  "idf.espIdfPathWin": "C:/Espressif/frameworks/esp-idf-v5.5.1/",
+  "idf.espIdfPathWin": "C:/Espressif/frameworks/esp-idf-v5.5/",
   "idf.pythonInstallPath": "C:\\Espressif\\tools\\idf-python\\3.11.2\\python.exe",
   "idf.openOcdConfigs": [
     "board/esp32s3-builtin.cfg"
   ],
-  "idf.portWin": "COM4",
+  "idf.portWin": "COM5",
   "idf.toolsPathWin": "C:\\Espressif",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32s3"
@@ -21,7 +21,7 @@
       "path": "cmd.exe",
       "args": [
         "/k",
-        "C:\\Espressif\\idf_cmd_init.bat esp-idf-29323a3f5a0574597d6dbaa0af20c775"
+        "C:\\Espressif\\idf_cmd_init.bat esp-idf-1dcc643656a1439837fdf6ab63363005"
       ]
     }
   },

@@ -48,6 +48,11 @@ typedef struct {
     char password[64];       ///< Пароль сети
     uint8_t channel;         ///< Канал (0 - автовыбор)
     bool auto_reconnect;     ///< Автоматическое переподключение
+    bool use_static_ip;      ///< Использовать статический IP
+    char static_ip[16];      ///< Статический IP адрес
+    char gateway[16];        ///< Шлюз
+    char netmask[16];        ///< Маска подсети
+    char dns[16];            ///< DNS сервер
 } network_wifi_config_t;
 
 /**
@@ -57,7 +62,7 @@ typedef struct {
     char ssid[32];           ///< SSID точки доступа
     char password[64];       ///< Пароль точки доступа
     uint8_t channel;         ///< Канал WiFi
-    uint8_t max_connection;  ///< Максимум подключений
+    uint8_t max_connections; ///< Максимум подключений
     bool ssid_hidden;        ///< Скрытая сеть
 } ap_config_t;
 

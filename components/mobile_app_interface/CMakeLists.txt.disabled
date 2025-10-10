@@ -1,0 +1,14 @@
+idf_component_register(
+    SRCS "mobile_app_interface.c"
+    INCLUDE_DIRS
+        "."
+    PRIV_REQUIRES
+        driver
+        freertos
+        main
+        network_manager
+        esp_http_server
+        json
+        nvs_flash
+)
+

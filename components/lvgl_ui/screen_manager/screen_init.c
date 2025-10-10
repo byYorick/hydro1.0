@@ -12,6 +12,10 @@
 #include "../screens/system/system_screens.h"
 #include "../screens/popup_screen.h"
 #include "../widgets/notification_popup.h"
+// PID screens
+#include "../screens/pumps/pumps_status_screen.h"
+#include "../screens/pid/pid_main_screen.h"
+#include "../screens/pid/pid_detail_screen.h"
 #include "esp_log.h"
 
 static const char *TAG = "SCREEN_INIT";
@@ -78,9 +82,16 @@ esp_err_t screen_system_init_all(void)
     ESP_LOGI(TAG, "[OK] Popup screen registered");
     
     // 7. КРИТИЧНО: Инициализация системы попапов уведомлений
-    ESP_LOGI(TAG, "[7/7] Initializing notification popup system...");
+    ESP_LOGI(TAG, "[7/9] Initializing notification popup system...");
     widget_notification_popup_init();
     ESP_LOGI(TAG, "[OK] Notification popup system initialized");
+    
+    // 8. Регистрация PID экранов
+    ESP_LOGI(TAG, "[8/9] Registering PID screens...");
+    pumps_status_screen_init();
+    pid_main_screen_init();
+    pid_detail_screen_init();
+    ESP_LOGI(TAG, "[OK] 3 PID screens registered");
     
     // Итоговая статистика
     uint8_t total = screen_get_registered_count();
@@ -96,6 +107,7 @@ esp_err_t screen_system_init_all(void)
     ESP_LOGI(TAG, "  - Sensor settings: 6");
     ESP_LOGI(TAG, "  - System menu: 1");
     ESP_LOGI(TAG, "  - System settings: 6");
+    ESP_LOGI(TAG, "  - PID screens: 3 (NEW!)");
     ESP_LOGI(TAG, "");
     
     // 6. Показываем главный экран

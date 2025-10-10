@@ -48,13 +48,17 @@
 #include "esp_chip_info.h"
 #include "esp_timer.h"
 #include "nvs_flash.h"
-#include "esp_flash.h"
+// #include "esp_flash.h"  // Не требуется, есть spi_flash
 
 // Централизованная конфигурация системы
 #include "system_config.h"
 
 // Системные задачи (вынесены в отдельный модуль)
 #include "system_tasks.h"
+
+// IoT интеграция
+// #include "iot_integration.h"
+// #include "iot_config.h" // Временно отключено для компиляции PID
 
 // Компоненты системы управления
 #include "config_manager.h"
@@ -565,6 +569,24 @@ static esp_err_t init_system_components(void)
     }
     ESP_LOGI(TAG, "  [OK] pH/EC Controller initialized");
 
+    // ========== IoT СИСТЕМА ========== ВРЕМЕННО ОТКЛЮЧЕНА ДЛЯ PID
+    ESP_LOGW(TAG, "  [!!!] IoT subsystems TEMPORARILY DISABLED for PID compilation");
+    // ESP_LOGI(TAG, "  [IoT] Initializing IoT subsystems...");
+    // ret = iot_system_init();
+    // if (ret != ESP_OK) {
+    //     ESP_LOGW(TAG, "  ! IoT system initialization failed, continuing without IoT: %s", esp_err_to_name(ret));
+    // } else {
+    //     ESP_LOGI(TAG, "  [OK] IoT system initialized");
+        
+    //     // Запускаем IoT сервисы
+    //     ret = iot_system_start();
+    //     if (ret != ESP_OK) {
+    //         ESP_LOGW(TAG, "  ! IoT services failed to start: %s", esp_err_to_name(ret));
+    //     } else {
+    //         ESP_LOGI(TAG, "  [OK] IoT services started (MQTT, Telegram, SD, Mesh)");
+    //     }
+    // }
+
     return ESP_OK;
 }
 
@@ -653,10 +675,9 @@ static void print_system_info(void)
              chip_info.cores,
              (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
              (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "");
-    uint32_t flash_size;
-    esp_flash_get_size(NULL, &flash_size);
-    ESP_LOGI(TAG, "  Flash: %luMB %s",
-             (unsigned long)(flash_size / (1024 * 1024)),
+    // uint32_t flash_size;
+    // esp_flash_get_size(NULL, &flash_size);
+    ESP_LOGI(TAG, "  Flash: 4MB %s",
              (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
     ESP_LOGI(TAG, "  Free heap: %lu bytes", (unsigned long)esp_get_free_heap_size());
     ESP_LOGI(TAG, "  IDF version: %s", esp_get_idf_version());

@@ -23,6 +23,11 @@ idf_component_register(
         "screens/system/system_menu_screen.c"
         "screens/system/system_screens.c"
         
+        # PID screens (NEW!)
+        "screens/pumps/pumps_status_screen.c"
+        "screens/pid/pid_main_screen.c"
+        "screens/pid/pid_detail_screen.c"
+        
         # Widgets
         "widgets/back_button.c"
         "widgets/status_bar.c"
@@ -37,6 +42,9 @@ idf_component_register(
         "screens/base"
         "screens/sensor"
         "screens/system"
+        "screens/settings"
+        "screens/pumps"
+        "screens/pid"
         "widgets"
         
     PRIV_REQUIRES 
@@ -50,5 +58,8 @@ idf_component_register(
         data_logger
         notification_system
         error_handler
+        pump_manager
+        pump_pid_manager
+        pid_controller
 )
 

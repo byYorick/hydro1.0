@@ -39,17 +39,20 @@ typedef struct {
     float lux;               ///< Освещённость (Lux)
     uint16_t co2;            ///< CO2 (ppm)
     uint32_t timestamp;      ///< Временная метка
+    bool ph_alarm;           ///< Тревога pH
+    bool ec_alarm;           ///< Тревога EC
+    bool temp_alarm;         ///< Тревога температуры
 } mobile_sensor_data_t;
 
 /**
  * @brief Структура управляющей команды от мобильного приложения
  */
 typedef struct {
-    char command[32];        ///< Название команды
-    char param1[64];         ///< Параметр 1
-    char param2[64];         ///< Параметр 2
-    uint8_t priority;        ///< Приоритет команды
+    uint32_t command_id;     ///< ID команды
+    char command_type[32];   ///< Тип команды
+    char parameters[256];    ///< Параметры команды (JSON)
     uint32_t timestamp;      ///< Временная метка
+    bool executed;           ///< Выполнена ли команда
 } mobile_control_command_t;
 
 /**

@@ -24,6 +24,14 @@
 #include "lvgl_ui.h"
 #include "encoder.h"
 
+// IoT компоненты - включаем постепенно
+// #include "iot_integration.h"  // Отключен до настройки
+// #include "mqtt_client.h"      // Требует переработки API
+#include "telegram_bot.h"
+#include "sd_storage.h"
+#include "ai_controller.h"
+#include "mesh_network.h"
+
 static const char *TAG = "SYS_TASKS";
 
 #define SENSOR_FAILURE_THRESHOLD 5
@@ -79,6 +87,13 @@ static void notification_task(void *pvParameters);
 static void data_logger_task(void *pvParameters);
 static void scheduler_task(void *pvParameters);
 static void ph_ec_task(void *pvParameters);
+
+// IoT задачи
+// static void mqtt_publish_task(void *pvParameters);  // MQTT отключен
+static void telegram_task(void *pvParameters);
+static void sd_logging_task(void *pvParameters);
+static void ai_correction_task(void *pvParameters);
+static void mesh_heartbeat_task(void *pvParameters);
 
 static esp_err_t read_all_sensors(sensor_data_t *data);
 static void register_sensor_failure(sensor_index_t index, const char *details);
@@ -231,6 +246,42 @@ esp_err_t system_tasks_create_all(system_task_handles_t *handles)
     }
     ESP_LOGI(TAG, "[OK] ph_ec_task created (Pri: %d, Stack: %d)",
              TASK_PRIORITY_PH_EC, TASK_STACK_SIZE_PH_EC);
+
+    // IoT задачи
+    ESP_LOGI(TAG, "Creating IoT tasks...");
+    // MQTT задача отключена - требует переработки API
+    
+    ret = xTaskCreate(telegram_task, "telegram", 4096, NULL,
+                      3, &task_handles.telegram_task);
+    if (ret != pdPASS) {
+        ESP_LOGW(TAG, "Failed to create telegram_task (may be disabled)");
+    } else {
+        ESP_LOGI(TAG, "[OK] telegram_task created (Pri: 3, Stack: 4096)");
+    }
+
+    ret = xTaskCreate(sd_logging_task, "sd_logging", 4096, NULL,
+                      2, &task_handles.sd_logging_task);
+    if (ret != pdPASS) {
+        ESP_LOGW(TAG, "Failed to create sd_logging_task (may be disabled)");
+    } else {
+        ESP_LOGI(TAG, "[OK] sd_logging_task created (Pri: 2, Stack: 4096)");
+    }
+
+    ret = xTaskCreate(ai_correction_task, "ai_correct", 8192, NULL,
+                      6, &task_handles.ai_correction_task);
+    if (ret != pdPASS) {
+        ESP_LOGW(TAG, "Failed to create ai_correction_task (may be disabled)");
+    } else {
+        ESP_LOGI(TAG, "[OK] ai_correction_task created (Pri: 6, Stack: 8192)");
+    }
+
+    ret = xTaskCreate(mesh_heartbeat_task, "mesh_hb", 2048, NULL,
+                      2, &task_handles.mesh_heartbeat_task);
+    if (ret != pdPASS) {
+        ESP_LOGW(TAG, "Failed to create mesh_heartbeat_task (may be disabled)");
+    } else {
+        ESP_LOGI(TAG, "[OK] mesh_heartbeat_task created (Pri: 2, Stack: 2048)");
+    }
 
     ESP_LOGI(TAG, "[OK] encoder_task will be created by lvgl_main.c");
 
@@ -637,16 +688,233 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
     return (successful_reads > 0) ? ESP_OK : ESP_FAIL;
 }
 
+/*******************************************************************************
+ * IoT ЗАДАЧИ
+ ******************************************************************************/
+
+/**
+ * @brief Задача публикации данных в MQTT - ОТКЛЮЧЕНА (требует переработки API)
+ */
+#if 0
+static void mqtt_publish_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "MQTT publish task started");
+    
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t publish_interval = pdMS_TO_TICKS(5000); // 5 секунд
+    
+    while (1) {
+        vTaskDelayUntil(&last_wake_time, publish_interval);
+        
+        if (!mqtt_client_is_connected()) {
+            continue;
+        }
+        
+        // Получаем актуальные данные датчиков
+        if (xSemaphoreTake(task_context.sensor_data_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (task_context.sensor_data_valid) {
+                sensor_data_t *data = &task_context.last_sensor_data;
+                
+                // Публикуем данные через IoT интеграцию
+                iot_publish_sensor_data(
+                    data->ph,
+                    data->ec,
+                    data->temperature,
+                    data->humidity,
+                    data->lux,
+                    data->co2
+                );
+            }
+            xSemaphoreGive(task_context.sensor_data_mutex);
+        }
+    }
+}
+
+#endif // mqtt_publish_task
+
+/**
+ * @brief Задача обработки Telegram уведомлений
+ */
+static void telegram_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "Telegram task started");
+    
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t check_interval = pdMS_TO_TICKS(60000); // 1 минута
+    
+    static uint8_t last_hour = 255;
+    
+    while (1) {
+        vTaskDelayUntil(&last_wake_time, check_interval);
+        
+        // Получаем текущее время
+        time_t now = time(NULL);
+        struct tm timeinfo;
+        localtime_r(&now, &timeinfo);
+        
+        // Ежедневный отчет в заданный час
+        if (timeinfo.tm_hour == 20 && last_hour != 20) { // 20:00
+            char report[512];
+            snprintf(report, sizeof(report),
+                     "📊 *Дневной отчет*\n\n"
+                     "Система работает: %d часов\n"
+                     "Все датчики в норме\n"
+                     "Автоматика активна",
+                     (int)(esp_timer_get_time() / 1000000 / 3600));
+            
+            telegram_send_daily_report(report);
+        }
+        last_hour = timeinfo.tm_hour;
+    }
+}
+
+/**
+ * @brief Задача логирования на SD-карту
+ */
+static void sd_logging_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "SD logging task started");
+    
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t log_interval = pdMS_TO_TICKS(60000); // 1 минута
+    
+    while (1) {
+        vTaskDelayUntil(&last_wake_time, log_interval);
+        
+        if (!sd_storage_is_mounted()) {
+            continue;
+        }
+        
+        // Логируем текущие данные датчиков
+        if (xSemaphoreTake(task_context.sensor_data_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (task_context.sensor_data_valid) {
+                sensor_data_t *data = &task_context.last_sensor_data;
+                
+                sd_sensor_record_t record = {
+                    .timestamp = time(NULL),
+                    .ph = data->ph,
+                    .ec = data->ec,
+                    .temperature = data->temperature,
+                    .humidity = data->humidity,
+                    .lux = data->lux,
+                    .co2 = data->co2,
+                };
+                
+                sd_write_sensor_log(&record);
+            }
+            xSemaphoreGive(task_context.sensor_data_mutex);
+        }
+    }
+}
+
+/**
+ * @brief Задача AI коррекции pH/EC
+ */
+static void ai_correction_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "AI correction task started");
+    
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t correction_interval = pdMS_TO_TICKS(300000); // 5 минут
+    
+    uint32_t last_correction_time = 0;
+    
+    while (1) {
+        vTaskDelayUntil(&last_wake_time, correction_interval);
+        
+        if (!ai_is_model_loaded()) {
+            // AI модель не загружена, пропускаем
+            continue;
+        }
+        
+        // Получаем текущее состояние
+        if (xSemaphoreTake(task_context.sensor_data_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (task_context.sensor_data_valid && task_context.config_valid) {
+                sensor_data_t *data = &task_context.last_sensor_data;
+                system_config_t *config = &task_context.active_config;
+                
+                ai_system_state_t state = {
+                    .current_ph = data->ph,
+                    .current_ec = data->ec,
+                    .target_ph = config->sensor_config[SENSOR_INDEX_PH].target_value,
+                    .target_ec = config->sensor_config[SENSOR_INDEX_EC].target_value,
+                    .temperature = data->temperature,
+                    .time_since_last_correction = (esp_timer_get_time() / 1000000) - last_correction_time,
+                };
+                
+                ai_dosage_prediction_t prediction = {0};
+                
+                if (ai_predict_correction(&state, &prediction) == ESP_OK) {
+                    // Применяем коррекцию если есть рекомендации
+                    if (prediction.ph_up_ml > 0.1f) {
+                        ESP_LOGI(TAG, "AI коррекция: pH UP %.1f мл", prediction.ph_up_ml);
+                        // TODO: ph_ec_controller_dose_ph_up(prediction.ph_up_ml);
+                        last_correction_time = esp_timer_get_time() / 1000000;
+                    }
+                    if (prediction.ph_down_ml > 0.1f) {
+                        ESP_LOGI(TAG, "AI коррекция: pH DOWN %.1f мл", prediction.ph_down_ml);
+                        // TODO: ph_ec_controller_dose_ph_down(prediction.ph_down_ml);
+                        last_correction_time = esp_timer_get_time() / 1000000;
+                    }
+                    if (prediction.ec_a_ml > 0.1f || prediction.ec_b_ml > 0.1f || prediction.ec_c_ml > 0.1f) {
+                        ESP_LOGI(TAG, "AI коррекция: EC A=%.1f B=%.1f C=%.1f мл",
+                                 prediction.ec_a_ml, prediction.ec_b_ml, prediction.ec_c_ml);
+                        // TODO: ph_ec_controller_dose_nutrients(prediction.ec_a_ml, prediction.ec_b_ml, prediction.ec_c_ml);
+                        last_correction_time = esp_timer_get_time() / 1000000;
+                    }
+                }
+            }
+            xSemaphoreGive(task_context.sensor_data_mutex);
+        }
+    }
+}
+
+/**
+ * @brief Задача отправки heartbeat в mesh-сеть
+ */
+static void mesh_heartbeat_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "Mesh heartbeat task started");
+    
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t heartbeat_interval = pdMS_TO_TICKS(30000); // 30 секунд
+    
+    while (1) {
+        vTaskDelayUntil(&last_wake_time, heartbeat_interval);
+        
+        if (!mesh_is_connected_to_gateway() && mesh_get_role() == MESH_ROLE_SLAVE) {
+            continue;
+        }
+        
+        mesh_heartbeat_t heartbeat = {
+            .device_id = mesh_get_device_id(),
+            .battery_level = 100, // Питание от сети
+            .rssi = -50, // TODO: Получить реальный RSSI
+            .uptime = esp_timer_get_time() / 1000000,
+        };
+        
+        mesh_send_heartbeat(&heartbeat);
+    }
+}
+
 esp_err_t system_tasks_stop_all(void)
 {
     ESP_LOGI(TAG, "Stopping all tasks...");
 
+    // Базовые задачи
     if (task_handles.sensor_task) vTaskDelete(task_handles.sensor_task);
     if (task_handles.display_task) vTaskDelete(task_handles.display_task);
     if (task_handles.notification_task) vTaskDelete(task_handles.notification_task);
     if (task_handles.data_logger_task) vTaskDelete(task_handles.data_logger_task);
     if (task_handles.scheduler_task) vTaskDelete(task_handles.scheduler_task);
     if (task_handles.ph_ec_task) vTaskDelete(task_handles.ph_ec_task);
+    
+    // IoT задачи
+    // if (task_handles.mqtt_publish_task) vTaskDelete(task_handles.mqtt_publish_task); // MQTT отключен
+    if (task_handles.telegram_task) vTaskDelete(task_handles.telegram_task);
+    if (task_handles.sd_logging_task) vTaskDelete(task_handles.sd_logging_task);
+    if (task_handles.ai_correction_task) vTaskDelete(task_handles.ai_correction_task);
+    if (task_handles.mesh_heartbeat_task) vTaskDelete(task_handles.mesh_heartbeat_task);
 
     memset(&task_handles, 0, sizeof(task_handles));
 

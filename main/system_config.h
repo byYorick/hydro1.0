@@ -398,12 +398,117 @@ typedef struct {
 } pump_config_t;
 
 /**
+ * @brief Конфигурация WiFi
+ */
+typedef struct {
+    char ssid[32];               // SSID сети
+    char password[64];           // Пароль
+    bool use_static_ip;          // Использовать статический IP
+    char static_ip[16];          // Статический IP (например "192.168.1.50")
+    char gateway[16];            // Шлюз (например "192.168.1.1")
+    char netmask[16];            // Маска (например "255.255.255.0")
+    char dns[16];                // DNS сервер
+    bool auto_reconnect;         // Автопереподключение
+    uint8_t network_mode;        // 0=STA, 1=AP, 2=HYBRID
+} wifi_config_t;
+
+/**
+ * @brief Конфигурация MQTT
+ */
+typedef struct {
+    char broker_uri[128];        // URI брокера (mqtt://ip:port)
+    char client_id[32];          // ID клиента
+    char username[32];           // Имя пользователя
+    char password[64];           // Пароль
+    uint16_t keepalive;          // Keepalive (секунды)
+    bool auto_reconnect;         // Автопереподключение
+    bool enabled;                // Включен ли MQTT
+    uint16_t publish_interval;   // Интервал публикации (секунды)
+} mqtt_config_t;
+
+/**
+ * @brief Конфигурация Telegram
+ */
+typedef struct {
+    char bot_token[64];          // Токен бота
+    char chat_id[32];            // ID чата
+    bool enabled;                // Включен ли Telegram
+    bool enable_commands;        // Принимать команды
+    uint8_t report_hour;         // Час отправки отчета (0-23)
+    bool notify_critical;        // Уведомлять о критических событиях
+    bool notify_warnings;        // Уведомлять о предупреждениях
+} telegram_config_t;
+
+/**
+ * @brief Конфигурация SD-карты
+ */
+typedef struct {
+    bool enabled;                // Включена ли SD-карта
+    uint32_t log_interval;       // Интервал логирования (секунды)
+    uint8_t cleanup_days;        // Хранить данные N дней
+    bool auto_sync;              // Автосинхронизация с облаком
+    uint8_t sd_mode;             // 0=SPI, 1=SDMMC_1BIT, 2=SDMMC_4BIT
+} sd_config_t;
+
+/**
+ * @brief Конфигурация Mesh-сети
+ */
+typedef struct {
+    bool enabled;                // Включена ли mesh-сеть
+    uint8_t role;                // 0=Gateway, 1=Slave
+    uint8_t device_id;           // ID устройства (1-254)
+    uint32_t heartbeat_interval; // Интервал heartbeat (секунды)
+} mesh_config_t;
+
+/**
+ * @brief Конфигурация AI контроллера
+ */
+typedef struct {
+    bool enabled;                // Включен ли AI
+    float min_confidence;        // Минимальная уверенность (0.0-1.0)
+    uint32_t correction_interval;// Интервал коррекции (секунды)
+    bool use_ml_model;           // Использовать ML модель (иначе PID)
+} ai_config_t;
+
+/**
+ * @brief Конфигурация PID контроллера насоса
+ */
+typedef struct {
+    float kp;                    // Пропорциональный коэффициент
+    float ki;                    // Интегральный коэффициент
+    float kd;                    // Дифференциальный коэффициент
+    float output_min;            // Минимальная доза (мл)
+    float output_max;            // Максимальная доза (мл)
+    bool enabled;                // Включен ли PID
+    bool auto_mode;              // Автоматический режим
+} pump_pid_config_t;
+
+/**
  * @brief Основная конфигурация системы
  */
 typedef struct {
+    // Базовые настройки
     bool auto_control_enabled;    // Включен ли автоматический контроль
     sensor_config_t sensor_config[SENSOR_COUNT];  // Конфигурация датчиков
     pump_config_t pump_config[PUMP_INDEX_COUNT];  // Конфигурация насосов
+    
+    // IoT настройки
+    wifi_config_t wifi;           // Конфигурация WiFi
+    mqtt_config_t mqtt;           // Конфигурация MQTT
+    telegram_config_t telegram;   // Конфигурация Telegram
+    sd_config_t sd;               // Конфигурация SD-карты
+    mesh_config_t mesh;           // Конфигурация Mesh
+    ai_config_t ai;               // Конфигурация AI
+    
+    // PID контроллеры для насосов
+    pump_pid_config_t pump_pid[6]; // 6 PID контроллеров (pH UP/DOWN, EC A/B/C, WATER)
+    
+    // Режимы управления
+    uint8_t control_mode;         // 0=Manual, 1=PID, 2=AI, 3=Hybrid
+    
+    // Системные настройки
+    uint8_t display_brightness;   // Яркость дисплея (0-100)
+    char device_name[32];         // Имя устройства
 } system_config_t;
 
 #ifdef __cplusplus

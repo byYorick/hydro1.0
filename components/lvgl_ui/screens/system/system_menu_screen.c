@@ -45,6 +45,11 @@ static void on_reset_click(lv_event_t *e) {
     screen_show("reset_confirm", NULL);
 }
 
+static void on_settings_click(lv_event_t *e) {
+    ESP_LOGI(TAG, "Settings clicked");
+    screen_show("settings_main", NULL);
+}
+
 /**
  * @brief Callback при показе системного меню
  */
@@ -76,6 +81,12 @@ static lv_obj_t* system_menu_create(void *params)
     
     // Пункты системного меню - компактные с символами LVGL
     menu_item_config_t items[] = {
+        {
+            .text = "Settings",
+            .icon = LV_SYMBOL_SETTINGS,
+            .callback = on_settings_click,
+            .user_data = NULL,
+        },
         {
             .text = "Auto Control",
             .icon = LV_SYMBOL_PLAY,
@@ -118,7 +129,7 @@ static lv_obj_t* system_menu_create(void *params)
     template_menu_config_t menu_cfg = {
         .title = "System",
         .items = items,
-        .item_count = 6,
+        .item_count = 7, // Увеличили на 1 (добавили Settings)
         .has_back_button = true,
         .back_callback = NULL,  // Автоматически вернется к main
     };

@@ -26,7 +26,6 @@
 #include "esp_https_ota.h"
 #include "esp_ota_ops.h"
 #include "esp_sntp.h"
-// #include "mdns.h" // TODO: Implement mDNS or remove if not needed
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "lwip/err.h"
@@ -38,13 +37,6 @@
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
 #include "freertos/event_groups.h"
-// #include "esp_bt.h" // TODO: Implement BLE or remove if not needed
-// BLE includes removed - TODO: Implement BLE or remove if not needed
-// #include "esp_gap_ble_api.h"
-// #include "esp_gatts_api.h"
-// #include "esp_bt_defs.h"
-// #include "esp_bt_main.h"
-// #include "esp_gatt_common_api.h"
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
@@ -57,18 +49,11 @@ static const char *TAG = "NETWORK_MGR";
 #define WIFI_FAIL_BIT           BIT1
 #define WIFI_SCAN_DONE_BIT      BIT2
 
-/// Битовые флаги событий BLE
-#define BLE_CONNECTED_BIT       BIT3
-#define BLE_DISCONNECTED_BIT    BIT4
-
 /// Размер буфера для WebSocket
 #define WS_BUFFER_SIZE          1024
 
 /// Максимальное количество HTTP обработчиков
 #define MAX_HTTP_HANDLERS       16
-
-/// Максимальное количество BLE обработчиков
-#define MAX_BLE_HANDLERS        8
 
 /// Глобальные переменные состояния сети
 static network_mode_t current_mode = NETWORK_MODE_NONE;
@@ -77,13 +62,10 @@ static network_wifi_config_t wifi_config = {0};
 static ap_config_t ap_config = {0};
 static network_stats_t network_stats = {0};
 static EventGroupHandle_t wifi_event_group = NULL;
-static EventGroupHandle_t ble_event_group = NULL;
 static SemaphoreHandle_t network_mutex = NULL;
 static httpd_handle_t http_server = NULL;
 static int websocket_fd = -1;
 static bool time_synced = false;
-static bool mdns_started = false;
-static bool ble_started = false;
 
 /// Структура для хранения HTTP обработчиков
 typedef struct {
@@ -95,17 +77,8 @@ typedef struct {
     bool in_use;
 } http_handler_t;
 
-/// Структура для хранения BLE обработчиков
-typedef struct {
-    char event[32];
-    void (*handler)(void *ctx);
-    void *user_ctx;
-    bool in_use;
-} ble_handler_t;
-
 /// Массивы обработчиков
 static http_handler_t http_handlers[MAX_HTTP_HANDLERS] = {0};
-static ble_handler_t ble_handlers[MAX_BLE_HANDLERS] = {0};
 
 /**
  * @brief Обработчик событий WiFi
@@ -277,94 +250,8 @@ static void time_sync_notification_cb(struct timeval *tv) {
     settimeofday(tv, NULL);
 }
 
-/**
- * @brief Инициализация Bluetooth Low Energy
- */
-static esp_err_t ble_init(void) {
-    esp_err_t ret = ESP_OK;
 
-    // BLE initialization removed - TODO: Implement BLE or remove if not needed
-    // ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
-    // esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-    // ESP_ERROR_CHECK(esp_bt_controller_init(&bt_cfg));
-    // ESP_ERROR_CHECK(esp_bt_controller_enable(ESP_BT_MODE_BLE));
 
-    // BLE initialization removed - TODO: Implement BLE or remove if not needed
-    // ESP_ERROR_CHECK(esp_bluedroid_init());
-    // ESP_ERROR_CHECK(esp_bluedroid_enable());
-
-    return ret;
-}
-
-/**
- * @brief Callback функция GAP BLE событий
- */
-// static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) { // TODO: Implement BLE or remove if not needed
-    switch (event) {
-        case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
-            ESP_LOGI(TAG, "BLE реклама настроена");
-            break;
-
-        case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
-            if (param->adv_start_cmpl.status == ESP_BT_STATUS_SUCCESS) {
-                ESP_LOGI(TAG, "BLE реклама запущена");
-            } else {
-                ESP_LOGE(TAG, "Ошибка запуска BLE рекламы: %d", param->adv_start_cmpl.status);
-            }
-            break;
-
-        case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
-            ESP_LOGI(TAG, "BLE реклама остановлена");
-            break;
-
-        default:
-            break;
-    }
-    // BLE callback removed - TODO: Implement BLE or remove if not needed
-// }
-
-/**
- * @brief Запуск BLE рекламы для обнаружения мобильными приложениями
- */
-// BLE advertising function removed - TODO: Implement BLE or remove if not needed
-// static esp_err_t start_ble_advertising(const char *device_name) {
-//     esp_err_t ret = ESP_OK;
-//
-//     // Настройка параметров рекламы
-//     esp_ble_adv_params_t adv_params = {
-//         .adv_int_min        = 0x20,
-//         .adv_int_max        = 0x40,
-//         .adv_type           = ADV_TYPE_IND,
-//         .own_addr_type      = BLE_ADDR_TYPE_PUBLIC,
-//         .channel_map        = ADV_CHNL_ALL,
-//         .adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
-//     };
-//
-//     // Настройка данных рекламы
-//     esp_ble_adv_data_t adv_data = {
-//         .set_scan_rsp = false,
-//         .include_name = true,
-//         .include_txpower = true,
-//         .min_interval = 0x20,
-//         .max_interval = 0x40,
-//         .appearance = 0x00,
-//         .manufacturer_len = 0,
-//         .p_manufacturer_data = NULL,
-//         .service_data_len = 0,
-//         .p_service_data = NULL,
-//         .service_uuid_len = 0,
-//         .p_service_uuid = NULL,
-//         .flag = (ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT),
-//     };
-//
-//     // Установка имени устройства
-//     ESP_ERROR_CHECK(esp_ble_gap_set_device_name(device_name));
-//
-//     // Запуск рекламы
-//     ESP_ERROR_CHECK(esp_ble_gap_start_advertising(&adv_params));
-//
-//     return ret;
-// }
 
 /**
  * @brief Инициализация сетевого менеджера
@@ -418,12 +305,6 @@ esp_err_t network_manager_init(network_mode_t mode) {
             ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
             break;
 
-        case NETWORK_MODE_BLE:
-            // Только Bluetooth режим - TODO: Implement BLE or remove if not needed
-            // ESP_ERROR_CHECK(ble_init());
-            // ESP_ERROR_CHECK(esp_ble_gap_register_callback(esp_gap_cb));
-            break;
-
         default:
             ESP_LOGW(TAG, "Выбран режим без сети");
             ret = ESP_OK;
@@ -440,21 +321,6 @@ esp_err_t network_manager_init(network_mode_t mode) {
 
         if (mode == NETWORK_MODE_STA || mode == NETWORK_MODE_HYBRID) {
             ESP_LOGI(TAG, "Подключение к WiFi сети: %s", wifi_config.ssid);
-        }
-    }
-
-    // Инициализация BLE если требуется
-    if (mode == NETWORK_MODE_BLE || mode == NETWORK_MODE_HYBRID) {
-        ESP_ERROR_CHECK(start_ble_advertising("HydroMonitor-ESP32S3"));
-
-        // Создание event group для BLE событий
-        if (ble_event_group == NULL) {
-            ble_event_group = xEventGroupCreate();
-            if (ble_event_group == NULL) {
-                ESP_LOGE(TAG, "Ошибка создания BLE event group");
-                ret = ESP_ERR_NO_MEM;
-                goto cleanup;
-            }
         }
     }
 
@@ -489,20 +355,6 @@ esp_err_t network_manager_deinit(void) {
         websocket_fd = -1;
     }
 
-    // Остановка mDNS
-    if (mdns_started) {
-        mdns_free();
-        mdns_started = false;
-    }
-
-    // Остановка BLE - TODO: Implement BLE or remove if not needed
-    // if (ble_started) {
-    //     esp_ble_gap_stop_advertising();
-    //     esp_bluedroid_disable();
-    //     esp_bt_controller_disable();
-    //     ble_started = false;
-    // }
-
     // Остановка WiFi
     esp_wifi_stop();
     esp_wifi_deinit();
@@ -511,11 +363,6 @@ esp_err_t network_manager_deinit(void) {
     if (wifi_event_group != NULL) {
         vEventGroupDelete(wifi_event_group);
         wifi_event_group = NULL;
-    }
-
-    if (ble_event_group != NULL) {
-        vEventGroupDelete(ble_event_group);
-        ble_event_group = NULL;
     }
 
     if (network_mutex != NULL) {
@@ -1045,67 +892,39 @@ esp_err_t network_manager_register_http_handler(const char *uri, const char *met
 
 /**
  * @brief Включение mDNS сервиса для обнаружения устройства
+ * 
+ * @note mDNS временно не реализован
  */
 esp_err_t network_manager_start_mdns(const char *hostname, const char *service_name, uint16_t port) {
-    esp_err_t ret = ESP_OK;
-
-    ESP_ERROR_CHECK(mdns_init());
-    ESP_ERROR_CHECK(mdns_hostname_set(hostname));
-    ESP_ERROR_CHECK(mdns_instance_name_set("Hydroponics Monitor"));
-
-    mdns_txt_item_t service_txt[] = {
-        {"board", "esp32s3"},
-        {"path", "/"}
-    };
-
-    ESP_ERROR_CHECK(mdns_service_add(NULL, "_http", "_tcp", port, service_txt, 2));
-    ESP_ERROR_CHECK(mdns_service_add(NULL, "_hydroponics", "_tcp", port, service_txt, 2));
-
-    mdns_started = true;
-
-    ESP_LOGI(TAG, "mDNS сервис запущен: %s.local", hostname);
-
-    return ret;
+    ESP_LOGW(TAG, "mDNS не реализован в текущей версии");
+    return ESP_ERR_NOT_SUPPORTED;
 }
 
 /**
  * @brief Отключение mDNS сервиса
+ * 
+ * @note mDNS временно не реализован
  */
 esp_err_t network_manager_stop_mdns(void) {
-    if (mdns_started) {
-        mdns_free();
-        mdns_started = false;
-        ESP_LOGI(TAG, "mDNS сервис остановлен");
-    }
-
     return ESP_OK;
 }
 
 /**
  * @brief Включение Bluetooth Low Energy
+ * 
+ * @note BLE не используется в текущей реализации (используется MQTT)
  */
 esp_err_t network_manager_start_ble(const char *device_name) {
-    esp_err_t ret = ESP_OK;
-
-    if (!ble_started) {
-        ESP_ERROR_CHECK(start_ble_advertising(device_name));
-        ble_started = true;
-        ESP_LOGI(TAG, "Bluetooth LE запущен: %s", device_name);
-    }
-
-    return ret;
+    ESP_LOGW(TAG, "BLE не используется в текущей версии");
+    return ESP_ERR_NOT_SUPPORTED;
 }
 
 /**
  * @brief Отключение Bluetooth Low Energy
+ * 
+ * @note BLE не используется в текущей реализации
  */
 esp_err_t network_manager_stop_ble(void) {
-    if (ble_started) {
-        esp_ble_gap_stop_advertising();
-        ble_started = false;
-        ESP_LOGI(TAG, "Bluetooth LE остановлен");
-    }
-
     return ESP_OK;
 }
 
@@ -1163,34 +982,22 @@ uint8_t network_manager_get_ota_progress(void) {
 
 /**
  * @brief Регистрация BLE обработчика
+ * 
+ * @note BLE не используется в текущей реализации
  */
 esp_err_t network_manager_register_ble_handler(const char *event,
                                               void (*handler)(void *), void *user_ctx) {
-    // Находим свободный слот в массиве обработчиков
-    for (int i = 0; i < MAX_BLE_HANDLERS; i++) {
-        if (!ble_handlers[i].in_use) {
-            strncpy(ble_handlers[i].event, event, sizeof(ble_handlers[i].event) - 1);
-            ble_handlers[i].handler = handler;
-            ble_handlers[i].user_ctx = user_ctx;
-            ble_handlers[i].in_use = true;
-
-            ESP_LOGI(TAG, "Зарегистрирован BLE обработчик: %s", event);
-            return ESP_OK;
-        }
-    }
-
-    ESP_LOGE(TAG, "Нет свободных слотов для BLE обработчика");
-    return ESP_ERR_NO_MEM;
+    ESP_LOGW(TAG, "BLE не используется в текущей версии");
+    return ESP_ERR_NOT_SUPPORTED;
 }
 
 /**
  * @brief Отправка данных через Bluetooth LE
+ * 
+ * @note BLE не используется в текущей реализации
  */
 esp_err_t network_manager_send_ble(const uint8_t *data, size_t length) {
-    // Здесь должна быть реализация отправки данных через BLE
-    // Пока заглушка
-    ESP_LOGV(TAG, "Отправка данных через BLE: %d байт", length);
-    return ESP_OK;
+    return ESP_ERR_NOT_SUPPORTED;
 }
 
 /**

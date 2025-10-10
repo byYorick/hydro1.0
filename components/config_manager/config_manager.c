@@ -78,6 +78,120 @@ static void config_set_defaults(system_config_t *config)
         pump_cfg->cooldown_ms = PUMP_COOLDOWN_MS;
         pump_cfg->concentration_factor = 1.0f;
     }
+    
+    // ========== IoT конфигурация по умолчанию ==========
+    
+    // WiFi
+    strncpy(config->wifi.ssid, "HydroMonitor", sizeof(config->wifi.ssid) - 1);
+    strncpy(config->wifi.password, "", sizeof(config->wifi.password) - 1);
+    config->wifi.use_static_ip = false;
+    strncpy(config->wifi.static_ip, "192.168.1.50", sizeof(config->wifi.static_ip) - 1);
+    strncpy(config->wifi.gateway, "192.168.1.1", sizeof(config->wifi.gateway) - 1);
+    strncpy(config->wifi.netmask, "255.255.255.0", sizeof(config->wifi.netmask) - 1);
+    strncpy(config->wifi.dns, "8.8.8.8", sizeof(config->wifi.dns) - 1);
+    config->wifi.auto_reconnect = true;
+    config->wifi.network_mode = 0; // STA
+    
+    // MQTT
+    strncpy(config->mqtt.broker_uri, "mqtt://192.168.1.100:1883", sizeof(config->mqtt.broker_uri) - 1);
+    strncpy(config->mqtt.client_id, "hydro_gateway_001", sizeof(config->mqtt.client_id) - 1);
+    strncpy(config->mqtt.username, "", sizeof(config->mqtt.username) - 1);
+    strncpy(config->mqtt.password, "", sizeof(config->mqtt.password) - 1);
+    config->mqtt.keepalive = 120;
+    config->mqtt.auto_reconnect = true;
+    config->mqtt.enabled = true;
+    config->mqtt.publish_interval = 5;
+    
+    // Telegram
+    strncpy(config->telegram.bot_token, "", sizeof(config->telegram.bot_token) - 1);
+    strncpy(config->telegram.chat_id, "", sizeof(config->telegram.chat_id) - 1);
+    config->telegram.enabled = false; // По умолчанию выключен
+    config->telegram.enable_commands = true;
+    config->telegram.report_hour = 20;
+    config->telegram.notify_critical = true;
+    config->telegram.notify_warnings = true;
+    
+    // SD-карта
+    config->sd.enabled = true;
+    config->sd.log_interval = 60;
+    config->sd.cleanup_days = 30;
+    config->sd.auto_sync = true;
+    config->sd.sd_mode = 0; // SPI
+    
+    // Mesh
+    config->mesh.enabled = false;
+    config->mesh.role = 0; // Gateway
+    config->mesh.device_id = 1;
+    config->mesh.heartbeat_interval = 30;
+    
+    // AI
+    config->ai.enabled = true;
+    config->ai.min_confidence = 0.7f;
+    config->ai.correction_interval = 300;
+    config->ai.use_ml_model = false; // PID по умолчанию
+    
+    // ========== PID контроллеры для насосов ==========
+    
+    // pH UP PID (быстрая реакция на кислую среду)
+    config->pump_pid[0].kp = 2.0f;
+    config->pump_pid[0].ki = 0.5f;
+    config->pump_pid[0].kd = 0.1f;
+    config->pump_pid[0].output_min = 1.0f;
+    config->pump_pid[0].output_max = 50.0f;
+    config->pump_pid[0].enabled = true;
+    config->pump_pid[0].auto_mode = true;
+    
+    // pH DOWN PID (быстрая реакция на щелочную среду)
+    config->pump_pid[1].kp = 2.0f;
+    config->pump_pid[1].ki = 0.5f;
+    config->pump_pid[1].kd = 0.1f;
+    config->pump_pid[1].output_min = 1.0f;
+    config->pump_pid[1].output_max = 50.0f;
+    config->pump_pid[1].enabled = true;
+    config->pump_pid[1].auto_mode = true;
+    
+    // EC A PID (медленнее, питательные вещества)
+    config->pump_pid[2].kp = 1.0f;
+    config->pump_pid[2].ki = 0.2f;
+    config->pump_pid[2].kd = 0.05f;
+    config->pump_pid[2].output_min = 1.0f;
+    config->pump_pid[2].output_max = 30.0f;
+    config->pump_pid[2].enabled = true;
+    config->pump_pid[2].auto_mode = true;
+    
+    // EC B PID (аналогично EC A)
+    config->pump_pid[3].kp = 1.0f;
+    config->pump_pid[3].ki = 0.2f;
+    config->pump_pid[3].kd = 0.05f;
+    config->pump_pid[3].output_min = 1.0f;
+    config->pump_pid[3].output_max = 30.0f;
+    config->pump_pid[3].enabled = true;
+    config->pump_pid[3].auto_mode = true;
+    
+    // EC C PID (еще медленнее, микроэлементы)
+    config->pump_pid[4].kp = 0.8f;
+    config->pump_pid[4].ki = 0.15f;
+    config->pump_pid[4].kd = 0.03f;
+    config->pump_pid[4].output_min = 0.5f;
+    config->pump_pid[4].output_max = 15.0f;
+    config->pump_pid[4].enabled = true;
+    config->pump_pid[4].auto_mode = true;
+    
+    // WATER PID (только разбавление, без D)
+    config->pump_pid[5].kp = 0.5f;
+    config->pump_pid[5].ki = 0.1f;
+    config->pump_pid[5].kd = 0.0f;
+    config->pump_pid[5].output_min = 5.0f;
+    config->pump_pid[5].output_max = 100.0f;
+    config->pump_pid[5].enabled = true;
+    config->pump_pid[5].auto_mode = false; // Ручной по умолчанию
+    
+    // Режим управления
+    config->control_mode = 1; // PID по умолчанию
+    
+    // Системные
+    config->display_brightness = 80;
+    strncpy(config->device_name, "HydroMonitor-ESP32S3", sizeof(config->device_name) - 1);
 }
 
 static esp_err_t config_save_locked(const system_config_t *config)

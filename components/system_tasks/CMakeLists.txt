@@ -19,5 +19,13 @@ idf_component_register(
         system_interfaces
         lvgl_ui
         encoder
+        # IoT компоненты - включаем по одному
+        # mqtt_client      # Требует переделки API
+        telegram_bot       # ✅ Включен
+        sd_storage         # ✅ Включен
+        ai_controller      # ✅ Включен
+        mesh_network       # ✅ Включен
+    PRIV_REQUIRES
+        main
 )
 
