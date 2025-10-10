@@ -128,12 +128,13 @@ static lv_obj_t* main_screen_create(void *params)
     lv_obj_set_size(content, LV_PCT(100), LV_SIZE_CONTENT);
     
     // GRID LAYOUT: 2 колонки × 3 ряда с оптимизированными размерами
-    static int32_t col_dsc[] = {115, 115, LV_GRID_TEMPLATE_LAST};  // 2 колонки по 115px
+    // Расчёт: 240px - 4px (left) - 4px (right) - 4px (между) = 228px / 2 = 114px
+    static int32_t col_dsc[] = {110, 110, LV_GRID_TEMPLATE_LAST};  // 2 колонки по 110px (уменьшено для экрана 240px)
     static int32_t row_dsc[] = {85, 85, 85, LV_GRID_TEMPLATE_LAST}; // 3 ряда по 85px
     lv_obj_set_grid_dsc_array(content, col_dsc, row_dsc);
-    lv_obj_set_style_pad_all(content, 4, 0);
+    lv_obj_set_style_pad_all(content, 5, 0);     // Увеличен до 5px для симметрии
     lv_obj_set_style_pad_row(content, 4, 0);
-    lv_obj_set_style_pad_column(content, 4, 0);
+    lv_obj_set_style_pad_column(content, 10, 0);  // Увеличен до 10px для красоты
     lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
     
     // Метаданные датчиков
