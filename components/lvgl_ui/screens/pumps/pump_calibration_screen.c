@@ -86,7 +86,17 @@ static void countdown_timer_cb(lv_timer_t *timer)
  */
 static void on_pump_selected(lv_event_t *e)
 {
+    if (!e) {
+        ESP_LOGE(TAG, "Event is NULL in on_pump_selected");
+        return;
+    }
+    
     lv_obj_t *dropdown = lv_event_get_target(e);
+    if (!dropdown) {
+        ESP_LOGE(TAG, "Dropdown target is NULL");
+        return;
+    }
+    
     uint16_t selected = lv_dropdown_get_selected(dropdown);
     g_selected_pump = (pump_index_t)selected;
     
@@ -95,9 +105,11 @@ static void on_pump_selected(lv_event_t *e)
     if (config) {
         g_old_flow_rate = config->pump_config[g_selected_pump].flow_rate_ml_per_sec;
         
-        char text[64];
-        snprintf(text, sizeof(text), "Текущий расход: %.3f мл/сек", g_old_flow_rate);
-        lv_label_set_text(g_current_rate_label, text);
+        if (g_current_rate_label) {
+            char text[64];
+            snprintf(text, sizeof(text), "Текущий расход: %.3f мл/сек", g_old_flow_rate);
+            lv_label_set_text(g_current_rate_label, text);
+        }
     }
     
     ESP_LOGI(TAG, "Выбран насос %s", PUMP_NAMES[g_selected_pump]);
@@ -136,6 +148,13 @@ static void start_calibration(void)
  */
 static void on_start_calibration_click(lv_event_t *e)
 {
+    (void)e; // Unused parameter
+    
+    if (!g_time_input) {
+        ESP_LOGE(TAG, "Time input is NULL");
+        return;
+    }
+    
     // Получить время калибровки из поля ввода
     const char *time_text = lv_textarea_get_text(g_time_input);
     g_calibration_time_ms = (uint32_t)atoi(time_text);
@@ -155,6 +174,13 @@ static void on_start_calibration_click(lv_event_t *e)
  */
 static void on_save_calibration_click(lv_event_t *e)
 {
+    (void)e; // Unused parameter
+    
+    if (!g_volume_input || !g_result_label) {
+        ESP_LOGE(TAG, "Volume input or result label is NULL");
+        return;
+    }
+    
     // Получить введенный объем
     const char *volume_text = lv_textarea_get_text(g_volume_input);
     float real_volume = atof(volume_text);
@@ -266,6 +292,7 @@ lv_obj_t* pump_calibration_screen_create(void *context)
     lv_obj_align(g_start_btn, LV_ALIGN_TOP_MID, 0, 165);
     lv_obj_set_style_bg_color(g_start_btn, lv_color_hex(0xFF9800), 0);
     lv_obj_add_event_cb(g_start_btn, on_start_calibration_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(g_start_btn, on_start_calibration_click, LV_EVENT_PRESSED, NULL);
     
     lv_obj_t *start_label = lv_label_create(g_start_btn);
     lv_label_set_text(start_label, "ЗАПУСТИТЬ КАЛИБРОВКУ");
@@ -303,6 +330,7 @@ lv_obj_t* pump_calibration_screen_create(void *context)
     lv_obj_align(g_save_btn, LV_ALIGN_TOP_RIGHT, -10, 30);
     lv_obj_set_style_bg_color(g_save_btn, lv_color_hex(0x4CAF50), 0);
     lv_obj_add_event_cb(g_save_btn, on_save_calibration_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(g_save_btn, on_save_calibration_click, LV_EVENT_PRESSED, NULL);
     
     lv_obj_t *save_label = lv_label_create(g_save_btn);
     lv_label_set_text(save_label, "Сохр.");

@@ -31,17 +31,17 @@ screen_base_t screen_base_create(const screen_base_config_t *config)
         return base;
     }
     
-    // Применяем базовый стиль
+    // Применяем базовый стиль - компактный дизайн
     lv_obj_remove_style_all(base.screen);
     lv_obj_add_style(base.screen, &style_bg, 0);
-    lv_obj_set_style_pad_all(base.screen, 16, 0);
+    lv_obj_set_style_pad_all(base.screen, 8, 0);  // Компактные отступы экрана
     
     int content_y_offset = 0;
     
     // Создаем статус-бар если нужен
     if (config->has_status_bar) {
         base.status_bar = widget_create_status_bar(base.screen, config->title);
-        content_y_offset += 70;  // Высота статус-бара + отступ
+        content_y_offset += 30;  // Компактная высота статус-бара
         ESP_LOGD(TAG, "Status bar created");
     }
     
@@ -57,13 +57,13 @@ screen_base_t screen_base_create(const screen_base_config_t *config)
     base.content = lv_obj_create(base.screen);
     lv_obj_remove_style_all(base.content);
     
-    // Правильно вычисляем размер (240x320 экран)
+    // Правильно вычисляем размер (240x320 экран, компактный дизайн)
     int screen_height = 320;
-    int content_height = screen_height - content_y_offset - 32;  // 32 = отступы экрана
+    int content_height = screen_height - content_y_offset - 16;  // 16 = отступы экрана (уменьшено)
     
     lv_obj_set_size(base.content, LV_PCT(100), content_height);
     lv_obj_align(base.content, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_pad_all(base.content, 8, 0);
+    lv_obj_set_style_pad_all(base.content, 4, 0);  // Компактные отступы контента
     
     ESP_LOGI(TAG, "Content area: height=%d (screen_height=%d - offset=%d - padding=32)", 
              content_height, screen_height, content_y_offset);

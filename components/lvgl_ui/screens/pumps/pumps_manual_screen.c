@@ -171,6 +171,7 @@ lv_obj_t* pumps_manual_screen_create(void *context)
         lv_obj_set_size(start_btn, 60, 30);
         lv_obj_set_style_bg_color(start_btn, lv_color_hex(0x4CAF50), 0);
         lv_obj_add_event_cb(start_btn, on_pump_start_click, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+        lv_obj_add_event_cb(start_btn, on_pump_start_click, LV_EVENT_PRESSED, (void*)(intptr_t)i);
         
         lv_obj_t *start_label = lv_label_create(start_btn);
         lv_label_set_text(start_label, "Старт");
@@ -183,6 +184,7 @@ lv_obj_t* pumps_manual_screen_create(void *context)
     lv_obj_align(stop_all_btn, LV_ALIGN_BOTTOM_MID, 0, -40);
     lv_obj_set_style_bg_color(stop_all_btn, lv_color_hex(0xF44336), 0);
     lv_obj_add_event_cb(stop_all_btn, on_stop_all_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(stop_all_btn, on_stop_all_click, LV_EVENT_PRESSED, NULL);
     
     lv_obj_t *stop_all_label = lv_label_create(stop_all_btn);
     lv_label_set_text(stop_all_label, "СТОП ВСЕ");

@@ -217,36 +217,70 @@ esp_err_t screen_create_instance(const char *screen_id)
     
     ESP_LOGI(TAG, "Creating screen '%s'...", screen_id);
     
+    // Освобождаем mutex ПЕРЕД созданием UI объекта (долгая операция)
+    if (manager->mutex) {
+        xSemaphoreGive(manager->mutex);
+    }
+    
+    // Создаем UI объект БЕЗ блокировки менеджера
+    lv_obj_t *screen_obj = config->create_fn(config->user_data);
+    if (!screen_obj) {
+        ESP_LOGE(TAG, "create_fn failed for screen '%s'", screen_id);
+        return ESP_FAIL;
+    }
+    
+    // Создаем группу энкодера
+    lv_group_t *encoder_group = lv_group_create();
+    if (encoder_group) {
+        lv_group_set_wrap(encoder_group, true);  // Циклическая навигация
+        ESP_LOGI(TAG, "Encoder group created for '%s'", screen_id);
+    }
+    
+    // Теперь захватываем mutex для добавления instance
+    if (manager->mutex) {
+        if (xSemaphoreTake(manager->mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
+            ESP_LOGE(TAG, "Failed to acquire mutex for adding instance");
+            // Очищаем созданные объекты
+            if (encoder_group) lv_group_del(encoder_group);
+            lv_obj_del(screen_obj);
+            return ESP_ERR_TIMEOUT;
+        }
+    }
+    
+    // Повторно проверяем (могли создать пока мы не держали mutex)
+    screen_instance_t *existing_check = find_instance_by_id(screen_id);
+    if (existing_check) {
+        if (manager->mutex) xSemaphoreGive(manager->mutex);
+        ESP_LOGW(TAG, "Screen '%s' was created by another task", screen_id);
+        // Очищаем дубликат
+        if (encoder_group) lv_group_del(encoder_group);
+        lv_obj_del(screen_obj);
+        return ESP_OK;
+    }
+    
+    // Проверяем лимит снова
+    if (manager->instance_count >= MAX_INSTANCES) {
+        if (manager->mutex) xSemaphoreGive(manager->mutex);
+        ESP_LOGE(TAG, "Maximum instances reached (%d)", MAX_INSTANCES);
+        if (encoder_group) lv_group_del(encoder_group);
+        lv_obj_del(screen_obj);
+        return ESP_ERR_NO_MEM;
+    }
+    
     // Выделяем память для экземпляра
     screen_instance_t *instance = calloc(1, sizeof(screen_instance_t));
     if (!instance) {
         if (manager->mutex) xSemaphoreGive(manager->mutex);
         ESP_LOGE(TAG, "Failed to allocate memory for instance");
+        if (encoder_group) lv_group_del(encoder_group);
+        lv_obj_del(screen_obj);
         return ESP_ERR_NO_MEM;
     }
     
     instance->config = config;
     instance->create_time = get_time_ms();
-    
-    // Вызываем функцию создания UI из конфигурации
-    instance->screen_obj = config->create_fn(config->user_data);
-    if (!instance->screen_obj) {
-        if (manager->mutex) xSemaphoreGive(manager->mutex);
-        ESP_LOGE(TAG, "create_fn failed for screen '%s'", screen_id);
-        free(instance);
-        return ESP_FAIL;
-    }
-    
-    // Создаем группу энкодера для навигации
-    instance->encoder_group = lv_group_create();
-    if (!instance->encoder_group) {
-        ESP_LOGW(TAG, "Failed to create encoder group for '%s'", screen_id);
-        // Не критично, продолжаем
-    } else {
-        lv_group_set_wrap(instance->encoder_group, true);  // Циклическая навигация
-        ESP_LOGI(TAG, "Encoder group created for '%s'", screen_id);
-    }
-    
+    instance->screen_obj = screen_obj;
+    instance->encoder_group = encoder_group;
     instance->is_created = true;
     instance->is_visible = false;
     instance->is_cached = false;

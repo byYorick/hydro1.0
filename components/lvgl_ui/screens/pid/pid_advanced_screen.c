@@ -101,6 +101,7 @@ lv_obj_t* pid_advanced_screen_create(void *context)
     lv_obj_align(thresh_btn, LV_ALIGN_BOTTOM_MID, 0, -45);
     lv_obj_set_style_bg_color(thresh_btn, lv_color_hex(0xFF9800), 0);
     lv_obj_add_event_cb(thresh_btn, on_thresholds_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(thresh_btn, on_thresholds_click, LV_EVENT_PRESSED, NULL);
     
     lv_obj_t *thresh_label = lv_label_create(thresh_btn);
     lv_label_set_text(thresh_label, "Настройка порогов");

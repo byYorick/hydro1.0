@@ -24,6 +24,7 @@ idf_component_register(
         "screens/system/system_screens.c"
         
         # Pump screens
+        "screens/pumps/pumps_menu_screen.c"
         "screens/pumps/pumps_status_screen.c"
         "screens/pumps/pumps_manual_screen.c"
         "screens/pumps/pump_calibration_screen.c"

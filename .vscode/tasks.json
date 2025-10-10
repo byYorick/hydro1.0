@@ -118,6 +118,59 @@
             "options": {
                 "cwd": "${workspaceFolder}"
             }
+        },
+        {
+            "label": "Free COM Port",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/free_com_port.py",
+                "COM10"
+            ],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Free COM and Flash",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Free COM Port",
+                "Flash Project"
+            ],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Free COM and Flash Monitor",
+            "type": "shell",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "python free_com_port.py COM10 && C:\\Espressif\\idf_cmd_init.bat esp-idf-29323a3f5a0574597d6dbaa0af20c775 && idf.py -p COM10 flash monitor"
+            ],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
         }
     ]
 }

@@ -16,48 +16,59 @@ static const char *TAG = "SYSTEM_MENU";
  * ============================= */
 
 static void on_auto_control_click(lv_event_t *e) {
-    ESP_LOGI(TAG, "Auto Control clicked");
-    screen_show("auto_control", NULL);
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
+        ESP_LOGI(TAG, "Auto Control clicked (event: %d)", code);
+        screen_show("auto_control", NULL);
+    }
 }
 
 static void on_wifi_settings_click(lv_event_t *e) {
-    ESP_LOGI(TAG, "WiFi Settings clicked");
-    screen_show("wifi_settings", NULL);
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
+        ESP_LOGI(TAG, "WiFi Settings clicked (event: %d)", code);
+        screen_show("wifi_settings", NULL);
+    }
 }
 
 static void on_display_settings_click(lv_event_t *e) {
-    ESP_LOGI(TAG, "Display Settings clicked");
-    screen_show("display_settings", NULL);
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
+        ESP_LOGI(TAG, "Display Settings clicked (event: %d)", code);
+        screen_show("display_settings", NULL);
+    }
 }
 
 static void on_data_logger_click(lv_event_t *e) {
-    ESP_LOGI(TAG, "Data Logger clicked");
-    screen_show("data_logger", NULL);
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
+        ESP_LOGI(TAG, "Data Logger clicked (event: %d)", code);
+        screen_show("data_logger", NULL);
+    }
 }
 
 static void on_system_info_click(lv_event_t *e) {
-    ESP_LOGI(TAG, "System Info clicked");
-    screen_show("system_info", NULL);
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
+        ESP_LOGI(TAG, "System Info clicked (event: %d)", code);
+        screen_show("system_info", NULL);
+    }
 }
 
 static void on_reset_click(lv_event_t *e) {
-    ESP_LOGI(TAG, "Reset clicked");
-    screen_show("reset_confirm", NULL);
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
+        ESP_LOGI(TAG, "Reset clicked (event: %d)", code);
+        screen_show("reset_confirm", NULL);
+    }
 }
 
-static void on_pumps_status_click(lv_event_t *e) {
-    ESP_LOGI(TAG, "Pumps Status clicked");
-    screen_show("pumps_status", NULL);
-}
-
-static void on_pid_settings_click(lv_event_t *e) {
-    ESP_LOGI(TAG, "PID Settings clicked");
-    screen_show("pid_main", NULL);
-}
-
-static void on_pump_calibration_click(lv_event_t *e) {
-    ESP_LOGI(TAG, "Pump Calibration clicked");
-    screen_show("pump_calibration", NULL);
+static void on_pumps_menu_click(lv_event_t *e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
+        ESP_LOGI(TAG, "Pumps Menu clicked (event: %d)", code);
+        screen_show("pumps_menu", NULL);
+    }
 }
 
 /**
@@ -92,21 +103,9 @@ static lv_obj_t* system_menu_create(void *params)
     // Пункты системного меню - компактные с символами LVGL
     menu_item_config_t items[] = {
         {
-            .text = "Статус насосов",
+            .text = "Насосы",
             .icon = LV_SYMBOL_CHARGE,
-            .callback = on_pumps_status_click,
-            .user_data = NULL,
-        },
-        {
-            .text = "PID Настройки",
-            .icon = LV_SYMBOL_SETTINGS,
-            .callback = on_pid_settings_click,
-            .user_data = NULL,
-        },
-        {
-            .text = "Калибровка",
-            .icon = LV_SYMBOL_EDIT,
-            .callback = on_pump_calibration_click,
+            .callback = on_pumps_menu_click,
             .user_data = NULL,
         },
         {
@@ -151,7 +150,7 @@ static lv_obj_t* system_menu_create(void *params)
     template_menu_config_t menu_cfg = {
         .title = "System",
         .items = items,
-        .item_count = 6,
+        .item_count = 7,
         .has_back_button = true,
         .back_callback = NULL,  // Автоматически вернется к main
     };

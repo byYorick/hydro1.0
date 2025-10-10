@@ -167,6 +167,7 @@ lv_obj_t* pid_detail_screen_create(void *context)
     lv_obj_align(tune_btn, LV_ALIGN_TOP_LEFT, 10, btn_y_start);
     lv_obj_set_style_bg_color(tune_btn, lv_color_hex(0x2196F3), 0);
     lv_obj_add_event_cb(tune_btn, on_tune_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(tune_btn, on_tune_click, LV_EVENT_PRESSED, NULL);
     lv_obj_t *tune_label = lv_label_create(tune_btn);
     lv_label_set_text(tune_label, "Настр.");
     lv_obj_center(tune_label);
@@ -176,6 +177,7 @@ lv_obj_t* pid_detail_screen_create(void *context)
     lv_obj_align(advanced_btn, LV_ALIGN_TOP_RIGHT, -10, btn_y_start);
     lv_obj_set_style_bg_color(advanced_btn, lv_color_hex(0x9C27B0), 0);
     lv_obj_add_event_cb(advanced_btn, on_advanced_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(advanced_btn, on_advanced_click, LV_EVENT_PRESSED, NULL);
     lv_obj_t *adv_label = lv_label_create(advanced_btn);
     lv_label_set_text(adv_label, "Расшир.");
     lv_obj_center(adv_label);
@@ -186,6 +188,7 @@ lv_obj_t* pid_detail_screen_create(void *context)
     lv_obj_align(thresh_btn, LV_ALIGN_TOP_LEFT, 10, btn_y_start + btn_spacing);
     lv_obj_set_style_bg_color(thresh_btn, lv_color_hex(0xFF9800), 0);
     lv_obj_add_event_cb(thresh_btn, on_thresholds_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(thresh_btn, on_thresholds_click, LV_EVENT_PRESSED, NULL);
     lv_obj_t *thresh_label = lv_label_create(thresh_btn);
     lv_label_set_text(thresh_label, "Пороги");
     lv_obj_center(thresh_label);
@@ -195,6 +198,7 @@ lv_obj_t* pid_detail_screen_create(void *context)
     lv_obj_align(reset_btn, LV_ALIGN_TOP_RIGHT, -10, btn_y_start + btn_spacing);
     lv_obj_set_style_bg_color(reset_btn, lv_color_hex(0xF44336), 0);
     lv_obj_add_event_cb(reset_btn, on_reset_integral_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(reset_btn, on_reset_integral_click, LV_EVENT_PRESSED, NULL);
     lv_obj_t *reset_label = lv_label_create(reset_btn);
     lv_label_set_text(reset_label, "Сброс I");
     lv_obj_center(reset_label);
@@ -205,6 +209,7 @@ lv_obj_t* pid_detail_screen_create(void *context)
     lv_obj_align(test_btn, LV_ALIGN_TOP_LEFT, 10, btn_y_start + btn_spacing * 2);
     lv_obj_set_style_bg_color(test_btn, lv_color_hex(0x4CAF50), 0);
     lv_obj_add_event_cb(test_btn, on_test_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(test_btn, on_test_click, LV_EVENT_PRESSED, NULL);
     lv_obj_t *test_label = lv_label_create(test_btn);
     lv_label_set_text(test_label, "Тест 5с");
     lv_obj_center(test_label);
@@ -214,6 +219,7 @@ lv_obj_t* pid_detail_screen_create(void *context)
     lv_obj_align(graph_btn, LV_ALIGN_TOP_RIGHT, -10, btn_y_start + btn_spacing * 2);
     lv_obj_set_style_bg_color(graph_btn, lv_color_hex(0x00BCD4), 0);
     lv_obj_add_event_cb(graph_btn, on_graph_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(graph_btn, on_graph_click, LV_EVENT_PRESSED, NULL);
     lv_obj_t *graph_label = lv_label_create(graph_btn);
     lv_label_set_text(graph_label, "График");
     lv_obj_center(graph_label);

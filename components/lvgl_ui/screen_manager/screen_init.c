@@ -11,6 +11,7 @@
 #include "../screens/system/system_menu_screen.h"
 #include "../screens/system/system_screens.h"
 #include "../screens/popup_screen.h"
+#include "../screens/pumps/pumps_menu_screen.h"
 #include "../screens/pumps/pumps_status_screen.h"
 #include "../screens/pumps/pumps_manual_screen.h"
 #include "../screens/pumps/pump_calibration_screen.h"
@@ -94,15 +95,20 @@ esp_err_t screen_system_init_all(void)
     // 8. Регистрация экранов насосов
     ESP_LOGI(TAG, "[8/9] Registering pump screens...");
     
+    // Главное меню насосов
+    pumps_menu_screen_register();
+    
     screen_config_t pumps_status_cfg = {
         .id = "pumps_status",
         .title = "Pumps Status",
         .category = SCREEN_CATEGORY_INFO,
-        .parent_id = "system_menu",
+        .parent_id = "pumps_menu",
         .can_go_back = true,
         .lazy_load = true,
         .destroy_on_hide = true,
         .create_fn = pumps_status_screen_create,
+        .on_show = pumps_status_screen_on_show,
+        .on_hide = pumps_status_screen_on_hide,
     };
     screen_register(&pumps_status_cfg);
     
@@ -110,10 +116,10 @@ esp_err_t screen_system_init_all(void)
         .id = "pumps_manual",
         .title = "Manual Control",
         .category = SCREEN_CATEGORY_SETTINGS,
-        .parent_id = "pumps_status",
+        .parent_id = "pumps_menu",
         .can_go_back = true,
-        .lazy_load = true,
-        .destroy_on_hide = true,
+        .lazy_load = false,  // Часто используется - создаем сразу
+        .destroy_on_hide = false,  // Кешируем
         .create_fn = pumps_manual_screen_create,
     };
     screen_register(&pumps_manual_cfg);
@@ -122,15 +128,15 @@ esp_err_t screen_system_init_all(void)
         .id = "pump_calibration",
         .title = "Pump Calibration",
         .category = SCREEN_CATEGORY_SETTINGS,
-        .parent_id = "system_menu",
+        .parent_id = "pumps_menu",
         .can_go_back = true,
-        .lazy_load = true,
-        .destroy_on_hide = true,
+        .lazy_load = false,  // Часто используется - создаем сразу  
+        .destroy_on_hide = false,  // Кешируем
         .create_fn = pump_calibration_screen_create,
     };
     screen_register(&pump_calib_cfg);
     
-    ESP_LOGI(TAG, "[OK] 3 pump screens registered");
+    ESP_LOGI(TAG, "[OK] 4 pump screens registered");
     
     // 9. Регистрация экранов PID
     ESP_LOGI(TAG, "[9/9] Registering PID screens...");
@@ -139,12 +145,14 @@ esp_err_t screen_system_init_all(void)
         .id = "pid_main",
         .title = "PID Controllers",
         .category = SCREEN_CATEGORY_MENU,
-        .parent_id = "system_menu",
+        .parent_id = "pumps_menu",
         .can_go_back = true,
-        .lazy_load = true,
+        .lazy_load = false,  // Часто используется - создаем сразу
         .cache_on_hide = true,
         .destroy_on_hide = false,
         .create_fn = pid_main_screen_create,
+        .on_show = pid_main_screen_on_show,
+        .on_hide = pid_main_screen_on_hide,
     };
     screen_register(&pid_main_cfg);
     
@@ -224,7 +232,7 @@ esp_err_t screen_system_init_all(void)
     ESP_LOGI(TAG, "  - Sensor settings: 6");
     ESP_LOGI(TAG, "  - System menu: 1");
     ESP_LOGI(TAG, "  - System settings: 6");
-    ESP_LOGI(TAG, "  - Pump screens: 3");
+    ESP_LOGI(TAG, "  - Pump screens: 4");
     ESP_LOGI(TAG, "  - PID screens: 6");
     ESP_LOGI(TAG, "");
     

@@ -32,6 +32,16 @@ lv_obj_t* pumps_status_screen_create(void *context);
 esp_err_t pumps_status_screen_update(pump_index_t pump_idx);
 
 /**
+ * @brief Callback при показе экрана
+ */
+esp_err_t pumps_status_screen_on_show(lv_obj_t *screen, void *params);
+
+/**
+ * @brief Callback при скрытии экрана
+ */
+esp_err_t pumps_status_screen_on_hide(lv_obj_t *screen);
+
+/**
  * @brief Обновление всех насосов на экране
  * 
  * @return ESP_OK при успехе

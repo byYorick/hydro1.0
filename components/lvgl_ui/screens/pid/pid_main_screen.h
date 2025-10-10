@@ -23,6 +23,16 @@ extern "C" {
 lv_obj_t* pid_main_screen_create(void *context);
 
 /**
+ * @brief Callback при показе экрана
+ */
+esp_err_t pid_main_screen_on_show(lv_obj_t *screen, void *params);
+
+/**
+ * @brief Callback при скрытии экрана
+ */
+esp_err_t pid_main_screen_on_hide(lv_obj_t *screen);
+
+/**
  * @brief Обновление экрана PID
  * 
  * @return ESP_OK при успехе

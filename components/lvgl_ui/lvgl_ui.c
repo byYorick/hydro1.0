@@ -277,20 +277,20 @@ void init_styles(void)  // Глобальная функция - объявле�
     lv_style_set_bg_opa(&style_bg, LV_OPA_COVER);
     lv_style_set_pad_all(&style_bg, 0);
 
-    // Стиль заголовка - темный с акцентом
+    // Стиль заголовка - компактный темный с акцентом
     lv_style_init(&style_header);
     lv_style_set_bg_color(&style_header, COLOR_SURFACE);
     lv_style_set_bg_opa(&style_header, LV_OPA_COVER);
-    lv_style_set_pad_ver(&style_header, 12);
-    lv_style_set_pad_hor(&style_header, 16);
+    lv_style_set_pad_ver(&style_header, 4);  // Компактные вертикальные отступы
+    lv_style_set_pad_hor(&style_header, 8);  // Компактные горизонтальные отступы
     lv_style_set_radius(&style_header, 0);
 
-    // Стиль основного заголовка - крупный и четкий
+    // Стиль основного заголовка - компактный
     lv_style_init(&style_title);
     lv_style_set_text_color(&style_title, COLOR_TEXT);
     lv_style_set_text_font(&style_title, &montserrat_ru);
     lv_style_set_text_opa(&style_title, LV_OPA_COVER);
-    lv_style_set_pad_ver(&style_title, 8);
+    lv_style_set_pad_ver(&style_title, 2);  // Минимальные отступы
 
     // =============================================
     // СТИЛИ КАРТОЧЕК ДАТЧИКОВ
@@ -350,18 +350,18 @@ void init_styles(void)  // Глобальная функция - объявле�
     // СТИЛИ КНОПОК И ЭЛЕМЕНТОВ УПРАВЛЕНИЯ
     // =============================================
 
-    // Основной стиль кнопок - бирюзовый акцент
+    // Основной стиль кнопок - компактный бирюзовый акцент
     lv_style_init(&style_button);
     lv_style_set_bg_color(&style_button, COLOR_ACCENT);
     lv_style_set_bg_opa(&style_button, LV_OPA_COVER);
     lv_style_set_border_width(&style_button, 0);
-    lv_style_set_radius(&style_button, 8);
-    lv_style_set_pad_ver(&style_button, 12);
-    lv_style_set_pad_hor(&style_button, 16);
+    lv_style_set_radius(&style_button, 6);  // Меньший радиус
+    lv_style_set_pad_ver(&style_button, 6);  // Компактные отступы
+    lv_style_set_pad_hor(&style_button, 10);  // Компактные отступы
     lv_style_set_shadow_color(&style_button, COLOR_ACCENT);
-    lv_style_set_shadow_width(&style_button, 2);
-    lv_style_set_shadow_opa(&style_button, LV_OPA_30);
-    lv_style_set_shadow_ofs_y(&style_button, 2);
+    lv_style_set_shadow_width(&style_button, 1);  // Меньшая тень
+    lv_style_set_shadow_opa(&style_button, LV_OPA_20);  // Более прозрачная тень
+    lv_style_set_shadow_ofs_y(&style_button, 1);  // Меньшее смещение
 
     // Стиль нажатой кнопки
     lv_style_init(&style_button_pressed);
@@ -451,14 +451,31 @@ void init_styles(void)  // Глобальная функция - объявле�
     // =============================================
     // СТИЛЬ ФОКУСА - РАМКА ВОКРУГ ЭЛЕМЕНТА
     // =============================================
+    // Компактный стиль фокуса
     lv_style_init(&style_focus);
     lv_style_set_border_color(&style_focus, COLOR_ACCENT);       // Бирюзовая рамка
-    lv_style_set_border_width(&style_focus, 3);                  // Толщина рамки 3px
+    lv_style_set_border_width(&style_focus, 2);                  // Компактная рамка 2px
     lv_style_set_border_opa(&style_focus, LV_OPA_COVER);         // Полная непрозрачность
     lv_style_set_outline_color(&style_focus, COLOR_ACCENT);      // Внешняя обводка
-    lv_style_set_outline_width(&style_focus, 2);                 // Толщина обводки 2px
-    lv_style_set_outline_pad(&style_focus, 2);                   // Отступ обводки 2px
-    lv_style_set_outline_opa(&style_focus, LV_OPA_50);           // Полупрозрачная обводка
+    lv_style_set_outline_width(&style_focus, 1);                 // Тонкая обводка 1px
+    lv_style_set_outline_pad(&style_focus, 1);                   // Минимальный отступ
+    lv_style_set_outline_opa(&style_focus, LV_OPA_40);           // Более прозрачная обводка
+
+    // =============================================
+    // УСТАНОВКА ДЕФОЛТНЫХ ШРИФТОВ
+    // =============================================
+    // Используем montserrat_ru как дефолтный шрифт с fallback на встроенный шрифт для иконок
+    // Это обеспечит поддержку кириллицы и символов LVGL (LV_SYMBOL_*)
+    lv_theme_t *theme = lv_theme_default_init(
+        lv_disp_get_default(),
+        lv_color_hex(0x00D4AA),  // COLOR_ACCENT
+        lv_color_hex(0x0F1419),  // COLOR_BG
+        true,                     // dark theme
+        &montserrat_ru           // дефолтный шрифт
+    );
+    lv_disp_set_theme(lv_disp_get_default(), theme);
+    
+    ESP_LOGI(TAG, "Default font set to montserrat_ru with fallback for icons");
 
     styles_initialized = true;
     ESP_LOGI(TAG, "UI styles initialized with improved color scheme for 240x320 display");
@@ -679,8 +696,12 @@ static void encoder_task(void *pvParameters)
     encoder_event_t event;
     while (1) {
         if (xQueueReceive(encoder_queue, &event, pdMS_TO_TICKS(100)) == pdTRUE) {
-            if (!lvgl_lock(100)) {
+            // Увеличенный timeout для lazy loading экранов
+            if (!lvgl_lock(500)) {
                 ESP_LOGW(TAG, "Failed to acquire LVGL lock for encoder event");
+                // Возвращаем событие в очередь для повторной обработки
+                xQueueSendToFront(encoder_queue, &event, 0);
+                vTaskDelay(pdMS_TO_TICKS(50));
                 continue;
             }
             
@@ -699,63 +720,49 @@ static void handle_encoder_event(encoder_event_t *event)
     }
     
     screen_instance_t *current = screen_get_current();
-    if (current && current->encoder_group) {
-        static uint32_t cleanup_counter = 0;
-        if (++cleanup_counter >= 100) {
-            cleanup_counter = 0;
-            uint32_t before_count = lv_group_get_obj_count(current->encoder_group);
-            int removed = screen_cleanup_hidden_elements(NULL);
-            uint32_t after_count = lv_group_get_obj_count(current->encoder_group);
-            if (removed > 0) {
-                ESP_LOGW(TAG, "Cleaned up %d hidden elements from encoder group (before: %d, after: %d)", 
-                         removed, before_count, after_count);
-            }
-        }
-        
-        switch (event->type) {
-            case ENCODER_EVENT_ROTATE_CW:
-                lv_group_focus_next(current->encoder_group);
-                ESP_LOGD(TAG, "Screen Manager: focus next");
-                return;
-                
-            case ENCODER_EVENT_ROTATE_CCW:
-                lv_group_focus_prev(current->encoder_group);
-                ESP_LOGD(TAG, "Screen Manager: focus prev");
-                return;
-                
-            case ENCODER_EVENT_BUTTON_PRESS:
-                lv_group_send_data(current->encoder_group, LV_KEY_ENTER);
-                lv_obj_t *focused = lv_group_get_focused(current->encoder_group);
-                if (focused) {
-                    lv_obj_send_event(focused, LV_EVENT_CLICKED, NULL);
-                }
-                ESP_LOGD(TAG, "Screen Manager: button pressed");
-                return;
-                
-            default:
-                break;
+    if (!current || !current->encoder_group) {
+        ESP_LOGW(TAG, "No active screen with encoder group");
+        return;
+    }
+    
+    // Периодическая очистка скрытых элементов
+    static uint32_t cleanup_counter = 0;
+    if (++cleanup_counter >= 100) {
+        cleanup_counter = 0;
+        uint32_t before_count = lv_group_get_obj_count(current->encoder_group);
+        int removed = screen_cleanup_hidden_elements(NULL);
+        uint32_t after_count = lv_group_get_obj_count(current->encoder_group);
+        if (removed > 0) {
+            ESP_LOGW(TAG, "Cleaned up %d hidden elements from encoder group (before: %d, after: %d)", 
+                     removed, before_count, after_count);
         }
     }
     
-    ESP_LOGD(TAG, "Legacy encoder handling (Screen Manager not active)");
-    
+    // Обработка событий энкодера через Screen Manager
     switch (event->type) {
         case ENCODER_EVENT_ROTATE_CW:
-            lcd_ili9341_set_encoder_diff(1);
+            lv_group_focus_next(current->encoder_group);
+            ESP_LOGD(TAG, "Screen Manager: focus next");
             break;
             
         case ENCODER_EVENT_ROTATE_CCW:
-            lcd_ili9341_set_encoder_diff(-1);
+            lv_group_focus_prev(current->encoder_group);
+            ESP_LOGD(TAG, "Screen Manager: focus prev");
             break;
             
         case ENCODER_EVENT_BUTTON_PRESS:
+            // Получаем сфокусированный объект
             {
-                lv_indev_t *indev = lcd_ili9341_get_encoder_indev();
-                if (indev) {
-                    lv_group_t *group = lv_indev_get_group(indev);
-                    if (group) {
-                        lv_group_send_data(group, LV_KEY_ENTER);
-                    }
+                lv_obj_t *focused = lv_group_get_focused(current->encoder_group);
+                if (focused) {
+                    // Отправляем событие PRESSED для сфокусированного объекта
+                    lv_obj_send_event(focused, LV_EVENT_PRESSED, NULL);
+                    ESP_LOGD(TAG, "Screen Manager: sent PRESSED event to focused object");
+                    
+                    // Также отправляем KEY_ENTER для совместимости
+                    lv_group_send_data(current->encoder_group, LV_KEY_ENTER);
+                } else {
+                    ESP_LOGW(TAG, "No focused object in group");
                 }
             }
             break;
@@ -765,9 +772,11 @@ static void handle_encoder_event(encoder_event_t *event)
             break;
             
         case ENCODER_EVENT_BUTTON_RELEASE:
+            // Игнорируем - событие уже обработано при нажатии
             break;
             
         default:
+            ESP_LOGW(TAG, "Unknown encoder event type: %d", event->type);
             break;
     }
 }

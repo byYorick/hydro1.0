@@ -36,34 +36,23 @@ static lv_obj_t *g_stats_labels[PUMP_INDEX_COUNT] = {NULL};
  *  CALLBACKS
  * ============================= */
 
-/**
- * @brief Callback для кнопки "Ручное управление"
- */
-static void on_manual_control_click(lv_event_t *e)
-{
-    ESP_LOGI(TAG, "Переход к ручному управлению");
-    screen_show("pumps_manual", NULL);
-}
-
-/**
- * @brief Callback для кнопки "Калибровка"
- */
-static void on_calibration_click(lv_event_t *e)
-{
-    ESP_LOGI(TAG, "Переход к калибровке насосов");
-    screen_show("pump_calibration", NULL);
-}
+// Callbacks для нижних кнопок убраны - функции доступны через меню
 
 /**
  * @brief Callback для клика на насос
  */
 static void on_pump_click(lv_event_t *e)
 {
-    pump_index_t pump_idx = (pump_index_t)(intptr_t)lv_event_get_user_data(e);
-    ESP_LOGI(TAG, "Клик на насос %d", pump_idx);
+    lv_event_code_t code = lv_event_get_code(e);
     
-    // Переход к детальному экрану PID для этого насоса
-    screen_show("pid_detail", (void*)(intptr_t)pump_idx);
+    // Обрабатываем и клик мышью и нажатие Enter от энкодера
+    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
+        pump_index_t pump_idx = (pump_index_t)(intptr_t)lv_event_get_user_data(e);
+        ESP_LOGI(TAG, "Клик на насос %d (event: %d)", pump_idx, code);
+        
+        // Переход к детальному экрану PID для этого насоса
+        screen_show("pid_detail", (void*)(intptr_t)pump_idx);
+    }
 }
 
 /* =============================
@@ -74,99 +63,84 @@ lv_obj_t* pumps_status_screen_create(void *context)
 {
     ESP_LOGI(TAG, "Создание экрана статуса насосов");
     
+    // Используем новые компактные стили
+    extern lv_style_t style_bg;
+    extern lv_style_t style_card;
+    extern lv_style_t style_label;
+    
     // Создание контейнера экрана
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(0x1a1a1a), 0);
+    lv_obj_add_style(screen, &style_bg, 0);
+    lv_obj_set_style_pad_all(screen, 8, 0);  // Компактные отступы
     g_screen = screen;
     
-    // Status bar
-    lv_obj_t *status_bar = widget_create_status_bar(screen, "Статус насосов");
-    lv_obj_align(status_bar, LV_ALIGN_TOP_MID, 0, 0);
+    // Status bar (компактный 30px)
+    widget_create_status_bar(screen, "Статус насосов");
     
-    // Заголовок
-    lv_obj_t *title = lv_label_create(screen);
-    lv_label_set_text(title, "Статус насосов");
-    lv_obj_set_style_text_font(title, &montserrat_ru, 0);
-    lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 35);
+    // Back button
+    widget_create_back_button(screen, NULL, NULL);
     
-    // Контейнер для списка насосов (прокручиваемый)
+    // Контейнер для списка насосов (занимает всё доступное место под хедером)
     lv_obj_t *list_container = lv_obj_create(screen);
-    lv_obj_set_size(list_container, 220, 200);
-    lv_obj_align(list_container, LV_ALIGN_TOP_MID, 0, 65);
-    lv_obj_set_style_bg_color(list_container, lv_color_hex(0x2a2a2a), 0);
-    lv_obj_set_style_border_width(list_container, 1, 0);
-    lv_obj_set_style_border_color(list_container, lv_color_hex(0x444444), 0);
-    lv_obj_set_style_pad_all(list_container, 5, 0);
+    lv_obj_add_style(list_container, &style_card, 0);
+    lv_obj_set_size(list_container, LV_PCT(100), 270);  // Больше места под компактный хедер
+    lv_obj_align(list_container, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_pad_all(list_container, 4, 0);  // Компактные отступы
+    lv_obj_set_style_pad_row(list_container, 2, 0);  // Минимальные отступы между элементами
     lv_obj_set_flex_flow(list_container, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(list_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_align(list_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
     lv_obj_set_scrollbar_mode(list_container, LV_SCROLLBAR_MODE_AUTO);
     
-    // Создание элементов для каждого насоса
+    // Используем стиль фокуса для интерактивных элементов
+    extern lv_style_t style_card_focused;
+    
+    // Создание компактных элементов для каждого насоса
     for (int i = 0; i < PUMP_INDEX_COUNT; i++) {
-        // Контейнер для одного насоса
-        lv_obj_t *pump_item = lv_obj_create(list_container);
-        lv_obj_set_size(pump_item, 200, 50);
-        lv_obj_set_style_bg_color(pump_item, lv_color_hex(0x333333), 0);
-        lv_obj_set_style_border_width(pump_item, 1, 0);
-        lv_obj_set_style_border_color(pump_item, lv_color_hex(0x555555), 0);
-        lv_obj_set_style_radius(pump_item, 5, 0);
-        lv_obj_clear_flag(pump_item, LV_OBJ_FLAG_SCROLLABLE);
+        // Используем кнопку для правильной обработки KEY_ENTER
+        lv_obj_t *pump_item = lv_btn_create(list_container);
+        lv_obj_set_size(pump_item, LV_PCT(100), 36);  // Компактная высота
+        lv_obj_add_style(pump_item, &style_card, 0);
+        lv_obj_add_style(pump_item, &style_card_focused, LV_STATE_FOCUSED);  // Стиль при фокусе
+        lv_obj_set_style_pad_all(pump_item, 4, 0);  // Компактные отступы
         
-        // Кликабельность
-        lv_obj_add_flag(pump_item, LV_OBJ_FLAG_CLICKABLE);
+        // Обработчик клика (клик мышью и нажатие энкодера)
         lv_obj_add_event_cb(pump_item, on_pump_click, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+        lv_obj_add_event_cb(pump_item, on_pump_click, LV_EVENT_PRESSED, (void*)(intptr_t)i);
+        
+        // Flex layout для правильного расположения элементов
+        lv_obj_set_flex_flow(pump_item, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(pump_item, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         
         // Имя насоса
         lv_obj_t *name_label = lv_label_create(pump_item);
         lv_label_set_text(name_label, PUMP_NAMES[i]);
-        lv_obj_set_style_text_color(name_label, lv_color_white(), 0);
-        lv_obj_set_style_text_font(name_label, &montserrat_ru, 0);
-        lv_obj_align(name_label, LV_ALIGN_TOP_LEFT, 5, 5);
+        lv_obj_add_style(name_label, &style_label, 0);
         g_pump_labels[i] = name_label;
         
-        // Статус (активен/остановлен)
-        lv_obj_t *status_label = lv_label_create(pump_item);
-        lv_label_set_text(status_label, "●");
-        lv_obj_set_style_text_color(status_label, lv_color_hex(0x808080), 0); // Серый по умолчанию
-        lv_obj_set_style_text_font(status_label, &montserrat_ru, 0);
-        lv_obj_align(status_label, LV_ALIGN_TOP_RIGHT, -5, 2);
-        g_status_labels[i] = status_label;
+        // Статус и статистика в одной строке
+        lv_obj_t *right_container = lv_obj_create(pump_item);
+        lv_obj_remove_style_all(right_container);
+        lv_obj_set_size(right_container, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(right_container, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(right_container, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_column(right_container, 6, 0);
         
-        // Статистика
-        lv_obj_t *stats_label = lv_label_create(pump_item);
-        lv_label_set_text(stats_label, "Запусков: 0, Объем: 0 мл");
+        // Статистика (компактно)
+        lv_obj_t *stats_label = lv_label_create(right_container);
+        lv_label_set_text(stats_label, "0/0мл");
         lv_obj_set_style_text_color(stats_label, lv_color_hex(0xaaaaaa), 0);
         lv_obj_set_style_text_font(stats_label, &montserrat_ru, 0);
-        lv_obj_align(stats_label, LV_ALIGN_BOTTOM_LEFT, 5, -2);
         g_stats_labels[i] = stats_label;
+        
+        // Статус (активен/остановлен)
+        lv_obj_t *status_label = lv_label_create(right_container);
+        lv_label_set_text(status_label, "●");
+        lv_obj_set_style_text_color(status_label, lv_color_hex(0x808080), 0);
+        lv_obj_set_style_text_font(status_label, &montserrat_ru, 0);
+        g_status_labels[i] = status_label;
     }
     
-    // Кнопка "Ручное управление"
-    lv_obj_t *manual_btn = lv_btn_create(screen);
-    lv_obj_set_size(manual_btn, 100, 35);
-    lv_obj_align(manual_btn, LV_ALIGN_BOTTOM_LEFT, 10, -40);
-    lv_obj_set_style_bg_color(manual_btn, lv_color_hex(0x2196F3), 0);
-    lv_obj_add_event_cb(manual_btn, on_manual_control_click, LV_EVENT_CLICKED, NULL);
-    
-    lv_obj_t *manual_label = lv_label_create(manual_btn);
-    lv_label_set_text(manual_label, "Ручное");
-    lv_obj_center(manual_label);
-    
-    // Кнопка "Калибровка"
-    lv_obj_t *calib_btn = lv_btn_create(screen);
-    lv_obj_set_size(calib_btn, 100, 35);
-    lv_obj_align(calib_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -40);
-    lv_obj_set_style_bg_color(calib_btn, lv_color_hex(0xFF9800), 0);
-    lv_obj_add_event_cb(calib_btn, on_calibration_click, LV_EVENT_CLICKED, NULL);
-    
-    lv_obj_t *calib_label = lv_label_create(calib_btn);
-    lv_label_set_text(calib_label, "Калибр.");
-    lv_obj_center(calib_label);
-    
-    // Кнопка "Назад"
-    lv_obj_t *back_btn = widget_create_back_button(screen, NULL, NULL);
-    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -5);
+    // Нижние кнопки убраны - все функции доступны через меню насосов
     
     ESP_LOGI(TAG, "Экран статуса насосов создан");
     
@@ -212,6 +186,21 @@ esp_err_t pumps_status_screen_update(pump_index_t pump_idx)
                                      0);
     }
     
+    return ESP_OK;
+}
+
+esp_err_t pumps_status_screen_on_show(lv_obj_t *screen, void *params)
+{
+    (void)screen;
+    (void)params;
+    ESP_LOGI(TAG, "Pumps status screen shown");
+    return ESP_OK;
+}
+
+esp_err_t pumps_status_screen_on_hide(lv_obj_t *screen)
+{
+    (void)screen;
+    ESP_LOGI(TAG, "Pumps status screen hidden");
     return ESP_OK;
 }
 

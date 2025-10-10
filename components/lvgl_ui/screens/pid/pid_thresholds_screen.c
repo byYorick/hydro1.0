@@ -207,6 +207,7 @@ lv_obj_t* pid_thresholds_screen_create(void *context)
     lv_obj_align(apply_btn, LV_ALIGN_BOTTOM_LEFT, 10, -40);
     lv_obj_set_style_bg_color(apply_btn, lv_color_hex(0x4CAF50), 0);
     lv_obj_add_event_cb(apply_btn, on_apply_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(apply_btn, on_apply_click, LV_EVENT_PRESSED, NULL);
     
     lv_obj_t *apply_label = lv_label_create(apply_btn);
     lv_label_set_text(apply_label, "Применить");
@@ -217,6 +218,7 @@ lv_obj_t* pid_thresholds_screen_create(void *context)
     lv_obj_align(defaults_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -40);
     lv_obj_set_style_bg_color(defaults_btn, lv_color_hex(0xFF9800), 0);
     lv_obj_add_event_cb(defaults_btn, on_defaults_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(defaults_btn, on_defaults_click, LV_EVENT_PRESSED, NULL);
     
     lv_obj_t *def_label = lv_label_create(defaults_btn);
     lv_label_set_text(def_label, "Дефолт");

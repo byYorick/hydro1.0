@@ -19,11 +19,12 @@ lv_obj_t* widget_create_status_bar(lv_obj_t *parent, const char *title)
         return NULL;
     }
     
-    // Создаем контейнер статус-бара
+    // Создаем контейнер статус-бара (компактная высота)
     lv_obj_t *bar = lv_obj_create(parent);
     lv_obj_add_style(bar, &style_card, 0);
-    lv_obj_set_size(bar, LV_PCT(100), 60);
+    lv_obj_set_size(bar, LV_PCT(100), 30);  // Компактный хедер
     lv_obj_align(bar, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_style_pad_all(bar, 4, 0);  // Меньше отступов
     
     // Создаем лейбл заголовка
     lv_obj_t *label = lv_label_create(bar);

@@ -32,10 +32,15 @@ static lv_obj_t *g_screen = NULL;
  */
 static void on_pid_item_click(lv_event_t *e)
 {
-    pump_index_t pump_idx = (pump_index_t)(intptr_t)lv_event_get_user_data(e);
-    ESP_LOGI(TAG, "Переход к детальному экрану PID для насоса %d", pump_idx);
+    lv_event_code_t code = lv_event_get_code(e);
     
-    screen_show("pid_detail", (void*)(intptr_t)pump_idx);
+    // Обрабатываем и клик мышью и нажатие Enter от энкодера
+    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
+        pump_index_t pump_idx = (pump_index_t)(intptr_t)lv_event_get_user_data(e);
+        ESP_LOGI(TAG, "Переход к детальному экрану PID для насоса %d (event: %d)", pump_idx, code);
+        
+        screen_show("pid_detail", (void*)(intptr_t)pump_idx);
+    }
 }
 
 /* =============================
@@ -44,96 +49,118 @@ static void on_pid_item_click(lv_event_t *e)
 
 lv_obj_t* pid_main_screen_create(void *context)
 {
+    (void)context;
     ESP_LOGI(TAG, "Создание главного экрана PID");
+    
+    // Используем новые компактные стили
+    extern lv_style_t style_bg;
+    extern lv_style_t style_card;
+    extern lv_style_t style_label;
     
     // Создание контейнера экрана
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(0x1a1a1a), 0);
+    lv_obj_add_style(screen, &style_bg, 0);
+    lv_obj_set_style_pad_all(screen, 8, 0);  // Компактные отступы
     g_screen = screen;
     
-    // Status bar
-    lv_obj_t *status_bar = widget_create_status_bar(screen, "PID");
-    lv_obj_align(status_bar, LV_ALIGN_TOP_MID, 0, 0);
+    // Status bar (компактный 30px)
+    widget_create_status_bar(screen, "PID");
     
-    // Заголовок
-    lv_obj_t *title = lv_label_create(screen);
-    lv_label_set_text(title, "PID Контроллеры");
-    lv_obj_set_style_text_font(title, &montserrat_ru, 0);
-    lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 35);
+    // Back button
+    widget_create_back_button(screen, NULL, NULL);
     
     // Получение конфигурации
     const system_config_t *config = config_manager_get_cached();
     
-    // Контейнер для списка PID
+    // Контейнер для списка PID (занимает всё место)
     lv_obj_t *list_container = lv_obj_create(screen);
-    lv_obj_set_size(list_container, 220, 230);
-    lv_obj_align(list_container, LV_ALIGN_TOP_MID, 0, 65);
-    lv_obj_set_style_bg_color(list_container, lv_color_hex(0x2a2a2a), 0);
-    lv_obj_set_style_border_width(list_container, 1, 0);
-    lv_obj_set_style_border_color(list_container, lv_color_hex(0x444444), 0);
-    lv_obj_set_style_pad_all(list_container, 5, 0);
+    lv_obj_add_style(list_container, &style_card, 0);
+    lv_obj_set_size(list_container, LV_PCT(100), 270);  // Под компактный хедер
+    lv_obj_align(list_container, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_pad_all(list_container, 4, 0);  // Компактные отступы
+    lv_obj_set_style_pad_row(list_container, 2, 0);  // Минимальные отступы
     lv_obj_set_flex_flow(list_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(list_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
     lv_obj_set_scrollbar_mode(list_container, LV_SCROLLBAR_MODE_AUTO);
     
-    // Создание элементов для каждого PID
+    // Используем стиль фокуса для интерактивных элементов
+    extern lv_style_t style_card_focused;
+    
+    // Создание компактных элементов для каждого PID
     for (int i = 0; i < PUMP_INDEX_COUNT; i++) {
-        // Контейнер для одного PID
-        lv_obj_t *pid_item = lv_obj_create(list_container);
-        lv_obj_set_size(pid_item, 200, 55);
-        lv_obj_set_style_bg_color(pid_item, lv_color_hex(0x333333), 0);
-        lv_obj_set_style_border_width(pid_item, 1, 0);
-        lv_obj_set_style_border_color(pid_item, lv_color_hex(0x555555), 0);
-        lv_obj_set_style_radius(pid_item, 5, 0);
-        lv_obj_clear_flag(pid_item, LV_OBJ_FLAG_SCROLLABLE);
+        // Используем кнопку для правильной обработки KEY_ENTER
+        lv_obj_t *pid_item = lv_btn_create(list_container);
+        lv_obj_set_size(pid_item, LV_PCT(100), 40);  // Компактная высота
+        lv_obj_add_style(pid_item, &style_card, 0);
+        lv_obj_add_style(pid_item, &style_card_focused, LV_STATE_FOCUSED);  // Стиль при фокусе
+        lv_obj_set_style_pad_all(pid_item, 4, 0);  // Компактные отступы
         
-        // Кликабельность
-        lv_obj_add_flag(pid_item, LV_OBJ_FLAG_CLICKABLE);
+        // Обработчик клика (клик мышью и нажатие энкодера)
         lv_obj_add_event_cb(pid_item, on_pid_item_click, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+        lv_obj_add_event_cb(pid_item, on_pid_item_click, LV_EVENT_PRESSED, (void*)(intptr_t)i);
+        
+        // Flex layout для компактного расположения
+        lv_obj_set_flex_flow(pid_item, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(pid_item, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+        lv_obj_set_style_pad_row(pid_item, 1, 0);
+        
+        // Первая строка: Имя и статус
+        lv_obj_t *top_row = lv_obj_create(pid_item);
+        lv_obj_remove_style_all(top_row);
+        lv_obj_set_size(top_row, LV_PCT(100), LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(top_row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(top_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         
         // Имя насоса
-        lv_obj_t *name_label = lv_label_create(pid_item);
+        lv_obj_t *name_label = lv_label_create(top_row);
         lv_label_set_text(name_label, PUMP_NAMES[i]);
-        lv_obj_set_style_text_color(name_label, lv_color_white(), 0);
-        lv_obj_set_style_text_font(name_label, &montserrat_ru, 0);
-        lv_obj_align(name_label, LV_ALIGN_TOP_LEFT, 5, 5);
+        lv_obj_add_style(name_label, &style_label, 0);
         
         // Статус (enabled/disabled)
         bool enabled = config ? config->pump_pid[i].enabled : false;
-        lv_obj_t *status_label = lv_label_create(pid_item);
+        lv_obj_t *status_label = lv_label_create(top_row);
         lv_label_set_text(status_label, enabled ? "ON" : "OFF");
         lv_obj_set_style_text_color(status_label, 
                                      enabled ? lv_color_hex(0x4CAF50) : lv_color_hex(0xF44336), 
                                      0);
         lv_obj_set_style_text_font(status_label, &montserrat_ru, 0);
-        lv_obj_align(status_label, LV_ALIGN_TOP_RIGHT, -5, 5);
         
-        // Параметры PID
-        char params[64];
+        // Вторая строка: Параметры PID (компактно)
+        char params[48];
         if (config) {
             snprintf(params, sizeof(params), 
-                     "Kp=%.2f Ki=%.2f Kd=%.2f",
+                     "%.1f/%.1f/%.1f",  // Компактный формат
                      config->pump_pid[i].kp,
                      config->pump_pid[i].ki,
                      config->pump_pid[i].kd);
         } else {
-            snprintf(params, sizeof(params), "Kp=- Ki=- Kd=-");
+            snprintf(params, sizeof(params), "-/-/-");
         }
         
         lv_obj_t *params_label = lv_label_create(pid_item);
         lv_label_set_text(params_label, params);
         lv_obj_set_style_text_color(params_label, lv_color_hex(0xaaaaaa), 0);
         lv_obj_set_style_text_font(params_label, &montserrat_ru, 0);
-        lv_obj_align(params_label, LV_ALIGN_BOTTOM_LEFT, 5, -2);
     }
-    
-    // Кнопка "Назад"
-    lv_obj_t *back_btn = widget_create_back_button(screen, NULL, NULL);
-    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -5);
     
     ESP_LOGI(TAG, "Главный экран PID создан");
     
     return screen;
+}
+
+esp_err_t pid_main_screen_on_show(lv_obj_t *screen, void *params)
+{
+    (void)screen;
+    (void)params;
+    ESP_LOGI(TAG, "PID main screen shown");
+    return ESP_OK;
+}
+
+esp_err_t pid_main_screen_on_hide(lv_obj_t *screen)
+{
+    (void)screen;
+    ESP_LOGI(TAG, "PID main screen hidden");
+    return ESP_OK;
 }
 
 esp_err_t pid_main_screen_update(void)

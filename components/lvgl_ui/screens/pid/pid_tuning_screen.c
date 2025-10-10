@@ -280,6 +280,7 @@ lv_obj_t* pid_tuning_screen_create(void *context)
     lv_obj_align(save_btn, LV_ALIGN_TOP_LEFT, 10, y_offset);
     lv_obj_set_style_bg_color(save_btn, lv_color_hex(0x4CAF50), 0);
     lv_obj_add_event_cb(save_btn, on_save_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(save_btn, on_save_click, LV_EVENT_PRESSED, NULL);
     
     lv_obj_t *save_label = lv_label_create(save_btn);
     lv_label_set_text(save_label, "Сохранить");
@@ -291,6 +292,7 @@ lv_obj_t* pid_tuning_screen_create(void *context)
     lv_obj_align(defaults_btn, LV_ALIGN_TOP_RIGHT, -10, y_offset);
     lv_obj_set_style_bg_color(defaults_btn, lv_color_hex(0xFF9800), 0);
     lv_obj_add_event_cb(defaults_btn, on_defaults_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(defaults_btn, on_defaults_click, LV_EVENT_PRESSED, NULL);
     
     lv_obj_t *defaults_label = lv_label_create(defaults_btn);
     lv_label_set_text(defaults_label, "Дефолт");

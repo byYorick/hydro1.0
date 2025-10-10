@@ -106,6 +106,7 @@ lv_obj_t* pid_graph_screen_create(void *context)
     lv_obj_align(export_btn, LV_ALIGN_BOTTOM_MID, 0, -45);
     lv_obj_set_style_bg_color(export_btn, lv_color_hex(0x00BCD4), 0);
     lv_obj_add_event_cb(export_btn, on_export_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(export_btn, on_export_click, LV_EVENT_PRESSED, NULL);
     
     lv_obj_t *export_label = lv_label_create(export_btn);
     lv_label_set_text(export_label, "Экспорт (заглушка)");

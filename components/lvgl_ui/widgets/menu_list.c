@@ -37,43 +37,52 @@ lv_obj_t* widget_create_menu_list(lv_obj_t *parent,
     lv_obj_set_size(list, LV_PCT(90), LV_SIZE_CONTENT);
     lv_obj_align(list, LV_ALIGN_CENTER, 0, 20);
     
-    // Настраиваем flex layout для вертикального списка
+    // Настраиваем flex layout для вертикального списка - компактный
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(list, LV_FLEX_ALIGN_START, 
                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_all(list, 16, 0);
-    lv_obj_set_style_pad_row(list, 8, 0);
+    lv_obj_set_style_pad_all(list, 8, 0);  // Меньше отступов
+    lv_obj_set_style_pad_row(list, 4, 0);  // Меньше отступов между кнопками
     
-    // Создаем кнопки меню
+    // Создаем компактные кнопки меню
     for (uint8_t i = 0; i < item_count; i++) {
         lv_obj_t *btn = lv_btn_create(list);
         lv_obj_add_style(btn, &style_card, 0);
-        lv_obj_set_size(btn, LV_PCT(100), 40);
+        lv_obj_set_size(btn, LV_PCT(100), 32);  // Компактная высота
         
-        // Добавляем callback если есть
+        // Добавляем callback если есть (клик мышью и нажатие энкодера)
         if (items[i].callback) {
-            lv_obj_add_event_cb(btn, items[i].callback, 
-                              LV_EVENT_CLICKED, items[i].user_data);
+            lv_obj_add_event_cb(btn, items[i].callback, LV_EVENT_CLICKED, items[i].user_data);
+            lv_obj_add_event_cb(btn, items[i].callback, LV_EVENT_PRESSED, items[i].user_data);
+        }
+        
+        // Если есть иконка, создаем отдельный лейбл для нее
+        if (items[i].icon) {
+            lv_obj_t *icon = lv_label_create(btn);
+            lv_obj_set_style_text_font(icon, &lv_font_montserrat_14, 0);  // Шрифт с иконками
+            lv_label_set_text(icon, items[i].icon);
+            lv_obj_align(icon, LV_ALIGN_LEFT_MID, 8, 0);
         }
         
         // Создаем лейбл с текстом
         lv_obj_t *label = lv_label_create(btn);
         lv_obj_add_style(label, &style_label, 0);
         
-        // Если есть иконка, добавляем ее
-        if (items[i].icon && items[i].text) {
-            char text_with_icon[64];
-            snprintf(text_with_icon, sizeof(text_with_icon), "%s %s", 
-                     items[i].icon, items[i].text);
-            lv_label_set_text(label, text_with_icon);
-        } else if (items[i].text) {
+        if (items[i].text) {
             lv_label_set_text(label, items[i].text);
         }
         
-        lv_obj_center(label);
+        // Центрируем текст (или немного левее если есть иконка)
+        if (items[i].icon) {
+            lv_obj_align(label, LV_ALIGN_LEFT_MID, 28, 0);  // Отступ для иконки
+        } else {
+            lv_obj_center(label);
+        }
         
         // Добавляем индикатор "→" справа
         lv_obj_t *arrow = lv_label_create(btn);
+        // Используем встроенный шрифт LVGL для иконок
+        lv_obj_set_style_text_font(arrow, &lv_font_montserrat_14, 0);
         lv_label_set_text(arrow, LV_SYMBOL_RIGHT);  // →
         lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -10, 0);
         

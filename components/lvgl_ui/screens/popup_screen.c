@@ -230,7 +230,8 @@ static lv_obj_t* popup_create(void *user_data)
     
     // Иконка
     lv_obj_t *icon = lv_label_create(container);
-    lv_obj_set_style_text_font(icon, &montserrat_ru, 0); // ИСПРАВЛЕНО: русский шрифт
+    // Используем встроенный шрифт LVGL для иконок (поддерживает LV_SYMBOL_*)
+    lv_obj_set_style_text_font(icon, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(icon, lv_color_white(), 0);
     lv_label_set_text(icon, "!"); // Default icon
     
@@ -250,6 +251,7 @@ static lv_obj_t* popup_create(void *user_data)
     lv_obj_set_style_bg_opa(ok_btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(ok_btn, 8, 0);
     lv_obj_add_event_cb(ok_btn, ok_button_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(ok_btn, ok_button_cb, LV_EVENT_PRESSED, NULL);
     
     lv_obj_t *ok_label = lv_label_create(ok_btn);
     lv_label_set_text(ok_label, "OK");
@@ -502,23 +504,23 @@ static const char* get_popup_icon(popup_type_t type, const popup_config_t *confi
 {
     if (type == POPUP_TYPE_NOTIFICATION) {
         switch (config->data.notification.type) {
-            case NOTIF_TYPE_INFO:     return "i";
-            case NOTIF_TYPE_WARNING:  return "!";
-            case NOTIF_TYPE_ERROR:    return "X";
-            case NOTIF_TYPE_CRITICAL: return "!!";
-            default:                  return "*";
+            case NOTIF_TYPE_INFO:     return LV_SYMBOL_OK;       // ✓
+            case NOTIF_TYPE_WARNING:  return LV_SYMBOL_WARNING;  // ⚠
+            case NOTIF_TYPE_ERROR:    return LV_SYMBOL_CLOSE;    // ✕
+            case NOTIF_TYPE_CRITICAL: return LV_SYMBOL_WARNING;  // ⚠
+            default:                  return LV_SYMBOL_BELL;     // 🔔
         }
     } else if (type == POPUP_TYPE_ERROR) {
         switch (config->data.error.level) {
-            case ERROR_LEVEL_DEBUG:   return "D";
-            case ERROR_LEVEL_INFO:    return "I";
-            case ERROR_LEVEL_WARNING: return "W";
-            case ERROR_LEVEL_ERROR:   return "E";
-            case ERROR_LEVEL_CRITICAL:return "C";
-            default:                  return "?";
+            case ERROR_LEVEL_DEBUG:   return LV_SYMBOL_LIST;     // ☰
+            case ERROR_LEVEL_INFO:    return LV_SYMBOL_OK;       // ✓
+            case ERROR_LEVEL_WARNING: return LV_SYMBOL_WARNING;  // ⚠
+            case ERROR_LEVEL_ERROR:   return LV_SYMBOL_CLOSE;    // ✕
+            case ERROR_LEVEL_CRITICAL:return LV_SYMBOL_WARNING;  // ⚠
+            default:                  return LV_SYMBOL_DUMMY;    // ?
         }
     }
-    return "?";
+    return LV_SYMBOL_DUMMY;
 }
 
 /**

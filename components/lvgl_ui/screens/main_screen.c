@@ -25,17 +25,22 @@ static lv_obj_t *sensor_cards[6] = {NULL};
  */
 static void on_sensor_card_click(lv_event_t *e)
 {
-    int sensor_id = (int)(intptr_t)lv_event_get_user_data(e);
+    lv_event_code_t code = lv_event_get_code(e);
     
-    // ID экранов детализации
-    const char *detail_screens[] = {
-        "detail_ph", "detail_ec", "detail_temp",
-        "detail_humidity", "detail_lux", "detail_co2"
-    };
-    
-    if (sensor_id >= 0 && sensor_id < 6) {
-        ESP_LOGI(TAG, "Opening detail screen for sensor %d", sensor_id);
-        screen_show(detail_screens[sensor_id], NULL);
+    // Обрабатываем и клик мышью и нажатие Enter от энкодера
+    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
+        int sensor_id = (int)(intptr_t)lv_event_get_user_data(e);
+        
+        // ID экранов детализации
+        const char *detail_screens[] = {
+            "detail_ph", "detail_ec", "detail_temp",
+            "detail_humidity", "detail_lux", "detail_co2"
+        };
+        
+        if (sensor_id >= 0 && sensor_id < 6) {
+            ESP_LOGI(TAG, "Opening detail screen for sensor %d (event: %d)", sensor_id, code);
+            screen_show(detail_screens[sensor_id], NULL);
+        }
     }
 }
 
@@ -44,8 +49,13 @@ static void on_sensor_card_click(lv_event_t *e)
  */
 static void on_system_settings_click(lv_event_t *e)
 {
-    ESP_LOGI(TAG, "Opening system settings");
-    screen_show("system_menu", NULL);
+    lv_event_code_t code = lv_event_get_code(e);
+    
+    // Обрабатываем и клик мышью и нажатие Enter от энкодера
+    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
+        ESP_LOGI(TAG, "Opening system settings (event: %d)", code);
+        screen_show("system_menu", NULL);
+    }
 }
 
 /**
@@ -115,8 +125,9 @@ static lv_obj_t* main_screen_create(void *params)
     lv_obj_t *set_btn = lv_btn_create(status_bar);
     lv_obj_add_style(set_btn, &style_card, 0);
     lv_obj_set_size(set_btn, 35, 28);
+    // Обработка клика мышью и нажатия энкодера
     lv_obj_add_event_cb(set_btn, on_system_settings_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_flag(set_btn, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(set_btn, on_system_settings_click, LV_EVENT_PRESSED, NULL);
     
     lv_obj_t *set_label = lv_label_create(set_btn);
     lv_label_set_text(set_label, "SET");

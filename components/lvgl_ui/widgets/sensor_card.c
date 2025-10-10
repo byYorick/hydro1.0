@@ -57,10 +57,10 @@ lv_obj_t* widget_create_sensor_card(lv_obj_t *parent,
     // Делаем кликабельной
     lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
     
-    // Добавляем callback если есть
+    // Добавляем callback если есть (клик мышью и нажатие энкодера)
     if (config->on_click) {
-        lv_obj_add_event_cb(card, config->on_click, LV_EVENT_CLICKED, 
-                           config->user_data);
+        lv_obj_add_event_cb(card, config->on_click, LV_EVENT_CLICKED, config->user_data);
+        lv_obj_add_event_cb(card, config->on_click, LV_EVENT_PRESSED, config->user_data);
     }
     
     // КРИТИЧНО: Добавляем обработчик удаления для освобождения памяти
