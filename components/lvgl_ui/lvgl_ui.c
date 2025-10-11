@@ -787,13 +787,23 @@ static void handle_encoder_event(encoder_event_t *event)
     // Обработка событий энкодера через Screen Manager
     switch (event->type) {
         case ENCODER_EVENT_ROTATE_CW:
-            lv_group_focus_next(current->encoder_group);
-            ESP_LOGD(TAG, "Screen Manager: focus next");
+            // КРИТИЧНО: Проверяем количество элементов перед переключением
+            if (lv_group_get_obj_count(current->encoder_group) > 1) {
+                lv_group_focus_next(current->encoder_group);
+                ESP_LOGD(TAG, "Screen Manager: focus next");
+            } else {
+                ESP_LOGD(TAG, "Screen Manager: only 1 element, ignoring rotate");
+            }
             break;
             
         case ENCODER_EVENT_ROTATE_CCW:
-            lv_group_focus_prev(current->encoder_group);
-            ESP_LOGD(TAG, "Screen Manager: focus prev");
+            // КРИТИЧНО: Проверяем количество элементов перед переключением
+            if (lv_group_get_obj_count(current->encoder_group) > 1) {
+                lv_group_focus_prev(current->encoder_group);
+                ESP_LOGD(TAG, "Screen Manager: focus prev");
+            } else {
+                ESP_LOGD(TAG, "Screen Manager: only 1 element, ignoring rotate");
+            }
             break;
             
         case ENCODER_EVENT_BUTTON_PRESS:
@@ -821,11 +831,10 @@ static void handle_encoder_event(encoder_event_t *event)
                         break;
                     }
                     
-                    // КРИТИЧНО: Отправляем ТОЛЬКО KEY event, убираем PRESSED
-                    // Двойная отправка вызывает задвоения и крэши
-                    // LVGL требует передавать key как void* с приведением типа
-                    lv_obj_send_event(focused, LV_EVENT_KEY, (void*)(uintptr_t)LV_KEY_ENTER);
-                    ESP_LOGI(TAG, "[OK] Sent KEY_ENTER event to focused object");
+                    // КРИТИЧНО: Отправляем CLICKED напрямую - самый безопасный вариант
+                    // LVGL автоматически обработает как нажатие кнопки
+                    lv_obj_send_event(focused, LV_EVENT_CLICKED, NULL);
+                    ESP_LOGI(TAG, "[OK] Sent CLICKED event to focused object");
                 } else {
                     ESP_LOGW(TAG, "[FAIL] No focused object in group (obj_count=%lu)", (unsigned long)obj_count);
                 }

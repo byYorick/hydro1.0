@@ -660,13 +660,13 @@ static void notification_callback(const notification_t *notification)
             timeout_ms = 0;  // Без таймера - только по кнопке OK
             break;
         case NOTIF_TYPE_WARNING:
-            timeout_ms = 10000;  // 10 секунд
+            timeout_ms = 0;  // Без таймера - пользователь должен нажать OK
             break;
         case NOTIF_TYPE_INFO:
-            timeout_ms = 30000;  // 30 секунд - достаточно времени для взаимодействия
+            timeout_ms = 0;  // Без таймера - пользователь должен нажать OK
             break;
         default:
-            timeout_ms = 30000;
+            timeout_ms = 0;
             break;
     }
     

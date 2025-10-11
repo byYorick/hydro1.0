@@ -352,23 +352,19 @@ static void ok_button_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     
-    // КРИТИЧНО: Обрабатываем ТОЛЬКО LV_EVENT_KEY, игнорируем PRESSED
-    // lvgl_ui.c отправляет ОБА события, но мы обрабатываем только одно
-    // Это предотвращает двойное срабатывание
-    if (code == LV_EVENT_KEY) {
-        uint32_t key = lv_event_get_key(e);
-        if (key == LV_KEY_ENTER) {
-            ESP_LOGI(TAG, ">>> OK button ENTER key - activating cooldown");
-            
-            // Сохраняем время закрытия для cooldown
-            g_last_close_time = esp_timer_get_time() / 1000;
-            ESP_LOGI(TAG, ">>> Cooldown started: %lld ms", g_last_close_time);
-            
-            // КРИТИЧНО: Возвращаемся на parent (main экран)
-            screen_go_to_parent();
-        }
+    // КРИТИЧНО: Обрабатываем ТОЛЬКО LV_EVENT_CLICKED для избежания дублирования
+    // Encoder отправляет KEY, которое LVGL автоматически преобразует в CLICKED
+    if (code == LV_EVENT_CLICKED) {
+        ESP_LOGI(TAG, ">>> OK button CLICKED - activating cooldown");
+        
+        // Сохраняем время закрытия для cooldown
+        g_last_close_time = esp_timer_get_time() / 1000;
+        ESP_LOGI(TAG, ">>> Cooldown started: %lld ms", g_last_close_time);
+        
+        // КРИТИЧНО: Возвращаемся на parent (main экран)
+        screen_go_to_parent();
     }
-    // Игнорируем CLICKED и PRESSED, чтобы избежать двойного срабатывания
+    // Игнорируем PRESSED и KEY для избежания двойного срабатывания
 }
 
 /**
