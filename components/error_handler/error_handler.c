@@ -5,7 +5,7 @@
 
 #include "error_handler.h"
 #include "notification_system.h"
-#include "../lvgl_ui/screens/popup_screen.h"
+#include "../lvgl_ui/screens/notification_screen.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -21,7 +21,6 @@ static bool g_initialized = false;
 static bool g_show_popup = true;
 static SemaphoreHandle_t g_mutex = NULL;
 static error_callback_t g_callback = NULL;
-static QueueHandle_t g_error_queue = NULL;
 
 // Статистика ошибок
 static struct {
@@ -50,33 +49,12 @@ static void show_error_popup_via_screen_manager(const error_info_t *error)
     
     // Попапы закрываются только по нажатию OK (без таймера)
     uint32_t timeout = 0;
-
-    // Проверяем, что мы в главной задаче или задаче с доступом к LVGL
-    const char *current_task = pcTaskGetName(NULL);
-    if (strstr(current_task, "sensor") != NULL || 
-        strstr(current_task, "i2c") != NULL ||
-        strstr(current_task, "system") != NULL) {
-        ESP_LOGW(TAG, "Error popup called from %s task - deferring to LVGL task", current_task);
-        
-        // Добавляем в очередь для отложенного показа
-        error_queue_item_t queue_item = {
-            .error = *error,
-            .timeout = timeout
-        };
-        
-        if (xQueueSend(g_error_queue, &queue_item, pdMS_TO_TICKS(100)) != pdTRUE) {
-            ESP_LOGW(TAG, "Failed to queue error popup - queue full");
-        } else {
-            ESP_LOGD(TAG, "Error popup queued for LVGL task");
-        }
-        return;
-    }
     
-    ESP_LOGI(TAG, "[INFO] Showing error popup via Screen Manager: [%s] %s", 
+    ESP_LOGD(TAG, "Showing error: [%s] %s", 
              error_level_to_string(error->level), error->message);
     
-    // Показываем через popup_screen (управляется Screen Manager)
-    popup_show_error(error, timeout);
+    // Показываем ошибку (автоматически использует очередь)
+    error_screen_show(error, timeout);
 }
 
 esp_err_t error_handler_init(bool show_popup)
@@ -92,18 +70,10 @@ esp_err_t error_handler_init(bool show_popup)
         return ESP_ERR_NO_MEM;
     }
 
-    // Создаем очередь для отложенного показа ошибок
-    g_error_queue = xQueueCreate(10, sizeof(error_queue_item_t));
-    if (g_error_queue == NULL) {
-        ESP_LOGE(TAG, "Failed to create error queue");
-        vSemaphoreDelete(g_mutex);
-        return ESP_ERR_NO_MEM;
-    }
-
     g_show_popup = show_popup;
     g_initialized = true;
 
-    ESP_LOGI(TAG, "Error handler initialized (popup: %s via Screen Manager)", 
+    ESP_LOGI(TAG, "Error handler initialized (popup: %s via notification_screen queue)", 
              show_popup ? "ON" : "OFF");
     return ESP_OK;
 }
@@ -346,29 +316,8 @@ const char* error_level_to_string(error_level_t level)
     }
 }
 
-/**
- * @brief Обработка очереди ошибок (вызывается из LVGL задачи)
- */
-esp_err_t error_handler_process_queue(void)
-{
-    if (!g_initialized || !g_error_queue) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    
-    error_queue_item_t queue_item;
-    BaseType_t result = xQueueReceive(g_error_queue, &queue_item, 0); // Неблокирующий вызов
-    
-    if (result == pdTRUE) {
-        ESP_LOGI(TAG, "Processing queued error popup: [%s] %s", 
-                 error_level_to_string(queue_item.error.level), queue_item.error.message);
-        
-        // Показываем popup в контексте LVGL задачи
-        popup_show_error(&queue_item.error, queue_item.timeout);
-        return ESP_OK;
-    }
-    
-    return ESP_ERR_NOT_FOUND; // Нет элементов в очереди
-}
+// error_handler_process_queue() УДАЛЕНА
+// Теперь notification_screen сам управляет очередью через notification_screen_process_queue()
 
 esp_err_t error_handler_set_font(const void *font)
 {

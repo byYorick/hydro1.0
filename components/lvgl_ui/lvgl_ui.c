@@ -8,6 +8,7 @@
 #include "screen_manager/screen_manager.h"
 #include "screen_manager/screen_init.h"
 #include "screens/main_screen.h"
+#include "screens/notification_screen.h"
 #include "lvgl_styles.h"
 #include "../error_handler/error_handler.h"
 // Используем только встроенные шрифты LVGL
@@ -566,26 +567,27 @@ static void display_update_task(void *pvParameters)
             data_processed = true;
         }
         
-        if (data_processed) {
-            cycle_count++;
-            
-            if (!lvgl_lock(100)) {
-                ESP_LOGW(TAG, "Failed to get LVGL lock in display task");
-                vTaskDelay(pdMS_TO_TICKS(100));
-                continue;
-            }
-            
-            if (lv_is_initialized()) {
+        // КРИТИЧНО: Блокируем LVGL для обработки очередей даже БЕЗ данных датчиков
+        if (!lvgl_lock(100)) {
+            ESP_LOGW(TAG, "Failed to get LVGL lock in display task");
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+        
+        if (lv_is_initialized()) {
+            // Обновляем датчики если есть данные
+            if (data_processed) {
+                cycle_count++;
                 update_sensor_display(&sensor_data);
-                
-                // Обрабатываем очередь ошибок в контексте LVGL
-                error_handler_process_queue();
             }
-            lvgl_unlock();
-        } else {
-            if (cycle_count == 0 && (esp_timer_get_time() / 1000000LL) % 30 == 0) {
-                ESP_LOGD(TAG, "Display task alive, waiting for sensor data...");
-            }
+            
+            // КРИТИЧНО: Обрабатываем очередь уведомлений ВСЕГДА (независимо от датчиков)
+            notification_screen_process_queue();
+        }
+        lvgl_unlock();
+        
+        if (!data_processed && cycle_count == 0 && (esp_timer_get_time() / 1000000LL) % 30 == 0) {
+            ESP_LOGD(TAG, "Display task alive, waiting for sensor data...");
         }
         
         vTaskDelay(pdMS_TO_TICKS(200));
@@ -797,16 +799,35 @@ static void handle_encoder_event(encoder_event_t *event)
         case ENCODER_EVENT_BUTTON_PRESS:
             // Получаем сфокусированный объект
             {
+                uint32_t obj_count = lv_group_get_obj_count(current->encoder_group);
                 lv_obj_t *focused = lv_group_get_focused(current->encoder_group);
+                
+                ESP_LOGI(TAG, ">>> ENCODER PRESS: screen=%s, group=%p, obj_count=%lu, focused=%p",
+                         current->config ? current->config->id : "unknown",
+                         current->encoder_group,
+                         (unsigned long)obj_count,
+                         focused);
+                
+                // КРИТИЧНО: Проверяем, что группа валидна и имеет объекты
+                if (obj_count == 0) {
+                    ESP_LOGW(TAG, "[FAIL] Encoder group is empty, ignoring press");
+                    break;
+                }
+                
                 if (focused) {
-                    // Отправляем событие PRESSED для сфокусированного объекта
-                    lv_obj_send_event(focused, LV_EVENT_PRESSED, NULL);
-                    ESP_LOGD(TAG, "Screen Manager: sent PRESSED event to focused object");
+                    // КРИТИЧНО: Проверяем, что объект все еще валиден
+                    if (!lv_obj_is_valid(focused)) {
+                        ESP_LOGW(TAG, "[FAIL] Focused object is invalid, ignoring press");
+                        break;
+                    }
                     
-                    // Также отправляем KEY_ENTER для совместимости
-                    lv_group_send_data(current->encoder_group, LV_KEY_ENTER);
+                    // КРИТИЧНО: Отправляем ТОЛЬКО KEY event, убираем PRESSED
+                    // Двойная отправка вызывает задвоения и крэши
+                    // LVGL требует передавать key как void* с приведением типа
+                    lv_obj_send_event(focused, LV_EVENT_KEY, (void*)(uintptr_t)LV_KEY_ENTER);
+                    ESP_LOGI(TAG, "[OK] Sent KEY_ENTER event to focused object");
                 } else {
-                    ESP_LOGW(TAG, "No focused object in group");
+                    ESP_LOGW(TAG, "[FAIL] No focused object in group (obj_count=%lu)", (unsigned long)obj_count);
                 }
             }
             break;

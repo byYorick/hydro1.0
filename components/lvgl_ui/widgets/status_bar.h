@@ -30,6 +30,14 @@ lv_obj_t* widget_create_status_bar(lv_obj_t *parent, const char *title);
  */
 void widget_status_bar_set_title(lv_obj_t *status_bar, const char *title);
 
+/**
+ * @brief Обновить счетчик уведомлений
+ * 
+ * @param status_bar Статус-бар
+ * @param count Количество непрочитанных уведомлений
+ */
+void widget_status_bar_update_notifications(lv_obj_t *status_bar, uint32_t count);
+
 #ifdef __cplusplus
 }
 #endif

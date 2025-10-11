@@ -371,11 +371,19 @@ esp_err_t screen_destroy_instance(const char *screen_id)
         return ESP_ERR_NOT_FOUND;
     }
     
-    // Нельзя уничтожить текущий видимый экран
-    if (instance == manager->current_screen) {
+    // Нельзя уничтожить текущий ВИДИМЫЙ экран
+    // Но разрешаем уничтожать скрытый экран (is_visible = false),
+    // даже если он еще числится в current_screen (для destroy_on_hide)
+    if (instance == manager->current_screen && instance->is_visible) {
         if (manager->mutex) xSemaphoreGive(manager->mutex);
-        ESP_LOGE(TAG, "Cannot destroy current screen '%s'", screen_id);
+        ESP_LOGE(TAG, "Cannot destroy visible current screen '%s'", screen_id);
         return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Если уничтожаем скрытый текущий экран - очищаем ссылку
+    if (instance == manager->current_screen && !instance->is_visible) {
+        ESP_LOGD(TAG, "Clearing current_screen pointer for hidden screen '%s'", screen_id);
+        manager->current_screen = NULL;
     }
     
     ESP_LOGI(TAG, "Destroying screen '%s'...", screen_id);
@@ -572,6 +580,9 @@ esp_err_t screen_show_instance(const char *screen_id, void *params)
     ESP_LOGI(TAG, "  Screen loaded!");
     
     // Устанавливаем группу энкодера для LVGL
+    ESP_LOGI(TAG, ">>> Encoder group check: instance=%p, group=%p", 
+             instance, instance ? instance->encoder_group : NULL);
+    
     if (instance->encoder_group) {
         ESP_LOGI(TAG, "=== Configuring encoder group for '%s' ===", screen_id);
         
@@ -616,11 +627,14 @@ esp_err_t screen_show_instance(const char *screen_id, void *params)
                     }
                 }
                 
-                ESP_LOGI(TAG, "Encoder indev configured for '%s'", screen_id);
+                ESP_LOGI(TAG, ">>> Encoder indev configured for '%s' (group=%p, obj_count=%d)", 
+                         screen_id, instance->encoder_group, obj_count);
                 break;
             }
             indev = lv_indev_get_next(indev);
         }
+    } else {
+        ESP_LOGW(TAG, ">>> NO ENCODER GROUP for '%s' - cannot configure encoder!", screen_id);
     }
     
     // Вызываем on_show callback ПОСЛЕ настройки группы энкодера

@@ -64,14 +64,6 @@ typedef struct {
 } error_info_t;
 
 /**
- * @brief Элемент очереди ошибок для отложенного показа
- */
-typedef struct {
-    error_info_t error;             ///< Информация об ошибке
-    uint32_t timeout;               ///< Таймаут показа popup
-} error_queue_item_t;
-
-/**
  * @brief Callback для обработки ошибок
  * 
  * @param error Информация об ошибке
@@ -110,13 +102,6 @@ esp_err_t error_handler_report(error_category_t category,
  * @return ESP_OK при успехе
  */
 esp_err_t error_handler_register_callback(error_callback_t callback);
-
-/**
- * @brief Обработка очереди ошибок (вызывается из LVGL задачи)
- * 
- * @return ESP_OK если обработан элемент очереди, ESP_ERR_NOT_FOUND если очередь пуста
- */
-esp_err_t error_handler_process_queue(void);
 
 /**
  * @brief Включение/выключение всплывающих окон

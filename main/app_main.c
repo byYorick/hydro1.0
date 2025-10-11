@@ -96,6 +96,9 @@ const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
 #include "lvgl.h"
 LV_FONT_DECLARE(montserrat_ru);
 
+// UI экраны
+#include "screens/notification_screen.h"
+
 // Датчики (для инициализации)
 #include "sht3x.h"
 #include "ccs811.h"
@@ -537,12 +540,28 @@ static esp_err_t init_system_components(void)
     ESP_LOGI(TAG, "  [OK] System interfaces initialized");
     
     // Notification System: Система уведомлений
-    ret = notification_system_init(100); // Максимум 100 уведомлений
+    ret = notification_system_init(MAX_NOTIFICATIONS); // Используем константу из system_config.h
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize notification system: %s", esp_err_to_name(ret));
         return ret;
     }
     notification_set_callback(notification_callback);
+    
+    // Применяем настройки cooldown из конфигурации
+    notification_screen_set_cooldown(g_system_config.notification_config.popup_cooldown_ms);
+    ESP_LOGI(TAG, "  Notification cooldown set to %lu ms", 
+             (unsigned long)g_system_config.notification_config.popup_cooldown_ms);
+    
+    // Восстанавливаем критические уведомления из NVS (если включено)
+    if (g_system_config.notification_config.save_critical_to_nvs) {
+        ret = notification_load_critical_from_nvs();
+        if (ret == ESP_OK) {
+            uint32_t unread = notification_get_unread_count();
+            ESP_LOGI(TAG, "  Restored critical notifications from NVS (unread: %lu)", 
+                     (unsigned long)unread);
+        }
+    }
+    
     ESP_LOGI(TAG, "  [OK] Notification System initialized");
     
     // Error Handler: Централизованная обработка ошибок
@@ -630,6 +649,29 @@ static void notification_callback(const notification_t *notification)
     ESP_LOGI(TAG, "Notification [%s]: %s",
              notification_type_to_string(notification->type),
              notification->message);
+    
+    // Показываем попап в зависимости от типа уведомления
+    uint32_t timeout_ms = 0;
+    switch (notification->type) {
+        case NOTIF_TYPE_CRITICAL:
+            timeout_ms = 0;  // Без таймера - только по кнопке OK
+            break;
+        case NOTIF_TYPE_ERROR:
+            timeout_ms = 0;  // Без таймера - только по кнопке OK
+            break;
+        case NOTIF_TYPE_WARNING:
+            timeout_ms = 10000;  // 10 секунд
+            break;
+        case NOTIF_TYPE_INFO:
+            timeout_ms = 30000;  // 30 секунд - достаточно времени для взаимодействия
+            break;
+        default:
+            timeout_ms = 30000;
+            break;
+    }
+    
+    // Показываем уведомление как экран
+    notification_screen_show(notification, timeout_ms);
 }
 
 static void log_callback(const data_logger_entry_t *entry)

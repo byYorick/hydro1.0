@@ -222,6 +222,7 @@ extern "C" {
  ******************************************************************************/
 #define MAX_NOTIFICATIONS           30      // Максимальное количество уведомлений (уменьшено)
 #define NOTIFICATION_DURATION_MS    5000    // Длительность уведомления по умолчанию
+#define NOTIFICATION_COOLDOWN_MS    30000   // Cooldown между попапами (30 секунд по умолчанию)
 
 /*******************************************************************************
  * ПАРАМЕТРЫ ЛОГИРОВАНИЯ ДАННЫХ
@@ -438,6 +439,15 @@ typedef struct {
 } ui_config_t;
 
 /**
+ * @brief Конфигурация системы уведомлений
+ */
+typedef struct {
+    uint32_t popup_cooldown_ms;   // Cooldown между попапами (мс)
+    bool auto_log_critical;       // Автоматически логировать критические уведомления
+    bool save_critical_to_nvs;    // Сохранять критические в NVS
+} notification_config_t;
+
+/**
  * @brief Основная конфигурация системы
  */
 typedef struct {
@@ -447,6 +457,7 @@ typedef struct {
     sensor_config_t sensor_config[SENSOR_COUNT];  // Конфигурация датчиков
     pump_config_t pump_config[PUMP_INDEX_COUNT];  // Конфигурация насосов
     pid_config_t pump_pid[PUMP_INDEX_COUNT];      // PID конфигурация для насосов
+    notification_config_t notification_config;    // Конфигурация уведомлений
 } system_config_t;
 
 /* =============================

@@ -17,7 +17,7 @@ idf_component_register(
         
         # Concrete screens
         "screens/main_screen.c"
-        "screens/popup_screen.c"
+        "screens/notification_screen.c"
         "screens/sensor/sensor_detail_screen.c"
         "screens/sensor/sensor_settings_screen.c"
         "screens/system/system_menu_screen.c"
@@ -42,7 +42,6 @@ idf_component_register(
         "widgets/status_bar.c"
         "widgets/menu_list.c"
         "widgets/sensor_card.c"
-        "widgets/notification_popup.c"
         "widgets/encoder_value_edit.c"
         
     INCLUDE_DIRS 

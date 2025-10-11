@@ -40,6 +40,11 @@ static void config_set_defaults(system_config_t *config)
     config->ui_config.encoder_task_priority = 5;        // Средний-высокий для энкодера
     config->ui_config.lvgl_mem_size_kb = 128;           // 128 КБ памяти LVGL
     config->ui_config.lvgl_draw_buf_size = 32768;       // 32 КБ буфер отрисовки
+    
+    // Конфигурация системы уведомлений по умолчанию
+    config->notification_config.popup_cooldown_ms = NOTIFICATION_COOLDOWN_MS;  // 30 секунд
+    config->notification_config.auto_log_critical = true;   // Автоматически логировать критические
+    config->notification_config.save_critical_to_nvs = true; // Сохранять критические в NVS
 
     const float sensor_targets[SENSOR_COUNT] = {
         PH_TARGET_DEFAULT,

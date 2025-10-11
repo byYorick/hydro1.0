@@ -10,7 +10,7 @@
 #include "../screens/sensor/sensor_settings_screen.h"
 #include "../screens/system/system_menu_screen.h"
 #include "../screens/system/system_screens.h"
-#include "../screens/popup_screen.h"
+#include "../screens/notification_screen.h"
 #include "../screens/pumps/pumps_menu_screen.h"
 #include "../screens/pumps/pumps_status_screen.h"
 #include "../screens/pumps/pumps_manual_screen.h"
@@ -21,7 +21,6 @@
 #include "../screens/pid/pid_advanced_screen.h"
 #include "../screens/pid/pid_thresholds_screen.h"
 #include "../screens/pid/pid_graph_screen.h"
-#include "../widgets/notification_popup.h"
 #include "esp_log.h"
 
 static const char *TAG = "SCREEN_INIT";
@@ -82,18 +81,13 @@ esp_err_t screen_system_init_all(void)
     }
     ESP_LOGI(TAG, "[OK] 7 system screens registered");
     
-    // 6. Регистрация popup экрана (управляемый через Screen Manager)
-    ESP_LOGI(TAG, "[6/7] Registering popup screen...");
-    popup_screen_register();
-    ESP_LOGI(TAG, "[OK] Popup screen registered");
+    // 6. Регистрация экрана уведомлений
+    ESP_LOGI(TAG, "[6/8] Registering notification screen...");
+    notification_screen_register();
+    ESP_LOGI(TAG, "[OK] Notification screen registered");
     
-    // 7. КРИТИЧНО: Инициализация системы попапов уведомлений
-    ESP_LOGI(TAG, "[7/9] Initializing notification popup system...");
-    widget_notification_popup_init();
-    ESP_LOGI(TAG, "[OK] Notification popup system initialized");
-    
-    // 8. Регистрация экранов насосов
-    ESP_LOGI(TAG, "[8/9] Registering pump screens...");
+    // 7. Регистрация экранов насосов
+    ESP_LOGI(TAG, "[7/8] Registering pump screens...");
     
     // Главное меню насосов
     pumps_menu_screen_register();
@@ -138,8 +132,8 @@ esp_err_t screen_system_init_all(void)
     
     ESP_LOGI(TAG, "[OK] 4 pump screens registered");
     
-    // 9. Регистрация экранов PID
-    ESP_LOGI(TAG, "[9/9] Registering PID screens...");
+    // 8. Регистрация экранов PID
+    ESP_LOGI(TAG, "[8/8] Registering PID screens...");
     
     screen_config_t pid_main_cfg = {
         .id = "pid_main",

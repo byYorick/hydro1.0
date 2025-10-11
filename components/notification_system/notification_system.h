@@ -55,6 +55,12 @@ typedef void (*notification_callback_t)(const notification_t *notification);
 esp_err_t notification_system_init(uint32_t max_notifications);
 
 /**
+ * @brief Деинициализация системы уведомлений
+ * @return ESP_OK при успехе
+ */
+esp_err_t notification_system_deinit(void);
+
+/**
  * @brief Создание нового уведомления
  * @param type Тип уведомления
  * @param priority Приоритет
@@ -137,6 +143,18 @@ esp_err_t notification_set_callback(notification_callback_t callback);
  * @return Строковое представление типа
  */
 const char* notification_type_to_string(notification_type_t type);
+
+/**
+ * @brief Сохранение критических уведомлений в NVS
+ * @return ESP_OK при успехе
+ */
+esp_err_t notification_save_critical_to_nvs(void);
+
+/**
+ * @brief Загрузка критических уведомлений из NVS
+ * @return ESP_OK при успехе
+ */
+esp_err_t notification_load_critical_from_nvs(void);
 
 // Константы для совместимости
 #define NOTIFICATION_INFO NOTIF_TYPE_INFO
