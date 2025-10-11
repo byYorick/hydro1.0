@@ -25,16 +25,6 @@ static ph_ec_correction_callback_t g_correction_callback = NULL;
 static float g_current_ph = 7.0f;
 static float g_current_ec = 1.0f;
 
-// Имена насосов
-static const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
-    "pH UP",
-    "pH DOWN",
-    "EC A",
-    "EC B",
-    "EC C",
-    "Water"
-};
-
 // GPIO пины для насосов (один пин на насос - через оптопару)
 static const int PUMP_PINS[PUMP_INDEX_COUNT] = {
     PUMP_PH_UP_PIN,

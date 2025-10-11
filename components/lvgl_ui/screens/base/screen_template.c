@@ -60,7 +60,7 @@ lv_obj_t* template_create_menu_screen(const template_menu_config_t *config,
                             config->item_count,
                             group);
     
-    ESP_LOGI(TAG, "Menu screen created");
+    ESP_LOGD(TAG, "Menu screen created");
     
     return base.screen;
 }
@@ -191,7 +191,7 @@ lv_obj_t* template_create_detail_screen(const template_detail_config_t *config,
         ESP_LOGD(TAG, "Settings button created (user_data: %p)", config->settings_user_data);
     }
     
-    ESP_LOGI(TAG, "Detail screen created");
+    ESP_LOGD(TAG, "Detail screen created");
     
     return base.screen;
 }

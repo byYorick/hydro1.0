@@ -8,19 +8,18 @@
 #include "../../widgets/back_button.h"
 #include "../../widgets/status_bar.h"
 #include "../../widgets/encoder_value_edit.h"
+#include "../../widgets/event_helpers.h"
 #include "pump_manager.h"
 #include "config_manager.h"
 #include "peristaltic_pump.h"
+#include "system_config.h"
 #include "montserrat14_ru.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_task_wdt.h"
 #include <stdio.h>
 
 static const char *TAG = "PUMPS_MANUAL_SCREEN";
-
-static const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
-    "pH UP", "pH DOWN", "EC A", "EC B", "EC C", "Water"
-};
 
 // GPIO пины насосов
 static const int PUMP_PINS[PUMP_INDEX_COUNT] = {
@@ -167,9 +166,13 @@ static void on_stop_all_click(lv_event_t *e)
 
 lv_obj_t* pumps_manual_screen_create(void *context)
 {
-    ESP_LOGI(TAG, "Создание экрана ручного управления");
+    ESP_LOGD(TAG, "Создание экрана ручного управления");
     
     lv_obj_t *screen = lv_obj_create(NULL);
+    if (!screen) {
+        ESP_LOGE(TAG, "Failed to create pumps manual screen");
+        return NULL;
+    }
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x1a1a1a), 0);
     g_screen = screen;
     
@@ -180,7 +183,6 @@ lv_obj_t* pumps_manual_screen_create(void *context)
     // Заголовок
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "Ручное управление");
-    lv_obj_set_style_text_font(title, &montserrat_ru, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 35);
     
@@ -231,8 +233,7 @@ lv_obj_t* pumps_manual_screen_create(void *context)
         lv_obj_t *toggle_btn = lv_btn_create(pump_item);
         lv_obj_set_size(toggle_btn, 60, 30);
         lv_obj_set_style_bg_color(toggle_btn, lv_color_hex(0x4CAF50), 0);
-        lv_obj_add_event_cb(toggle_btn, on_pump_toggle_click, LV_EVENT_CLICKED, (void*)(intptr_t)i);
-        lv_obj_add_event_cb(toggle_btn, on_pump_toggle_click, LV_EVENT_PRESSED, (void*)(intptr_t)i);
+        widget_add_click_handler(toggle_btn, on_pump_toggle_click, (void*)(intptr_t)i);
         g_start_buttons[i] = toggle_btn;
         
         lv_obj_t *btn_label = lv_label_create(toggle_btn);
@@ -246,8 +247,7 @@ lv_obj_t* pumps_manual_screen_create(void *context)
     lv_obj_set_size(stop_all_btn, 200, 35);
     lv_obj_align(stop_all_btn, LV_ALIGN_BOTTOM_MID, 0, -40);
     lv_obj_set_style_bg_color(stop_all_btn, lv_color_hex(0xF44336), 0);
-    lv_obj_add_event_cb(stop_all_btn, on_stop_all_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(stop_all_btn, on_stop_all_click, LV_EVENT_PRESSED, NULL);
+    widget_add_click_handler(stop_all_btn, on_stop_all_click, NULL);
     
     lv_obj_t *stop_all_label = lv_label_create(stop_all_btn);
     lv_label_set_text(stop_all_label, "СТОП ВСЕ");
@@ -257,7 +257,7 @@ lv_obj_t* pumps_manual_screen_create(void *context)
     lv_obj_t *back_btn = widget_create_back_button(screen, NULL, NULL);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -5);
     
-    ESP_LOGI(TAG, "Экран ручного управления создан");
+    ESP_LOGD(TAG, "Экран ручного управления создан");
     
     return screen;
 }

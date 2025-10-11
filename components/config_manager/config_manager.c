@@ -32,6 +32,14 @@ static void config_set_defaults(system_config_t *config)
     memset(config, 0, sizeof(system_config_t));
     config->auto_control_enabled = true;
     config->display_brightness = 80;  // Яркость дисплея по умолчанию 80%
+    
+    // UI и LVGL конфигурация по умолчанию
+    config->ui_config.display_task_stack_size = 16384;  // 16 КБ для задачи дисплея
+    config->ui_config.encoder_task_stack_size = 16384;  // 16 КБ для задачи энкодера
+    config->ui_config.display_task_priority = 6;        // Высокий приоритет для дисплея
+    config->ui_config.encoder_task_priority = 5;        // Средний-высокий для энкодера
+    config->ui_config.lvgl_mem_size_kb = 128;           // 128 КБ памяти LVGL
+    config->ui_config.lvgl_draw_buf_size = 32768;       // 32 КБ буфер отрисовки
 
     const float sensor_targets[SENSOR_COUNT] = {
         PH_TARGET_DEFAULT,

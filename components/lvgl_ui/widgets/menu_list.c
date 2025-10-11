@@ -4,6 +4,7 @@
  */
 
 #include "menu_list.h"
+#include "event_helpers.h"
 #include "esp_log.h"
 #include <stdio.h>
 
@@ -52,8 +53,7 @@ lv_obj_t* widget_create_menu_list(lv_obj_t *parent,
         
         // Добавляем callback если есть (клик мышью и нажатие энкодера)
         if (items[i].callback) {
-            lv_obj_add_event_cb(btn, items[i].callback, LV_EVENT_CLICKED, items[i].user_data);
-            lv_obj_add_event_cb(btn, items[i].callback, LV_EVENT_PRESSED, items[i].user_data);
+            widget_add_click_handler(btn, items[i].callback, items[i].user_data);
         }
         
         // Если есть иконка, создаем отдельный лейбл для нее

@@ -8,21 +8,19 @@
 #include "../../widgets/back_button.h"
 #include "../../widgets/status_bar.h"
 #include "../../widgets/encoder_value_edit.h"
+#include "../../widgets/event_helpers.h"
 #include "pump_manager.h"
 #include "config_manager.h"
 #include "data_logger.h"
 #include "ph_ec_controller.h"
+#include "system_config.h"
 #include "montserrat14_ru.h"
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 #include <stdio.h>
 #include <stdlib.h>
 
 static const char *TAG = "PUMP_CALIB_SCREEN";
-
-// Имена насосов
-static const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
-    "pH UP", "pH DOWN", "EC A", "EC B", "EC C", "Water"
-};
 
 // UI элементы для каждого насоса
 typedef struct {
@@ -162,6 +160,9 @@ static void on_save_calibration_click(lv_event_t *e)
 
 static void create_pump_widget(lv_obj_t *parent, pump_index_t pump_idx)
 {
+    // КРИТИЧНО: Feed watchdog в начале создания виджета (тяжелая операция)
+    esp_task_wdt_reset();
+    
     pump_calib_widget_t *widget = &g_pump_widgets[pump_idx];
     
     const system_config_t *config = config_manager_get_cached();
@@ -169,30 +170,38 @@ static void create_pump_widget(lv_obj_t *parent, pump_index_t pump_idx)
         widget->old_flow_rate = config->pump_config[pump_idx].flow_rate_ml_per_sec;
     }
     
+    // ОПТИМИЗАЦИЯ: Используем готовый стиль вместо 5 вызовов set_style
+    extern lv_style_t style_pump_widget;
+    
     widget->container = lv_obj_create(parent);
+    if (!widget->container) {
+        ESP_LOGE(TAG, "Failed to create container for pump %d", pump_idx);
+        return;
+    }
     lv_obj_set_size(widget->container, 220, 110);
-    lv_obj_set_style_bg_color(widget->container, lv_color_hex(0x2a2a2a), 0);
-    lv_obj_set_style_border_color(widget->container, lv_color_hex(0x444444), 0);
-    lv_obj_set_style_border_width(widget->container, 1, 0);
-    lv_obj_set_style_radius(widget->container, 8, 0);
-    lv_obj_set_style_pad_all(widget->container, 6, 0);
+    lv_obj_add_style(widget->container, &style_pump_widget, 0);  // Один вызов вместо 5!
     lv_obj_clear_flag(widget->container, LV_OBJ_FLAG_SCROLLABLE);
     
     // Название
     widget->name_label = lv_label_create(widget->container);
-    lv_label_set_text(widget->name_label, PUMP_NAMES[pump_idx]);
-    lv_obj_set_style_text_color(widget->name_label, lv_color_hex(0x2196F3), 0);
-    lv_obj_set_style_text_font(widget->name_label, &montserrat_ru, 0);
-    lv_obj_align(widget->name_label, LV_ALIGN_TOP_LEFT, 0, 0);
+    if (widget->name_label) {
+        lv_label_set_text(widget->name_label, PUMP_NAMES[pump_idx]);
+        lv_obj_set_style_text_color(widget->name_label, lv_color_hex(0x2196F3), 0);
+        lv_obj_align(widget->name_label, LV_ALIGN_TOP_LEFT, 0, 0);
+    }
     
     // Текущий расход
     widget->rate_label = lv_label_create(widget->container);
-    char rate_text[32];
-    snprintf(rate_text, sizeof(rate_text), "%.3f мл/с", widget->old_flow_rate);
-    lv_label_set_text(widget->rate_label, rate_text);
-    lv_obj_set_style_text_color(widget->rate_label, lv_color_hex(0xaaaaaa), 0);
-    lv_obj_set_style_text_font(widget->rate_label, &montserrat_ru, 0);
-    lv_obj_align(widget->rate_label, LV_ALIGN_TOP_RIGHT, 0, 2);
+    if (widget->rate_label) {
+        char rate_text[32];
+        snprintf(rate_text, sizeof(rate_text), "%.3f мл/с", widget->old_flow_rate);
+        lv_label_set_text(widget->rate_label, rate_text);
+        lv_obj_set_style_text_color(widget->rate_label, lv_color_hex(0xaaaaaa), 0);
+        lv_obj_align(widget->rate_label, LV_ALIGN_TOP_RIGHT, 0, 2);
+    }
+    
+    // КРИТИЧНО: Feed watchdog перед созданием сложного encoder_value виджета
+    esp_task_wdt_reset();
     
     // Виджет времени (редактируемое энкодером)
     encoder_value_config_t time_cfg = {
@@ -205,30 +214,41 @@ static void create_pump_widget(lv_obj_t *parent, pump_index_t pump_idx)
         .edit_color = lv_color_hex(0xFFC107),  // Желтый при редактировании
     };
     widget->time_value = widget_encoder_value_create(widget->container, &time_cfg);
-    lv_obj_set_size(widget->time_value, 90, 28);
-    lv_obj_set_style_text_font(widget->time_value, &montserrat_ru, 0);
-    lv_obj_align(widget->time_value, LV_ALIGN_TOP_LEFT, 0, 22);
+    if (widget->time_value) {
+        lv_obj_set_size(widget->time_value, 90, 28);
+        lv_obj_align(widget->time_value, LV_ALIGN_TOP_LEFT, 0, 22);
+    } else {
+        ESP_LOGW(TAG, "Failed to create time_value widget for pump %d", pump_idx);
+    }
     
     // Кнопка калибровки
     widget->calib_btn = lv_btn_create(widget->container);
-    lv_obj_set_size(widget->calib_btn, 60, 28);
-    lv_obj_set_style_bg_color(widget->calib_btn, lv_color_hex(0xFF9800), 0);
-    lv_obj_set_style_radius(widget->calib_btn, 4, 0);
-    lv_obj_align(widget->calib_btn, LV_ALIGN_TOP_RIGHT, 0, 22);
-    lv_obj_add_event_cb(widget->calib_btn, on_calibrate_click, LV_EVENT_CLICKED, (void*)(intptr_t)pump_idx);
-    lv_obj_add_event_cb(widget->calib_btn, on_calibrate_click, LV_EVENT_PRESSED, (void*)(intptr_t)pump_idx);
-    
-    lv_obj_t *calib_label = lv_label_create(widget->calib_btn);
-    lv_label_set_text(calib_label, "Калиб");
-    lv_obj_set_style_text_font(calib_label, &montserrat_ru, 0);
-    lv_obj_center(calib_label);
+    if (widget->calib_btn) {
+        lv_obj_set_size(widget->calib_btn, 60, 28);
+        lv_obj_set_style_bg_color(widget->calib_btn, lv_color_hex(0xFF9800), 0);
+        lv_obj_set_style_radius(widget->calib_btn, 4, 0);
+        lv_obj_align(widget->calib_btn, LV_ALIGN_TOP_RIGHT, 0, 22);
+        widget_add_click_handler(widget->calib_btn, on_calibrate_click, (void*)(intptr_t)pump_idx);
+        
+        lv_obj_t *calib_label = lv_label_create(widget->calib_btn);
+        if (calib_label) {
+            lv_label_set_text(calib_label, "Калиб");
+            lv_obj_center(calib_label);
+        }
+    } else {
+        ESP_LOGE(TAG, "Failed to create calib_btn for pump %d", pump_idx);
+    }
     
     // Статус
     widget->status_label = lv_label_create(widget->container);
-    lv_label_set_text(widget->status_label, "Готов");
-    lv_obj_set_style_text_color(widget->status_label, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_text_font(widget->status_label, &montserrat_ru, 0);
-    lv_obj_align(widget->status_label, LV_ALIGN_TOP_LEFT, 0, 55);
+    if (widget->status_label) {
+        lv_label_set_text(widget->status_label, "Готов");
+        lv_obj_set_style_text_color(widget->status_label, lv_color_hex(0x888888), 0);
+        lv_obj_align(widget->status_label, LV_ALIGN_TOP_LEFT, 0, 55);
+    }
+    
+    // КРИТИЧНО: Feed watchdog перед созданием второго encoder_value виджета
+    esp_task_wdt_reset();
     
     // Виджет объема (редактируемый энкодером, скрыт)
     encoder_value_config_t volume_cfg = {
@@ -241,25 +261,35 @@ static void create_pump_widget(lv_obj_t *parent, pump_index_t pump_idx)
         .edit_color = lv_color_hex(0x4CAF50),  // Зеленый при редактировании
     };
     widget->volume_value = widget_encoder_value_create(widget->container, &volume_cfg);
-    lv_obj_set_size(widget->volume_value, 90, 28);
-    lv_obj_set_style_text_font(widget->volume_value, &montserrat_ru, 0);
-    lv_obj_align(widget->volume_value, LV_ALIGN_TOP_LEFT, 0, 77);
-    lv_obj_add_flag(widget->volume_value, LV_OBJ_FLAG_HIDDEN);
+    if (widget->volume_value) {
+        lv_obj_set_size(widget->volume_value, 90, 28);
+        lv_obj_align(widget->volume_value, LV_ALIGN_TOP_LEFT, 0, 77);
+        lv_obj_add_flag(widget->volume_value, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        ESP_LOGW(TAG, "Failed to create volume_value widget for pump %d", pump_idx);
+    }
     
     // Кнопка сохранения (скрыта)
     widget->save_btn = lv_btn_create(widget->container);
-    lv_obj_set_size(widget->save_btn, 70, 28);
-    lv_obj_set_style_bg_color(widget->save_btn, lv_color_hex(0x4CAF50), 0);
-    lv_obj_set_style_radius(widget->save_btn, 4, 0);
-    lv_obj_align(widget->save_btn, LV_ALIGN_TOP_RIGHT, 0, 77);
-    lv_obj_add_event_cb(widget->save_btn, on_save_calibration_click, LV_EVENT_CLICKED, (void*)(intptr_t)pump_idx);
-    lv_obj_add_event_cb(widget->save_btn, on_save_calibration_click, LV_EVENT_PRESSED, (void*)(intptr_t)pump_idx);
-    lv_obj_add_flag(widget->save_btn, LV_OBJ_FLAG_HIDDEN);
+    if (widget->save_btn) {
+        lv_obj_set_size(widget->save_btn, 70, 28);
+        lv_obj_set_style_bg_color(widget->save_btn, lv_color_hex(0x4CAF50), 0);
+        lv_obj_set_style_radius(widget->save_btn, 4, 0);
+        lv_obj_align(widget->save_btn, LV_ALIGN_TOP_RIGHT, 0, 77);
+        widget_add_click_handler(widget->save_btn, on_save_calibration_click, (void*)(intptr_t)pump_idx);
+        lv_obj_add_flag(widget->save_btn, LV_OBJ_FLAG_HIDDEN);
+        
+        lv_obj_t *save_label = lv_label_create(widget->save_btn);
+        if (save_label) {
+            lv_label_set_text(save_label, "Сохр");
+            lv_obj_center(save_label);
+        }
+    } else {
+        ESP_LOGW(TAG, "Failed to create save_btn for pump %d", pump_idx);
+    }
     
-    lv_obj_t *save_label = lv_label_create(widget->save_btn);
-    lv_label_set_text(save_label, "Сохр");
-    lv_obj_set_style_text_font(save_label, &montserrat_ru, 0);
-    lv_obj_center(save_label);
+    // КРИТИЧНО: Feed watchdog в конце создания виджета
+    esp_task_wdt_reset();
 }
 
 /* =============================
@@ -268,7 +298,7 @@ static void create_pump_widget(lv_obj_t *parent, pump_index_t pump_idx)
 
 lv_obj_t* pump_calibration_screen_create(void *context)
 {
-    ESP_LOGI(TAG, "Создание экрана калибровки");
+    ESP_LOGD(TAG, "Создание экрана калибровки");
     
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x1a1a1a), 0);
@@ -286,7 +316,6 @@ lv_obj_t* pump_calibration_screen_create(void *context)
     
     lv_obj_t *title = lv_label_create(header);
     lv_label_set_text(title, "Калибровка насосов");
-    lv_obj_set_style_text_font(title, &montserrat_ru, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
     lv_obj_align(title, LV_ALIGN_LEFT_MID, 5, 0);
     
@@ -307,10 +336,16 @@ lv_obj_t* pump_calibration_screen_create(void *context)
     
     // Создать виджеты для всех 6 насосов
     for (int i = 0; i < PUMP_INDEX_COUNT; i++) {
+        // КРИТИЧНО: Feed watchdog при создании каждого виджета (тяжелая операция)
+        esp_task_wdt_reset();
+        
         create_pump_widget(g_scroll_container, (pump_index_t)i);
     }
     
-    ESP_LOGI(TAG, "Экран калибровки создан с %d виджетами насосов", PUMP_INDEX_COUNT);
+    // КРИТИЧНО: Feed watchdog после создания всех виджетов
+    esp_task_wdt_reset();
+    
+    ESP_LOGD(TAG, "Экран калибровки создан с %d виджетами насосов", PUMP_INDEX_COUNT);
     
     return screen;
 }

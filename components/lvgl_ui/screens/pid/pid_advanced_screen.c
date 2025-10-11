@@ -7,18 +7,15 @@
 #include "screen_manager/screen_manager.h"
 #include "../../widgets/back_button.h"
 #include "../../widgets/status_bar.h"
+#include "../../widgets/event_helpers.h"
 #include "pump_manager.h"
 #include "config_manager.h"
+#include "system_config.h"
 #include "montserrat14_ru.h"
 #include "esp_log.h"
 #include <stdio.h>
 
 static const char *TAG = "PID_ADVANCED_SCREEN";
-
-// Имена насосов
-static const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
-    "pH UP", "pH DOWN", "EC A", "EC B", "EC C", "Water"
-};
 
 static lv_obj_t *g_screen = NULL;
 static pump_index_t g_pump_idx = PUMP_INDEX_PH_UP;
@@ -41,10 +38,14 @@ lv_obj_t* pid_advanced_screen_create(void *context)
 {
     g_pump_idx = (pump_index_t)(intptr_t)context;
     
-    ESP_LOGI(TAG, "Создание экрана расширенных настроек для насоса %d", g_pump_idx);
+    ESP_LOGD(TAG, "Создание экрана расширенных настроек для насоса %d", g_pump_idx);
     
     // Создание контейнера экрана
     lv_obj_t *screen = lv_obj_create(NULL);
+    if (!screen) {
+        ESP_LOGE(TAG, "Failed to create PID advanced screen");
+        return NULL;
+    }
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x1a1a1a), 0);
     g_screen = screen;
     
@@ -57,7 +58,6 @@ lv_obj_t* pid_advanced_screen_create(void *context)
     char title_text[48];
     snprintf(title_text, sizeof(title_text), "Расширенные: %s", PUMP_NAMES[g_pump_idx]);
     lv_label_set_text(title, title_text);
-    lv_obj_set_style_text_font(title, &montserrat_ru, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 35);
     
@@ -92,7 +92,6 @@ lv_obj_t* pid_advanced_screen_create(void *context)
     
     lv_label_set_text(info_label, info_text);
     lv_obj_set_style_text_color(info_label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(info_label, &montserrat_ru, 0);
     lv_obj_align(info_label, LV_ALIGN_TOP_LEFT, 10, 70);
     
     // Кнопка "Настройка порогов"
@@ -100,8 +99,7 @@ lv_obj_t* pid_advanced_screen_create(void *context)
     lv_obj_set_size(thresh_btn, 200, 40);
     lv_obj_align(thresh_btn, LV_ALIGN_BOTTOM_MID, 0, -45);
     lv_obj_set_style_bg_color(thresh_btn, lv_color_hex(0xFF9800), 0);
-    lv_obj_add_event_cb(thresh_btn, on_thresholds_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(thresh_btn, on_thresholds_click, LV_EVENT_PRESSED, NULL);
+    widget_add_click_handler(thresh_btn, on_thresholds_click, NULL);
     
     lv_obj_t *thresh_label = lv_label_create(thresh_btn);
     lv_label_set_text(thresh_label, "Настройка порогов");
@@ -111,7 +109,7 @@ lv_obj_t* pid_advanced_screen_create(void *context)
     lv_obj_t *back_btn = widget_create_back_button(screen, NULL, NULL);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -5);
     
-    ESP_LOGI(TAG, "Экран расширенных настроек создан (заглушка)");
+    ESP_LOGD(TAG, "Экран расширенных настроек создан (заглушка)");
     
     return screen;
 }

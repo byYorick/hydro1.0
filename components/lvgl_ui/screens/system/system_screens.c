@@ -5,6 +5,7 @@
 
 #include "system_screens.h"
 #include "screen_manager/screen_manager.h"
+#include "screen_manager/screen_lifecycle.h"
 #include "screens/base/screen_base.h"
 #include "widgets/back_button.h"
 #include "lvgl_styles.h"
@@ -16,11 +17,39 @@
 static const char *TAG = "SYSTEM_SCREENS";
 
 /* =============================
+ *  МАКРОСЫ ДЛЯ УПРОЩЕНИЯ КОДА
+ * ============================= */
+
+/**
+ * @brief Макрос для инициализации базовой конфигурации системных экранов
+ * 
+ * Все системные экраны имеют одинаковые базовые параметры:
+ * - Status bar включен
+ * - Кнопка назад включена
+ * - Callback назад NULL (автоматическая навигация)
+ * 
+ * Использование: 
+ *   screen_base_config_t cfg;
+ *   INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "Title");
+ */
+#define INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, screen_title) \
+    do { \
+        (cfg).title = (screen_title); \
+        (cfg).has_status_bar = true; \
+        (cfg).has_back_button = true; \
+        (cfg).back_callback = NULL; \
+        (cfg).back_user_data = NULL; \
+    } while(0)
+
+/* =============================
  *  ОБЩИЙ CALLBACK для всех системных экранов
  * ============================= */
 
 /**
- * @brief Универсальный callback для добавления кнопки "Назад" в группу
+ * @brief Универсальный callback для автоматической настройки encoder группы
+ * 
+ * Использует новую универсальную функцию screen_auto_setup_encoder_group()
+ * вместо ручного обхода виджетов, что упрощает код и уменьшает дублирование.
  */
 static esp_err_t system_screen_on_show(lv_obj_t *screen_obj, void *params)
 {
@@ -30,7 +59,7 @@ static esp_err_t system_screen_on_show(lv_obj_t *screen_obj, void *params)
         return ESP_OK;
     }
     
-    ESP_LOGI(TAG, "System screen '%s' shown - configuring encoder", screen_id);
+    ESP_LOGD(TAG, "System screen '%s' shown - auto-configuring encoder", screen_id);
     
     // Получаем instance для доступа к encoder_group
     screen_instance_t *inst = screen_get_by_id(screen_id);
@@ -39,53 +68,13 @@ static esp_err_t system_screen_on_show(lv_obj_t *screen_obj, void *params)
         return ESP_OK;
     }
     
-    lv_group_t *group = inst->encoder_group;
+    // Используем универсальную функцию для настройки encoder группы
+    int added = screen_auto_setup_encoder_group(screen_obj, inst->encoder_group);
     
-    // Добавляем все интерактивные элементы
-    lv_obj_t *child = lv_obj_get_child(screen_obj, 0);
-    int added = 0;
-    
-    while (child != NULL) {
-        if (lv_obj_check_type(child, &lv_button_class)) {
-            lv_group_add_obj(group, child);
-            added++;
-        }
-        else if (lv_obj_check_type(child, &lv_slider_class)) {
-            lv_group_add_obj(group, child);
-            added++;
-        }
-        else if (lv_obj_check_type(child, &lv_dropdown_class)) {
-            lv_group_add_obj(group, child);
-            added++;
-        }
-        else if (lv_obj_check_type(child, &lv_checkbox_class)) {
-            lv_group_add_obj(group, child);
-            added++;
-        }
-        
-        // Вложенные элементы
-        lv_obj_t *grandchild = lv_obj_get_child(child, 0);
-        while (grandchild != NULL) {
-            if (lv_obj_check_type(grandchild, &lv_button_class) ||
-                lv_obj_check_type(grandchild, &lv_slider_class) ||
-                lv_obj_check_type(grandchild, &lv_dropdown_class) ||
-                lv_obj_check_type(grandchild, &lv_checkbox_class)) {
-                lv_group_add_obj(group, grandchild);
-                added++;
-            }
-            grandchild = lv_obj_get_child(child, lv_obj_get_index(grandchild) + 1);
-        }
-        
-        child = lv_obj_get_child(screen_obj, lv_obj_get_index(child) + 1);
-    }
-    
-    int obj_count = lv_group_get_obj_count(group);
-    ESP_LOGI(TAG, "  Encoder group: %d objects (added %d)", obj_count, added);
-    
-    // Устанавливаем фокус
-    if (obj_count > 0) {
-        lv_group_focus_next(group);
-        ESP_LOGI(TAG, "  Focus set");
+    if (added > 0) {
+        ESP_LOGI(TAG, "System screen '%s': %d elements added to encoder group", screen_id, added);
+    } else {
+        ESP_LOGW(TAG, "System screen '%s': no interactive elements found", screen_id);
     }
     
     return ESP_OK;
@@ -99,13 +88,8 @@ static lv_obj_t* auto_control_create(void *params)
 {
     ESP_LOGI(TAG, "Creating auto control screen");
     
-    screen_base_config_t cfg = {
-        .title = "Auto Control",
-        .has_status_bar = true,
-        .has_back_button = true,
-        .back_callback = NULL,
-    };
-    
+    screen_base_config_t cfg;
+    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "Auto Control");
     screen_base_t base = screen_base_create(&cfg);
     
     lv_obj_t *label = lv_label_create(base.content);
@@ -124,13 +108,8 @@ static lv_obj_t* wifi_settings_create(void *params)
 {
     ESP_LOGI(TAG, "Creating WiFi settings screen");
     
-    screen_base_config_t cfg = {
-        .title = "WiFi Settings",
-        .has_status_bar = true,
-        .has_back_button = true,
-        .back_callback = NULL,
-    };
-    
+    screen_base_config_t cfg;
+    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "WiFi Settings");
     screen_base_t base = screen_base_create(&cfg);
     
     lv_obj_t *label = lv_label_create(base.content);
@@ -176,13 +155,8 @@ static lv_obj_t* display_settings_create(void *params)
 {
     ESP_LOGI(TAG, "Creating display settings screen");
     
-    screen_base_config_t cfg = {
-        .title = "Display",
-        .has_status_bar = true,
-        .has_back_button = true,
-        .back_callback = NULL,
-    };
-    
+    screen_base_config_t cfg;
+    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "Display");
     screen_base_t base = screen_base_create(&cfg);
     
     // Получаем текущую яркость
@@ -190,6 +164,10 @@ static lv_obj_t* display_settings_create(void *params)
     
     // Контейнер для настроек яркости
     lv_obj_t *container = lv_obj_create(base.content);
+    if (!container) {
+        ESP_LOGE(TAG, "Failed to create container for display settings");
+        return base.screen;  // Возвращаем экран без контента
+    }
     lv_obj_set_size(container, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_style_bg_color(container, lv_color_hex(0x1A2332), 0);
     lv_obj_set_style_border_width(container, 0, 0);
@@ -212,19 +190,23 @@ static lv_obj_t* display_settings_create(void *params)
     
     // Слайдер яркости
     lv_obj_t *slider = lv_slider_create(container);
-    lv_obj_set_width(slider, LV_PCT(100));
-    lv_slider_set_range(slider, 10, 100);  // От 10% до 100%
-    lv_slider_set_value(slider, current_brightness, LV_ANIM_OFF);
-    lv_obj_align(slider, LV_ALIGN_TOP_MID, 0, 40);
-    
-    // Стиль слайдера
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0x2D3E50), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0x00D4AA), LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0x00D4AA), LV_PART_KNOB);
-    lv_obj_set_style_pad_all(slider, 8, LV_PART_KNOB);
-    
-    // Добавляем событие
-    lv_obj_add_event_cb(slider, brightness_slider_event_cb, LV_EVENT_VALUE_CHANGED, value_label);
+    if (slider) {
+        lv_obj_set_width(slider, LV_PCT(100));
+        lv_slider_set_range(slider, 10, 100);  // От 10% до 100%
+        lv_slider_set_value(slider, current_brightness, LV_ANIM_OFF);
+        lv_obj_align(slider, LV_ALIGN_TOP_MID, 0, 40);
+        
+        // Стиль слайдера
+        lv_obj_set_style_bg_color(slider, lv_color_hex(0x2D3E50), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(slider, lv_color_hex(0x00D4AA), LV_PART_INDICATOR);
+        lv_obj_set_style_bg_color(slider, lv_color_hex(0x00D4AA), LV_PART_KNOB);
+        lv_obj_set_style_pad_all(slider, 8, LV_PART_KNOB);
+        
+        // Добавляем событие
+        lv_obj_add_event_cb(slider, brightness_slider_event_cb, LV_EVENT_VALUE_CHANGED, value_label);
+    } else {
+        ESP_LOGW(TAG, "Failed to create brightness slider");
+    }
     
     // Подсказка
     lv_obj_t *hint_label = lv_label_create(container);
@@ -244,13 +226,8 @@ static lv_obj_t* data_logger_create(void *params)
 {
     ESP_LOGI(TAG, "Creating data logger screen");
     
-    screen_base_config_t cfg = {
-        .title = "Data Logger",
-        .has_status_bar = true,
-        .has_back_button = true,
-        .back_callback = NULL,
-    };
-    
+    screen_base_config_t cfg;
+    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "Data Logger");
     screen_base_t base = screen_base_create(&cfg);
     
     lv_obj_t *label = lv_label_create(base.content);
@@ -269,13 +246,8 @@ static lv_obj_t* system_info_create(void *params)
 {
     ESP_LOGI(TAG, "Creating system info screen");
     
-    screen_base_config_t cfg = {
-        .title = "System Info",
-        .has_status_bar = true,
-        .has_back_button = true,
-        .back_callback = NULL,
-    };
-    
+    screen_base_config_t cfg;
+    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "System Info");
     screen_base_t base = screen_base_create(&cfg);
     
     lv_obj_t *label = lv_label_create(base.content);
@@ -294,13 +266,8 @@ static lv_obj_t* reset_confirm_create(void *params)
 {
     ESP_LOGI(TAG, "Creating reset confirm screen");
     
-    screen_base_config_t cfg = {
-        .title = "Reset Confirm",
-        .has_status_bar = true,
-        .has_back_button = true,
-        .back_callback = NULL,
-    };
-    
+    screen_base_config_t cfg;
+    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "Reset Confirm");
     screen_base_t base = screen_base_create(&cfg);
     
     lv_obj_t *label = lv_label_create(base.content);
@@ -319,13 +286,8 @@ static lv_obj_t* system_status_create(void *params)
 {
     ESP_LOGI(TAG, "Creating system status screen");
     
-    screen_base_config_t cfg = {
-        .title = "System Status",
-        .has_status_bar = true,
-        .has_back_button = true,
-        .back_callback = NULL,
-    };
-    
+    screen_base_config_t cfg;
+    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "System Status");
     screen_base_t base = screen_base_create(&cfg);
     
     lv_obj_t *label = lv_label_create(base.content);
@@ -337,118 +299,126 @@ static lv_obj_t* system_status_create(void *params)
 }
 
 /* =============================
- *  РЕГИСТРАЦИЯ
+ *  МЕТАДАННЫЕ ДЛЯ РЕГИСТРАЦИИ
  * ============================= */
 
-esp_err_t system_screens_register_all(void)
-{
-    ESP_LOGI(TAG, "Registering all system screens");
-    
-    // System Status
-    screen_config_t status_cfg = {
+/**
+ * @brief Метаданные системного экрана
+ */
+typedef struct {
+    const char *id;                  ///< ID экрана
+    const char *title;               ///< Заголовок
+    screen_category_t category;      ///< Категория
+    screen_create_fn_t create_fn;    ///< Функция создания
+} system_screen_meta_t;
+
+/**
+ * @brief Массив метаданных всех системных экранов
+ * 
+ * Упрощает регистрацию экранов и уменьшает дублирование кода.
+ * Все общие параметры (parent_id, lazy_load, destroy_on_hide) вынесены в цикл.
+ */
+static const system_screen_meta_t SYSTEM_SCREENS_META[] = {
+    {
         .id = "system_status",
         .title = "System Status",
         .category = SCREEN_CATEGORY_INFO,
-        .parent_id = "system_menu",
-        .can_go_back = true,
-        .lazy_load = true,
-        .destroy_on_hide = true,
         .create_fn = system_status_create,
-        .on_show = system_screen_on_show,
-        .user_data = (void*)"system_status",
-    };
-    screen_register(&status_cfg);
-    
-    // Auto Control
-    screen_config_t auto_cfg = {
+    },
+    {
         .id = "auto_control",
         .title = "Auto Control",
         .category = SCREEN_CATEGORY_SETTINGS,
-        .parent_id = "system_menu",
-        .can_go_back = true,
-        .lazy_load = true,
-        .destroy_on_hide = true,
         .create_fn = auto_control_create,
-        .on_show = system_screen_on_show,
-        .user_data = (void*)"auto_control",
-    };
-    screen_register(&auto_cfg);
-    
-    // WiFi Settings
-    screen_config_t wifi_cfg = {
+    },
+    {
         .id = "wifi_settings",
         .title = "WiFi Settings",
         .category = SCREEN_CATEGORY_SETTINGS,
-        .parent_id = "system_menu",
-        .can_go_back = true,
-        .lazy_load = true,
-        .destroy_on_hide = true,
         .create_fn = wifi_settings_create,
-        .on_show = system_screen_on_show,
-        .user_data = (void*)"wifi_settings",
-    };
-    screen_register(&wifi_cfg);
-    
-    // Display Settings
-    screen_config_t display_cfg = {
+    },
+    {
         .id = "display_settings",
         .title = "Display Settings",
         .category = SCREEN_CATEGORY_SETTINGS,
-        .parent_id = "system_menu",
-        .can_go_back = true,
-        .lazy_load = true,
-        .destroy_on_hide = true,
         .create_fn = display_settings_create,
-        .on_show = system_screen_on_show,
-        .user_data = (void*)"display_settings",
-    };
-    screen_register(&display_cfg);
-    
-    // Data Logger
-    screen_config_t logger_cfg = {
+    },
+    {
         .id = "data_logger",
         .title = "Data Logger",
         .category = SCREEN_CATEGORY_SETTINGS,
-        .parent_id = "system_menu",
-        .can_go_back = true,
-        .lazy_load = true,
-        .destroy_on_hide = true,
         .create_fn = data_logger_create,
-        .on_show = system_screen_on_show,
-        .user_data = (void*)"data_logger",
-    };
-    screen_register(&logger_cfg);
-    
-    // System Info
-    screen_config_t info_cfg = {
+    },
+    {
         .id = "system_info",
         .title = "System Info",
         .category = SCREEN_CATEGORY_INFO,
-        .parent_id = "system_menu",
-        .can_go_back = true,
-        .lazy_load = true,
-        .destroy_on_hide = true,
         .create_fn = system_info_create,
-        .on_show = system_screen_on_show,
-        .user_data = (void*)"system_info",
-    };
-    screen_register(&info_cfg);
-    
-    // Reset Confirm
-    screen_config_t reset_cfg = {
+    },
+    {
         .id = "reset_confirm",
         .title = "Reset Confirm",
         .category = SCREEN_CATEGORY_DIALOG,
-        .parent_id = "system_menu",
-        .can_go_back = true,
-        .lazy_load = true,
-        .destroy_on_hide = true,
         .create_fn = reset_confirm_create,
-        .on_show = system_screen_on_show,
-        .user_data = (void*)"reset_confirm",
-    };
-    screen_register(&reset_cfg);
+    },
+};
+
+#define SYSTEM_SCREENS_COUNT (sizeof(SYSTEM_SCREENS_META) / sizeof(system_screen_meta_t))
+
+/* =============================
+ *  РЕГИСТРАЦИЯ
+ * ============================= */
+
+/**
+ * @brief Зарегистрировать все системные экраны
+ * 
+ * Использует массив метаданных для упрощённой регистрации.
+ * Все экраны имеют общие параметры:
+ * - parent_id: "system_menu"
+ * - lazy_load: true (создавать при показе)
+ * - destroy_on_hide: true (уничтожать для экономии памяти)
+ * - can_go_back: true
+ * 
+ * @return ESP_OK при успехе
+ */
+esp_err_t system_screens_register_all(void)
+{
+    ESP_LOGI(TAG, "Registering %d system screens...", SYSTEM_SCREENS_COUNT);
     
-    ESP_LOGI(TAG, "All 7 system screens registered");
+    for (int i = 0; i < SYSTEM_SCREENS_COUNT; i++) {
+        const system_screen_meta_t *meta = &SYSTEM_SCREENS_META[i];
+        
+        // Создаём конфигурацию с общими параметрами
+        screen_config_t config = {
+            .id = {0},
+            .title = meta->title,
+            .category = meta->category,
+            .parent_id = "system_menu",     // Общий parent для всех
+            .can_go_back = true,            // Все экраны с кнопкой назад
+            .lazy_load = true,              // Создавать при показе
+            .cache_on_hide = false,         // Не кэшировать
+            .destroy_on_hide = true,        // Уничтожать для экономии памяти
+            .has_status_bar = true,
+            .has_back_button = true,
+            .create_fn = meta->create_fn,
+            .on_show = system_screen_on_show,
+            .user_data = (void*)meta->id,   // ID для callback
+        };
+        
+        // Копируем ID (обязательное поле)
+        strncpy(config.id, meta->id, MAX_SCREEN_ID_LEN - 1);
+        
+        // Регистрируем экран
+        esp_err_t ret = screen_register(&config);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to register '%s': %s", 
+                     meta->id, esp_err_to_name(ret));
+            return ret;
+        }
+        
+        ESP_LOGD(TAG, "Registered '%s'", meta->id);
+    }
+    
+    ESP_LOGI(TAG, "All %d system screens registered successfully", SYSTEM_SCREENS_COUNT);
     return ESP_OK;
 }

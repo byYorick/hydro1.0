@@ -108,7 +108,7 @@ static esp_err_t sensor_detail_on_show(lv_obj_t *screen_obj, void *params)
     }
     
     const sensor_meta_t *meta = &SENSOR_META[sensor_id];
-    ESP_LOGI(TAG, "Detail screen '%s' shown", meta->name);
+    ESP_LOGD(TAG, "Detail screen '%s' shown", meta->name);
     
     // Получаем instance для доступа к encoder_group
     screen_instance_t *inst = screen_get_by_id(meta->id);

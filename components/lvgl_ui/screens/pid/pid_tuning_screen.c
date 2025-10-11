@@ -8,17 +8,15 @@
 #include "../../widgets/back_button.h"
 #include "../../widgets/status_bar.h"
 #include "../../widgets/encoder_value_edit.h"
+#include "../../widgets/event_helpers.h"
 #include "pump_manager.h"
 #include "config_manager.h"
+#include "system_config.h"
 #include "montserrat14_ru.h"
 #include "esp_log.h"
 #include <stdio.h>
 
 static const char *TAG = "PID_TUNING_SCREEN";
-
-static const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
-    "pH UP", "pH DOWN", "EC A", "EC B", "EC C", "Water"
-};
 
 // UI элементы
 static lv_obj_t *g_screen = NULL;
@@ -84,9 +82,13 @@ lv_obj_t* pid_tuning_screen_create(void *context)
 {
     g_pump_idx = (pump_index_t)(intptr_t)context;
     
-    ESP_LOGI(TAG, "Создание экрана настройки PID для %s", PUMP_NAMES[g_pump_idx]);
+    ESP_LOGD(TAG, "Создание экрана настройки PID для %s", PUMP_NAMES[g_pump_idx]);
     
     lv_obj_t *screen = lv_obj_create(NULL);
+    if (!screen) {
+        ESP_LOGE(TAG, "Failed to create PID tuning screen");
+        return NULL;
+    }
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x1a1a1a), 0);
     g_screen = screen;
     
@@ -99,7 +101,6 @@ lv_obj_t* pid_tuning_screen_create(void *context)
     char title_text[64];
     snprintf(title_text, sizeof(title_text), "PID: %s", PUMP_NAMES[g_pump_idx]);
     lv_label_set_text(title, title_text);
-    lv_obj_set_style_text_font(title, &montserrat_ru, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 35);
     
@@ -116,7 +117,6 @@ lv_obj_t* pid_tuning_screen_create(void *context)
     lv_obj_t *kp_label = lv_label_create(screen);
     lv_label_set_text(kp_label, "Kp:");
     lv_obj_set_style_text_color(kp_label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(kp_label, &montserrat_ru, 0);
     lv_obj_align(kp_label, LV_ALIGN_TOP_LEFT, 10, y_offset);
     
     encoder_value_config_t kp_cfg = {
@@ -130,7 +130,6 @@ lv_obj_t* pid_tuning_screen_create(void *context)
     };
     g_kp_value = widget_encoder_value_create(screen, &kp_cfg);
     lv_obj_set_size(g_kp_value, 90, 28);
-    lv_obj_set_style_text_font(g_kp_value, &montserrat_ru, 0);
     lv_obj_align(g_kp_value, LV_ALIGN_TOP_RIGHT, -10, y_offset - 2);
     
     y_offset += row_height;
@@ -139,7 +138,6 @@ lv_obj_t* pid_tuning_screen_create(void *context)
     lv_obj_t *ki_label = lv_label_create(screen);
     lv_label_set_text(ki_label, "Ki:");
     lv_obj_set_style_text_color(ki_label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(ki_label, &montserrat_ru, 0);
     lv_obj_align(ki_label, LV_ALIGN_TOP_LEFT, 10, y_offset);
     
     encoder_value_config_t ki_cfg = {
@@ -153,7 +151,6 @@ lv_obj_t* pid_tuning_screen_create(void *context)
     };
     g_ki_value = widget_encoder_value_create(screen, &ki_cfg);
     lv_obj_set_size(g_ki_value, 90, 28);
-    lv_obj_set_style_text_font(g_ki_value, &montserrat_ru, 0);
     lv_obj_align(g_ki_value, LV_ALIGN_TOP_RIGHT, -10, y_offset - 2);
     
     y_offset += row_height;
@@ -162,7 +159,6 @@ lv_obj_t* pid_tuning_screen_create(void *context)
     lv_obj_t *kd_label = lv_label_create(screen);
     lv_label_set_text(kd_label, "Kd:");
     lv_obj_set_style_text_color(kd_label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(kd_label, &montserrat_ru, 0);
     lv_obj_align(kd_label, LV_ALIGN_TOP_LEFT, 10, y_offset);
     
     encoder_value_config_t kd_cfg = {
@@ -176,7 +172,6 @@ lv_obj_t* pid_tuning_screen_create(void *context)
     };
     g_kd_value = widget_encoder_value_create(screen, &kd_cfg);
     lv_obj_set_size(g_kd_value, 90, 28);
-    lv_obj_set_style_text_font(g_kd_value, &montserrat_ru, 0);
     lv_obj_align(g_kd_value, LV_ALIGN_TOP_RIGHT, -10, y_offset - 2);
     
     y_offset += row_height + 15;
@@ -185,7 +180,6 @@ lv_obj_t* pid_tuning_screen_create(void *context)
     lv_obj_t *hint = lv_label_create(screen);
     lv_label_set_text(hint, "Нажмите Enter для изменения\nПоверните для настройки");
     lv_obj_set_style_text_color(hint, lv_color_hex(0x666666), 0);
-    lv_obj_set_style_text_font(hint, &montserrat_ru, 0);
     lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(hint, 200);
@@ -198,8 +192,7 @@ lv_obj_t* pid_tuning_screen_create(void *context)
     lv_obj_set_size(save_btn, 100, 35);
     lv_obj_align(save_btn, LV_ALIGN_TOP_LEFT, 10, y_offset);
     lv_obj_set_style_bg_color(save_btn, lv_color_hex(0x4CAF50), 0);
-    lv_obj_add_event_cb(save_btn, on_save_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(save_btn, on_save_click, LV_EVENT_PRESSED, NULL);
+    widget_add_click_handler(save_btn, on_save_click, NULL);
     
     lv_obj_t *save_label = lv_label_create(save_btn);
     lv_label_set_text(save_label, "Сохранить");
@@ -209,8 +202,7 @@ lv_obj_t* pid_tuning_screen_create(void *context)
     lv_obj_set_size(defaults_btn, 100, 35);
     lv_obj_align(defaults_btn, LV_ALIGN_TOP_RIGHT, -10, y_offset);
     lv_obj_set_style_bg_color(defaults_btn, lv_color_hex(0xFF9800), 0);
-    lv_obj_add_event_cb(defaults_btn, on_defaults_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(defaults_btn, on_defaults_click, LV_EVENT_PRESSED, NULL);
+    widget_add_click_handler(defaults_btn, on_defaults_click, NULL);
     
     lv_obj_t *defaults_label = lv_label_create(defaults_btn);
     lv_label_set_text(defaults_label, "Дефолт");
@@ -220,7 +212,7 @@ lv_obj_t* pid_tuning_screen_create(void *context)
     lv_obj_t *back_btn = widget_create_back_button(screen, NULL, NULL);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -5);
     
-    ESP_LOGI(TAG, "Экран настройки PID создан");
+    ESP_LOGD(TAG, "Экран настройки PID создан");
     
     return screen;
 }

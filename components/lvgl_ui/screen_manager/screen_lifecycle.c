@@ -7,6 +7,7 @@
 #include "screen_registry.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
@@ -94,13 +95,7 @@ int screen_lifecycle_add_interactive_iterative(lv_obj_t *root_obj, lv_group_t *g
         if (is_interactive_element(obj)) {
             lv_group_add_obj(group, obj);
             added++;
-            
-            // Определяем тип элемента для лога
-            const char *type_name = "Unknown";
-            if (lv_obj_check_type(obj, &lv_button_class)) type_name = "Button";
-            else if (lv_obj_check_type(obj, &lv_obj_class)) type_name = "Container";
-            
-            ESP_LOGI(TAG, "  ✓ Added %s to encoder group (ptr: %p)", type_name, obj);
+            ESP_LOGD(TAG, "Added element %p to encoder group", obj);
         }
         
         // Добавляем детей в очередь
@@ -118,6 +113,11 @@ int screen_lifecycle_add_interactive_iterative(lv_obj_t *root_obj, lv_group_t *g
 
 /**
  * @brief Очистить группу энкодера от скрытых элементов
+ * 
+ * Улучшенная версия с дополнительными проверками:
+ * - Проверка флага HIDDEN
+ * - Проверка валидности объекта
+ * - Проверка скрытых родителей
  */
 int cleanup_hidden_elements(lv_group_t *group)
 {
@@ -126,17 +126,45 @@ int cleanup_hidden_elements(lv_group_t *group)
     int removed = 0;
     uint32_t obj_count = lv_group_get_obj_count(group);
     
-    // Проходим по всем элементам группы в обратном порядке
+    // Проходим в обратном порядке для безопасного удаления
     for (int i = obj_count - 1; i >= 0; i--) {
         lv_obj_t *obj = lv_group_get_obj_by_index(group, i);
         if (!obj) continue;
         
-        // Стандартная проверка LVGL: элемент скрыт
+        bool should_remove = false;
+        
+        // Проверка 1: Элемент скрыт
         if (lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) {
-            ESP_LOGW(TAG, "Removing hidden element from encoder group: %p", obj);
+            should_remove = true;
+            ESP_LOGD(TAG, "Element %p is hidden", obj);
+        }
+        
+        // Проверка 2: Элемент удален (invalid)
+        else if (!lv_obj_is_valid(obj)) {
+            should_remove = true;
+            ESP_LOGD(TAG, "Element %p is invalid", obj);
+        }
+        
+        // Проверка 3: Родитель скрыт
+        else {
+            lv_obj_t *parent = obj;
+            while ((parent = lv_obj_get_parent(parent)) != NULL) {
+                if (lv_obj_has_flag(parent, LV_OBJ_FLAG_HIDDEN)) {
+                    should_remove = true;
+                    ESP_LOGD(TAG, "Element %p has hidden parent", obj);
+                    break;
+                }
+            }
+        }
+        
+        if (should_remove) {
             lv_group_remove_obj(obj);
             removed++;
         }
+    }
+    
+    if (removed > 0) {
+        ESP_LOGI(TAG, "Removed %d hidden/invalid elements from encoder group", removed);
     }
     
     return removed;
@@ -222,8 +250,15 @@ esp_err_t screen_create_instance(const char *screen_id)
         xSemaphoreGive(manager->mutex);
     }
     
+    // КРИТИЧНО: Feed watchdog перед долгой операцией создания UI
+    esp_task_wdt_reset();
+    
     // Создаем UI объект БЕЗ блокировки менеджера
     lv_obj_t *screen_obj = config->create_fn(config->user_data);
+    
+    // КРИТИЧНО: Feed watchdog после создания UI
+    esp_task_wdt_reset();
+    
     if (!screen_obj) {
         ESP_LOGE(TAG, "create_fn failed for screen '%s'", screen_id);
         return ESP_FAIL;
@@ -289,7 +324,7 @@ esp_err_t screen_create_instance(const char *screen_id)
     manager->instances[manager->instance_count] = instance;
     manager->instance_count++;
     
-    ESP_LOGI(TAG, "Created screen '%s' (%d/%d instances active, encoder group ready)", 
+    ESP_LOGD(TAG, "Created screen '%s' (%d/%d instances active, encoder group ready)", 
              screen_id, manager->instance_count, MAX_INSTANCES);
     
     // Освобождаем мьютекс перед выходом
@@ -443,7 +478,7 @@ esp_err_t screen_show_instance(const char *screen_id, void *params)
         }
         
         // Создаем экземпляр (независимо от флага lazy_load)
-        ESP_LOGI(TAG, "Creating screen instance '%s' (lazy_load: %d)", 
+        ESP_LOGD(TAG, "Creating screen instance '%s' (lazy_load: %d)", 
                  screen_id, config->lazy_load);
         esp_err_t ret = screen_create_instance(screen_id);
         if (ret != ESP_OK) {
@@ -466,7 +501,7 @@ esp_err_t screen_show_instance(const char *screen_id, void *params)
             return ESP_ERR_NOT_FOUND;
         }
         
-        ESP_LOGI(TAG, "Screen instance '%s' created successfully", screen_id);
+        ESP_LOGD(TAG, "Screen instance '%s' created successfully", screen_id);
     }
     
     // Проверка прав/условий показа
@@ -538,6 +573,26 @@ esp_err_t screen_show_instance(const char *screen_id, void *params)
     
     // Устанавливаем группу энкодера для LVGL
     if (instance->encoder_group) {
+        ESP_LOGI(TAG, "=== Configuring encoder group for '%s' ===", screen_id);
+        
+        // КРИТИЧНО: Очищаем группу от всех старых элементов перед добавлением новых
+        // Это гарантирует чистое состояние группы для каждого экрана
+        uint32_t old_count = lv_group_get_obj_count(instance->encoder_group);
+        if (old_count > 0) {
+            // Сначала пытаемся очистить скрытые элементы
+            int removed = cleanup_hidden_elements(instance->encoder_group);
+            if (removed > 0) {
+                ESP_LOGI(TAG, "Cleaned %d hidden elements before adding new ones", removed);
+            }
+            
+            // Затем удаляем все оставшиеся элементы для гарантии
+            while (lv_group_get_obj_count(instance->encoder_group) > 0) {
+                lv_obj_t *obj = lv_group_get_obj_by_index(instance->encoder_group, 0);
+                lv_group_remove_obj(obj);
+            }
+            ESP_LOGD(TAG, "Cleared %d total elements from encoder group", old_count);
+        }
+        
         ESP_LOGI(TAG, "=== Adding interactive elements to encoder group ===");
         
         // Добавляем интерактивные элементы в группу после загрузки экрана
@@ -594,7 +649,7 @@ esp_err_t screen_show_instance(const char *screen_id, void *params)
         xSemaphoreGive(manager->mutex);
     }
     
-    ESP_LOGI(TAG, "Screen '%s' shown successfully", screen_id);
+    ESP_LOGD(TAG, "Screen '%s' shown successfully", screen_id);
     
     return ESP_OK;
 }
@@ -629,6 +684,33 @@ esp_err_t screen_hide_instance(const char *screen_id)
     }
     
     ESP_LOGI(TAG, "Hiding screen '%s'...", screen_id);
+    
+    // КРИТИЧНО: Очищаем encoder group ПЕРЕД вызовом on_hide
+    // Это предотвращает накопление скрытых элементов в группе
+    if (instance->encoder_group) {
+        // Отвязываем encoder indev от этой группы
+        lv_indev_t *indev = lv_indev_get_next(NULL);
+        while (indev) {
+            if (lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
+                if (lv_indev_get_group(indev) == instance->encoder_group) {
+                    lv_indev_set_group(indev, NULL);
+                    ESP_LOGD(TAG, "Unlinked encoder from group of '%s'", screen_id);
+                }
+            }
+            indev = lv_indev_get_next(indev);
+        }
+        
+        // Удаляем все элементы из группы
+        uint32_t count = lv_group_get_obj_count(instance->encoder_group);
+        while (lv_group_get_obj_count(instance->encoder_group) > 0) {
+            lv_obj_t *obj = lv_group_get_obj_by_index(instance->encoder_group, 0);
+            lv_group_remove_obj(obj);
+        }
+        
+        if (count > 0) {
+            ESP_LOGD(TAG, "Encoder group cleared for '%s' (%d elements removed)", screen_id, count);
+        }
+    }
     
     // Вызываем on_hide callback
     if (instance->config->on_hide) {
@@ -934,6 +1016,48 @@ int screen_add_widget_tree(const char *screen_id, lv_obj_t *widget)
 }
 
 /**
+ * @brief Автоматически настроить группу энкодера для экрана
+ * 
+ * Универсальная функция для автоматического обхода всех виджетов экрана
+ * и добавления интерактивных элементов в группу энкодера.
+ * 
+ * @param screen_obj Объект экрана для обхода
+ * @param group Группа энкодера для добавления элементов
+ * @return Количество добавленных элементов (или отрицательное значение при ошибке)
+ */
+int screen_auto_setup_encoder_group(lv_obj_t *screen_obj, lv_group_t *group)
+{
+    if (!screen_obj || !group) {
+        ESP_LOGE(TAG, "Invalid arguments: screen_obj=%p, group=%p", screen_obj, group);
+        return -1;
+    }
+    
+    ESP_LOGD(TAG, "Auto-setting up encoder group for screen");
+    
+    // Используем существующую итеративную функцию обхода
+    // max_depth=20 достаточно для большинства UI структур
+    int added = screen_lifecycle_add_interactive_iterative(screen_obj, group, 20);
+    
+    if (added > 0) {
+        ESP_LOGI(TAG, "Auto-setup: added %d interactive elements to encoder group", added);
+        
+        // Устанавливаем фокус на первый элемент если есть
+        uint32_t obj_count = lv_group_get_obj_count(group);
+        if (obj_count > 0) {
+            lv_obj_t *first_obj = lv_group_get_obj_by_index(group, 0);
+            if (first_obj) {
+                lv_group_focus_obj(first_obj);
+                ESP_LOGD(TAG, "Focus set to first element");
+            }
+        }
+    } else if (added == 0) {
+        ESP_LOGW(TAG, "Auto-setup: no interactive elements found on screen");
+    }
+    
+    return added;
+}
+
+/**
  * @brief Добавить элементы главного экрана в правильном порядке
  * 
  * Добавляет элементы в следующем порядке:
@@ -960,16 +1084,14 @@ int screen_lifecycle_add_main_screen_elements(lv_obj_t *screen_obj, lv_group_t *
     // Ищем контейнер с карточками датчиков
     lv_obj_t *content = NULL;
     uint32_t child_count = lv_obj_get_child_count(screen_obj);
-    ESP_LOGI(TAG, "Main screen has %d children", child_count);
     
     for (uint32_t i = 0; i < child_count; i++) {
         lv_obj_t *child = lv_obj_get_child(screen_obj, i);
         if (child) {
             uint32_t grandchild_count = lv_obj_get_child_count(child);
-            ESP_LOGI(TAG, "Child %d has %d grandchildren", i, grandchild_count);
             if (grandchild_count >= 6) {
                 content = child;
-                ESP_LOGI(TAG, "Found sensor cards container at child %d", i);
+                ESP_LOGD(TAG, "Found sensor cards container at child %d", i);
                 break;
             }
         }
@@ -984,13 +1106,10 @@ int screen_lifecycle_add_main_screen_elements(lv_obj_t *screen_obj, lv_group_t *
     for (int i = 0; i < 6; i++) {
         lv_obj_t *card = lv_obj_get_child(content, i);
         if (card) {
-            ESP_LOGI(TAG, "Checking sensor card %d: %p", i, card);
             if (is_interactive_element(card)) {
                 lv_group_add_obj(group, card);
                 added++;
-                ESP_LOGI(TAG, "Added sensor card %d to encoder group", i);
-            } else {
-                ESP_LOGI(TAG, "Sensor card %d is not interactive", i);
+                ESP_LOGD(TAG, "Added sensor card %d to encoder group", i);
             }
         } else {
             ESP_LOGW(TAG, "Sensor card %d is NULL", i);
@@ -999,18 +1118,17 @@ int screen_lifecycle_add_main_screen_elements(lv_obj_t *screen_obj, lv_group_t *
     
     // Добавляем кнопку SET из status_bar
     lv_obj_t *status_bar = NULL;
-    ESP_LOGI(TAG, "Looking for SET button in status_bar");
+    ESP_LOGD(TAG, "Looking for SET button in status_bar");
     for (uint32_t i = 0; i < child_count; i++) {
         lv_obj_t *child = lv_obj_get_child(screen_obj, i);
         if (child && lv_obj_get_child_count(child) > 0) {
             // Ищем кнопку в этом контейнере
             uint32_t grandchild_count = lv_obj_get_child_count(child);
-            ESP_LOGI(TAG, "Checking child %d for button (has %d grandchildren)", i, grandchild_count);
             for (uint32_t j = 0; j < grandchild_count; j++) {
                 lv_obj_t *grandchild = lv_obj_get_child(child, j);
                 if (grandchild && lv_obj_check_type(grandchild, &lv_button_class)) {
                     status_bar = child;
-                    ESP_LOGI(TAG, "Found button in child %d, grandchild %d", i, j);
+                    ESP_LOGD(TAG, "Found button in child %d, grandchild %d", i, j);
                     break;
                 }
             }
@@ -1020,18 +1138,14 @@ int screen_lifecycle_add_main_screen_elements(lv_obj_t *screen_obj, lv_group_t *
     
     if (status_bar) {
         uint32_t status_child_count = lv_obj_get_child_count(status_bar);
-        ESP_LOGI(TAG, "Status bar has %d children", status_child_count);
         for (uint32_t i = 0; i < status_child_count; i++) {
             lv_obj_t *child = lv_obj_get_child(status_bar, i);
             if (child && lv_obj_check_type(child, &lv_button_class)) {
-                ESP_LOGI(TAG, "Found button at status_bar child %d: %p", i, child);
                 if (is_interactive_element(child)) {
                     lv_group_add_obj(group, child);
                     added++;
-                    ESP_LOGI(TAG, "Added SET button to encoder group");
+                    ESP_LOGD(TAG, "Added SET button to encoder group");
                     break;
-                } else {
-                    ESP_LOGI(TAG, "SET button is not interactive");
                 }
             }
         }

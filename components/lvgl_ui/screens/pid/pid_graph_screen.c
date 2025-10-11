@@ -7,18 +7,15 @@
 #include "screen_manager/screen_manager.h"
 #include "../../widgets/back_button.h"
 #include "../../widgets/status_bar.h"
+#include "../../widgets/event_helpers.h"
 #include "pump_manager.h"
 #include "config_manager.h"
+#include "system_config.h"
 #include "montserrat14_ru.h"
 #include "esp_log.h"
 #include <stdio.h>
 
 static const char *TAG = "PID_GRAPH_SCREEN";
-
-// Имена насосов
-static const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
-    "pH UP", "pH DOWN", "EC A", "EC B", "EC C", "Water"
-};
 
 static lv_obj_t *g_screen = NULL;
 static pump_index_t g_pump_idx = PUMP_INDEX_PH_UP;
@@ -67,10 +64,14 @@ lv_obj_t* pid_graph_screen_create(void *context)
 {
     g_pump_idx = (pump_index_t)(intptr_t)context;
     
-    ESP_LOGI(TAG, "Создание экрана графика для насоса %d", g_pump_idx);
+    ESP_LOGD(TAG, "Создание экрана графика для насоса %d", g_pump_idx);
     
     // Создание контейнера экрана
     lv_obj_t *screen = lv_obj_create(NULL);
+    if (!screen) {
+        ESP_LOGE(TAG, "Failed to create PID graph screen");
+        return NULL;
+    }
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x1a1a1a), 0);
     g_screen = screen;
     
@@ -83,7 +84,6 @@ lv_obj_t* pid_graph_screen_create(void *context)
     char title_text[48];
     snprintf(title_text, sizeof(title_text), "График: %s", PUMP_NAMES[g_pump_idx]);
     lv_label_set_text(title, title_text);
-    lv_obj_set_style_text_font(title, &montserrat_ru, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 35);
     
@@ -105,8 +105,7 @@ lv_obj_t* pid_graph_screen_create(void *context)
     lv_obj_set_size(export_btn, 200, 35);
     lv_obj_align(export_btn, LV_ALIGN_BOTTOM_MID, 0, -45);
     lv_obj_set_style_bg_color(export_btn, lv_color_hex(0x00BCD4), 0);
-    lv_obj_add_event_cb(export_btn, on_export_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(export_btn, on_export_click, LV_EVENT_PRESSED, NULL);
+    widget_add_click_handler(export_btn, on_export_click, NULL);
     
     lv_obj_t *export_label = lv_label_create(export_btn);
     lv_label_set_text(export_label, "Экспорт (заглушка)");
@@ -119,7 +118,7 @@ lv_obj_t* pid_graph_screen_create(void *context)
     // TODO: Запустить таймер обновления
     // g_update_timer = lv_timer_create(update_graph_timer_cb, 2000, NULL);
     
-    ESP_LOGI(TAG, "Экран графика создан (заглушка)");
+    ESP_LOGD(TAG, "Экран графика создан (заглушка)");
     
     return screen;
 }

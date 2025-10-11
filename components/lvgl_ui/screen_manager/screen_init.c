@@ -243,7 +243,7 @@ esp_err_t screen_system_init_all(void)
         ESP_LOGE(TAG, "Failed to show main screen: %s", esp_err_to_name(ret));
         return ret;
     }
-    ESP_LOGI(TAG, "[OK] Main screen shown");
+    ESP_LOGD(TAG, "[OK] Main screen shown");
     
     ESP_LOGI(TAG, "Screen Manager System ready!");
     

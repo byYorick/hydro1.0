@@ -426,15 +426,40 @@ typedef struct {
 } pid_config_t;
 
 /**
+ * @brief Конфигурация UI и LVGL задач
+ */
+typedef struct {
+    uint32_t display_task_stack_size;   // Размер стека задачи обновления дисплея (байты)
+    uint32_t encoder_task_stack_size;   // Размер стека задачи энкодера (байты)
+    uint8_t display_task_priority;      // Приоритет задачи дисплея (0-31)
+    uint8_t encoder_task_priority;      // Приоритет задачи энкодера (0-31)
+    uint32_t lvgl_mem_size_kb;          // Размер памяти LVGL (КБ)
+    uint32_t lvgl_draw_buf_size;        // Размер буфера отрисовки (байты)
+} ui_config_t;
+
+/**
  * @brief Основная конфигурация системы
  */
 typedef struct {
     bool auto_control_enabled;    // Включен ли автоматический контроль
     uint8_t display_brightness;   // Яркость дисплея (0-100%)
+    ui_config_t ui_config;        // Конфигурация UI и задач LVGL
     sensor_config_t sensor_config[SENSOR_COUNT];  // Конфигурация датчиков
     pump_config_t pump_config[PUMP_INDEX_COUNT];  // Конфигурация насосов
     pid_config_t pump_pid[PUMP_INDEX_COUNT];      // PID конфигурация для насосов
 } system_config_t;
+
+/* =============================
+ *  UI КОНСТАНТЫ
+ * ============================= */
+
+/**
+ * @brief Имена насосов для отображения в UI
+ * 
+ * Используется в различных экранах для отображения названий насосов.
+ * Определено в main/app_main.c
+ */
+extern const char* PUMP_NAMES[PUMP_INDEX_COUNT];
 
 #ifdef __cplusplus
 }

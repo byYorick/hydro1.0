@@ -8,23 +8,16 @@
 #include "../base/screen_template.h"
 #include "../../widgets/back_button.h"
 #include "../../widgets/status_bar.h"
+#include "../../widgets/event_helpers.h"
 #include "pump_manager.h"
+#include "system_config.h"
 #include "montserrat14_ru.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_task_wdt.h"
 #include <stdio.h>
 
 static const char *TAG = "PUMPS_STATUS_SCREEN";
-
-// Имена насосов
-static const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
-    "pH UP",
-    "pH DOWN",
-    "EC A",
-    "EC B",
-    "EC C",
-    "Water"
-};
 
 // UI элементы
 static lv_obj_t *g_screen = NULL;
@@ -61,7 +54,7 @@ static void on_pump_click(lv_event_t *e)
 
 lv_obj_t* pumps_status_screen_create(void *context)
 {
-    ESP_LOGI(TAG, "Создание экрана статуса насосов");
+    ESP_LOGD(TAG, "Создание экрана статуса насосов");
     
     // Используем новые компактные стили
     extern lv_style_t style_bg;
@@ -96,16 +89,22 @@ lv_obj_t* pumps_status_screen_create(void *context)
     
     // Создание компактных элементов для каждого насоса
     for (int i = 0; i < PUMP_INDEX_COUNT; i++) {
+        // КРИТИЧНО: Feed watchdog при создании каждого виджета
+        esp_task_wdt_reset();
+        
         // Используем кнопку для правильной обработки KEY_ENTER
         lv_obj_t *pump_item = lv_btn_create(list_container);
+        if (!pump_item) {
+            ESP_LOGE(TAG, "Failed to create pump_item for pump %d", i);
+            continue;  // Пропускаем этот элемент
+        }
         lv_obj_set_size(pump_item, LV_PCT(100), 36);  // Компактная высота
         lv_obj_add_style(pump_item, &style_card, 0);
         lv_obj_add_style(pump_item, &style_card_focused, LV_STATE_FOCUSED);  // Стиль при фокусе
         lv_obj_set_style_pad_all(pump_item, 4, 0);  // Компактные отступы
         
         // Обработчик клика (клик мышью и нажатие энкодера)
-        lv_obj_add_event_cb(pump_item, on_pump_click, LV_EVENT_CLICKED, (void*)(intptr_t)i);
-        lv_obj_add_event_cb(pump_item, on_pump_click, LV_EVENT_PRESSED, (void*)(intptr_t)i);
+        widget_add_click_handler(pump_item, on_pump_click, (void*)(intptr_t)i);
         
         // Flex layout для правильного расположения элементов
         lv_obj_set_flex_flow(pump_item, LV_FLEX_FLOW_ROW);
@@ -129,23 +128,27 @@ lv_obj_t* pumps_status_screen_create(void *context)
         lv_obj_t *stats_label = lv_label_create(right_container);
         lv_label_set_text(stats_label, "0/0мл");
         lv_obj_set_style_text_color(stats_label, lv_color_hex(0xaaaaaa), 0);
-        lv_obj_set_style_text_font(stats_label, &montserrat_ru, 0);
         g_stats_labels[i] = stats_label;
         
         // Статус (активен/остановлен)
         lv_obj_t *status_label = lv_label_create(right_container);
         lv_label_set_text(status_label, "●");
         lv_obj_set_style_text_color(status_label, lv_color_hex(0x808080), 0);
-        lv_obj_set_style_text_font(status_label, &montserrat_ru, 0);
         g_status_labels[i] = status_label;
     }
     
     // Нижние кнопки убраны - все функции доступны через меню насосов
     
-    ESP_LOGI(TAG, "Экран статуса насосов создан");
+    ESP_LOGD(TAG, "Экран статуса насосов создан");
+    
+    // КРИТИЧНО: Feed watchdog перед обновлением
+    esp_task_wdt_reset();
     
     // Начальное обновление
     pumps_status_screen_update_all();
+    
+    // КРИТИЧНО: Feed watchdog после обновления
+    esp_task_wdt_reset();
     
     return screen;
 }
@@ -193,7 +196,7 @@ esp_err_t pumps_status_screen_on_show(lv_obj_t *screen, void *params)
 {
     (void)screen;
     (void)params;
-    ESP_LOGI(TAG, "Pumps status screen shown");
+    ESP_LOGD(TAG, "Pumps status screen shown");
     return ESP_OK;
 }
 

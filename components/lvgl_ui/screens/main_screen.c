@@ -7,6 +7,7 @@
 #include "screen_manager/screen_manager.h"
 #include "widgets/status_bar.h"
 #include "widgets/sensor_card.h"
+#include "widgets/event_helpers.h"
 #include "lvgl_styles.h"
 #include "esp_log.h"
 #include <math.h>
@@ -63,7 +64,7 @@ static void on_system_settings_click(lv_event_t *e)
  */
 static esp_err_t main_screen_on_show(lv_obj_t *screen, void *params)
 {
-    ESP_LOGI(TAG, "Main Screen ON_SHOW Callback");
+    ESP_LOGD(TAG, "Main Screen ON_SHOW Callback");
     
     // LVGL автоматически управляет фокусом через группы
     // Дополнительная настройка не требуется
@@ -80,17 +81,17 @@ static esp_err_t main_screen_on_show(lv_obj_t *screen, void *params)
  */
 static lv_obj_t* main_screen_create(void *params)
 {
-    ESP_LOGI(TAG, "=========================================");
-    ESP_LOGI(TAG, "   Creating Main Screen                ");
-    ESP_LOGI(TAG, "=========================================");
+    ESP_LOGD(TAG, "=========================================");
+    ESP_LOGD(TAG, "   Creating Main Screen                ");
+    ESP_LOGD(TAG, "=========================================");
     
     // Создаем корневой объект экрана
     lv_obj_t *screen = lv_obj_create(NULL);
-    ESP_LOGI(TAG, "  Screen object created: %p", screen);
+    ESP_LOGD(TAG, "  Screen object created: %p", screen);
     
     lv_obj_remove_style_all(screen);
     lv_obj_add_style(screen, &style_bg, 0);
-    ESP_LOGI(TAG, "  Background style applied");
+    ESP_LOGD(TAG, "  Background style applied");
     lv_obj_set_style_pad_all(screen, 8, 0);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     
@@ -126,8 +127,7 @@ static lv_obj_t* main_screen_create(void *params)
     lv_obj_add_style(set_btn, &style_card, 0);
     lv_obj_set_size(set_btn, 35, 28);
     // Обработка клика мышью и нажатия энкодера
-    lv_obj_add_event_cb(set_btn, on_system_settings_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(set_btn, on_system_settings_click, LV_EVENT_PRESSED, NULL);
+    widget_add_click_handler(set_btn, on_system_settings_click, NULL);
     
     lv_obj_t *set_label = lv_label_create(set_btn);
     lv_label_set_text(set_label, "SET");
@@ -173,14 +173,14 @@ static lv_obj_t* main_screen_create(void *params)
         lv_obj_set_grid_cell(card, LV_GRID_ALIGN_CENTER, col, 1,
                             LV_GRID_ALIGN_CENTER, row, 1);
         
-        ESP_LOGI(TAG, "  Card %d ('%s') created at grid[%d][%d]", i, sensor_names[i], row, col);
+        ESP_LOGD(TAG, "  Card %d ('%s') created at grid[%d][%d]", i, sensor_names[i], row, col);
     }
     
     // ВАЖНО: Группа энкодера будет настроена в on_show callback
     // Сохраняем ссылку на SET кнопку для добавления в группу позже
     lv_obj_set_user_data(screen, set_btn);  // Сохраняем для on_show
     
-    ESP_LOGI(TAG, "Main screen created with 6 sensor cards");
+    ESP_LOGD(TAG, "Main screen created with 6 sensor cards");
     
     return screen;
 }
@@ -191,7 +191,7 @@ static lv_obj_t* main_screen_create(void *params)
 
 esp_err_t main_screen_init(void)
 {
-    ESP_LOGI(TAG, "Initializing main screen");
+    ESP_LOGD(TAG, "Initializing main screen");
     
     screen_config_t config = {
         .id = "main",

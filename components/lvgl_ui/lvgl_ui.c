@@ -1,4 +1,4 @@
-#include "lvgl_ui.h"
+﻿#include "lvgl_ui.h"
 #include "lvgl.h"
 #include "lcd_ili9341.h"
 #include "encoder.h"
@@ -18,6 +18,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -221,6 +222,7 @@ lv_style_t style_detail_title;
 lv_style_t style_detail_value;
 lv_style_t style_detail_info;
 lv_style_t style_detail_value_big;
+lv_style_t style_pump_widget;
 static bool styles_initialized = false;
 
 static QueueHandle_t sensor_data_queue = NULL;
@@ -462,6 +464,19 @@ void init_styles(void)  // Глобальная функция - объявле�
     lv_style_set_outline_opa(&style_focus, LV_OPA_40);           // Более прозрачная обводка
 
     // =============================================
+    // СТИЛИ ДЛЯ ВИДЖЕТОВ КАЛИБРОВКИ
+    // =============================================
+    
+    // Стиль контейнера виджета калибровки насоса (ОПТИМИЗАЦИЯ!)
+    lv_style_init(&style_pump_widget);
+    lv_style_set_bg_color(&style_pump_widget, lv_color_hex(0x2a2a2a));
+    lv_style_set_bg_opa(&style_pump_widget, LV_OPA_COVER);
+    lv_style_set_border_color(&style_pump_widget, lv_color_hex(0x444444));
+    lv_style_set_border_width(&style_pump_widget, 1);
+    lv_style_set_radius(&style_pump_widget, 8);
+    lv_style_set_pad_all(&style_pump_widget, 6);
+    
+    // =============================================
     // УСТАНОВКА ДЕФОЛТНЫХ ШРИФТОВ
     // =============================================
     // Используем montserrat_ru как дефолтный шрифт с fallback на встроенный шрифт для иконок
@@ -614,9 +629,19 @@ void lvgl_main_init(void)
         }
     }
     
+    // Получаем конфигурацию UI из config_manager
+    const system_config_t *sys_config = config_manager_get_cached();
+    uint32_t display_stack = sys_config ? sys_config->ui_config.display_task_stack_size : 16384;
+    uint32_t encoder_stack = sys_config ? sys_config->ui_config.encoder_task_stack_size : 16384;
+    uint8_t display_priority = sys_config ? sys_config->ui_config.display_task_priority : 6;
+    uint8_t encoder_priority = sys_config ? sys_config->ui_config.encoder_task_priority : 5;
+    
+    ESP_LOGI(TAG, "UI Task configuration: Display=%lu bytes (prio=%d), Encoder=%lu bytes (prio=%d)",
+             (unsigned long)display_stack, display_priority, (unsigned long)encoder_stack, encoder_priority);
+    
     if (!display_task_started) {
         TaskHandle_t display_task_handle = NULL;
-        BaseType_t task_created = xTaskCreate(display_update_task, "display_update", 4096, NULL, 6, &display_task_handle);
+        BaseType_t task_created = xTaskCreate(display_update_task, "display_update", display_stack, NULL, display_priority, &display_task_handle);
         if (task_created == pdPASS && display_task_handle != NULL) {
             display_task_started = true;
             ESP_LOGI(TAG, "Display update task created successfully");
@@ -626,7 +651,7 @@ void lvgl_main_init(void)
     }
     
     TaskHandle_t encoder_task_handle = NULL;
-    BaseType_t encoder_task_created = xTaskCreate(encoder_task, "lvgl_encoder", 4096, NULL, 5, &encoder_task_handle);
+    BaseType_t encoder_task_created = xTaskCreate(encoder_task, "lvgl_encoder", encoder_stack, NULL, encoder_priority, &encoder_task_handle);
     if (encoder_task_created == pdPASS && encoder_task_handle != NULL) {
         ESP_LOGI(TAG, "Encoder task created successfully");
     } else {
@@ -684,24 +709,40 @@ static void encoder_task(void *pvParameters)
     QueueHandle_t encoder_queue = NULL;
     ESP_LOGI(TAG, "Encoder task started, waiting for encoder initialization...");
     
+    // КРИТИЧНО: Подписываем задачу на watchdog
+    esp_task_wdt_add(NULL);
+    ESP_LOGI(TAG, "Encoder task subscribed to watchdog");
+    
     while (encoder_queue == NULL) {
         encoder_queue = encoder_get_event_queue();
         if (encoder_queue == NULL) {
             vTaskDelay(pdMS_TO_TICKS(100));
         }
+        // Feed watchdog во время инициализации
+        esp_task_wdt_reset();
     }
     
     ESP_LOGI(TAG, "Encoder queue ready, starting event processing...");
     
     encoder_event_t event;
     while (1) {
+        // КРИТИЧНО: Feed watchdog в начале каждого цикла
+        esp_task_wdt_reset();
+        
         if (xQueueReceive(encoder_queue, &event, pdMS_TO_TICKS(100)) == pdTRUE) {
+            // Feed watchdog перед обработкой события
+            esp_task_wdt_reset();
+            
             // Увеличенный timeout для lazy loading экранов (до 2 секунд для сложных экранов)
             if (!lvgl_lock(2000)) {
-                ESP_LOGW(TAG, "Failed to acquire LVGL lock for encoder event after 2s");
-                // Возвращаем событие в очередь для повторной обработки
-                xQueueSendToFront(encoder_queue, &event, 0);
-                vTaskDelay(pdMS_TO_TICKS(100));
+                ESP_LOGW(TAG, "Failed to acquire LVGL lock - DROPPING event (avoid queue overflow)");
+                // КРИТИЧНО: НЕ возвращаем событие в очередь!
+                // Это может вызвать переполнение и deadlock.
+                // Просто пропускаем это событие.
+                
+                // Feed watchdog после ошибки
+                esp_task_wdt_reset();
+                vTaskDelay(pdMS_TO_TICKS(50));
                 continue;
             }
             
@@ -709,6 +750,9 @@ static void encoder_task(void *pvParameters)
                 handle_encoder_event(&event);
             }
             lvgl_unlock();
+            
+            // Feed watchdog после обработки события
+            esp_task_wdt_reset();
         }
         
         // Задержка для предотвращения watchdog timeout
@@ -732,12 +776,9 @@ static void handle_encoder_event(encoder_event_t *event)
     static uint32_t cleanup_counter = 0;
     if (++cleanup_counter >= 100) {
         cleanup_counter = 0;
-        uint32_t before_count = lv_group_get_obj_count(current->encoder_group);
         int removed = screen_cleanup_hidden_elements(NULL);
-        uint32_t after_count = lv_group_get_obj_count(current->encoder_group);
         if (removed > 0) {
-            ESP_LOGW(TAG, "Cleaned up %d hidden elements from encoder group (before: %d, after: %d)", 
-                     removed, before_count, after_count);
+            ESP_LOGD(TAG, "Periodic cleanup: removed %d hidden elements from encoder group", removed);
         }
     }
     

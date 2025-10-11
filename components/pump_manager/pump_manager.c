@@ -30,16 +30,6 @@ static const int PUMP_PINS[PUMP_INDEX_COUNT] = {
     PUMP_WATER_PIN
 };
 
-// Имена насосов
-static const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
-    "pH UP",
-    "pH DOWN",
-    "EC A",
-    "EC B",
-    "EC C",
-    "Water"
-};
-
 // Глобальные данные
 static pid_controller_t g_pid_controllers[PUMP_INDEX_COUNT];
 static pump_stats_t g_pump_stats[PUMP_INDEX_COUNT];

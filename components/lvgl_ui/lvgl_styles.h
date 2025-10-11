@@ -41,6 +41,9 @@ extern lv_style_t style_detail_container;   // Контейнер детализ
 extern lv_style_t style_detail_title;       // Заголовок детализации
 extern lv_style_t style_detail_value_big;   // Очень большое значение
 
+// ===== Стили для виджетов калибровки =====
+extern lv_style_t style_pump_widget;        // Контейнер виджета калибровки
+
 // ===== Стиль фокуса =====
 extern lv_style_t style_focus;
 

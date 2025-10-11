@@ -1,5 +1,6 @@
 #include "popup_screen.h"
 #include "screen_manager/screen_manager.h"
+#include "../widgets/event_helpers.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -68,7 +69,7 @@ void popup_screen_register(void)
     };
     
     screen_register(&config);
-    ESP_LOGI(TAG, "Popup screen registered");
+    ESP_LOGD(TAG, "Popup screen registered");
 }
 
 /**
@@ -96,7 +97,7 @@ void popup_show_notification(const notification_t *notification, uint32_t timeou
         return;
     }
     
-    ESP_LOGI(TAG, "Showing notification popup: [%d] %s", 
+    ESP_LOGD(TAG, "Showing notification popup: [%d] %s", 
              notification->type, notification->message);
     
     // Создаем конфигурацию
@@ -112,7 +113,11 @@ void popup_show_notification(const notification_t *notification, uint32_t timeou
     config->has_ok_button = true;
     
     // Показываем через screen manager (params используется как user_data)
-    screen_show("popup", config);
+    esp_err_t ret = screen_show("popup", config);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to show popup screen: %s", esp_err_to_name(ret));
+        free(config); // КРИТИЧНО: Освобождаем память при ошибке!
+    }
 }
 
 /**
@@ -156,7 +161,7 @@ void popup_show_error(const error_info_t *error, uint32_t timeout_ms)
         }
     }
     
-    ESP_LOGI(TAG, "Showing error popup: [%d] %s: %s", 
+    ESP_LOGD(TAG, "Showing error popup: [%d] %s: %s", 
              error->level, error->component, error->message);
     
     // Создаем конфигурацию
@@ -172,13 +177,13 @@ void popup_show_error(const error_info_t *error, uint32_t timeout_ms)
     config->has_ok_button = (error->level >= ERROR_LEVEL_ERROR); // OK только для ошибок
     
     // Показываем через screen manager (params используется как user_data)
-    ESP_LOGI(TAG, "Calling screen_show('popup', config=%p)", config);
+    ESP_LOGD(TAG, "Calling screen_show('popup', config=%p)", config);
     esp_err_t ret = screen_show("popup", config);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to show popup screen: %s", esp_err_to_name(ret));
         free(config);
     } else {
-        ESP_LOGI(TAG, "Popup screen show request sent successfully");
+        ESP_LOGD(TAG, "Popup screen show request sent successfully");
     }
 }
 
@@ -187,7 +192,7 @@ void popup_show_error(const error_info_t *error, uint32_t timeout_ms)
  */
 void popup_close(void)
 {
-    ESP_LOGI(TAG, "Closing popup - starting 30s cooldown");
+    ESP_LOGD(TAG, "Closing popup - starting 30s cooldown");
     
     // Сохраняем время закрытия для cooldown механизма
     g_last_popup_close_time = esp_timer_get_time() / 1000;
@@ -200,7 +205,7 @@ void popup_close(void)
  */
 static lv_obj_t* popup_create(void *user_data)
 {
-    ESP_LOGI(TAG, "Creating popup screen (user_data=%p)", user_data);
+    ESP_LOGD(TAG, "Creating popup screen (user_data=%p)", user_data);
     
     // ИСПРАВЛЕНО: Непрозрачный фон на весь экран (overlay)
     lv_obj_t *bg = lv_obj_create(NULL);
@@ -250,8 +255,7 @@ static lv_obj_t* popup_create(void *user_data)
     lv_obj_set_style_bg_color(ok_btn, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(ok_btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(ok_btn, 8, 0);
-    lv_obj_add_event_cb(ok_btn, ok_button_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(ok_btn, ok_button_cb, LV_EVENT_PRESSED, NULL);
+    widget_add_click_handler(ok_btn, ok_button_cb, NULL);
     
     lv_obj_t *ok_label = lv_label_create(ok_btn);
     lv_label_set_text(ok_label, "OK");
@@ -259,9 +263,8 @@ static lv_obj_t* popup_create(void *user_data)
     lv_obj_set_style_text_font(ok_label, &montserrat_ru, 0); // ИСПРАВЛЕНО: русский шрифт
     lv_obj_center(ok_label);
     
-    // ИСПРАВЛЕНО: Добавляем обработчик нажатия энкодера
+    // ИСПРАВЛЕНО: Добавляем обработчик KEY для энкодера
     lv_obj_add_flag(ok_btn, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(ok_btn, ok_button_cb, LV_EVENT_PRESSED, NULL); // Добавляем обработчик PRESSED
     lv_obj_add_event_cb(ok_btn, ok_button_cb, LV_EVENT_KEY, NULL); // Добавляем обработчик KEY (для энкодера)
     
     // Сохраняем указатели на элементы в user_data контейнера
@@ -277,7 +280,7 @@ static lv_obj_t* popup_create(void *user_data)
         g_current_popup = ui;
     }
     
-    ESP_LOGI(TAG, "Popup UI created: bg=%p, container=%p", bg, container);
+    ESP_LOGD(TAG, "Popup UI created: bg=%p, container=%p", bg, container);
     return bg;
 }
 
@@ -308,7 +311,7 @@ static esp_err_t popup_on_show(lv_obj_t *scr, void *user_data)
     memcpy(&ui->config, config, sizeof(popup_config_t));
     free(config); // Освобождаем переданную конфигурацию
     
-    ESP_LOGI(TAG, "Popup ON_SHOW: type=%d, timeout=%lu ms", 
+    ESP_LOGD(TAG, "Popup ON_SHOW: type=%d, timeout=%lu ms", 
              ui->config.type, ui->config.timeout_ms);
     
     // Установить цвет фона контейнера
@@ -355,7 +358,7 @@ static esp_err_t popup_on_show(lv_obj_t *scr, void *user_data)
             lv_group_add_obj(current->encoder_group, ui->ok_button);
             lv_group_focus_obj(ui->ok_button);
             
-            ESP_LOGI(TAG, "Popup encoder group: cleared %d elements, added OK button with focus", remove_count);
+            ESP_LOGD(TAG, "Popup encoder group: cleared %d elements, added OK button with focus", remove_count);
         } else {
             ESP_LOGW(TAG, "No encoder group available in popup screen instance!");
         }
@@ -367,13 +370,13 @@ static esp_err_t popup_on_show(lv_obj_t *scr, void *user_data)
     if (ui->config.timeout_ms > 0) {
         ui->close_timer = lv_timer_create(close_timer_cb, ui->config.timeout_ms, ui);
         lv_timer_set_repeat_count(ui->close_timer, 1);
-        ESP_LOGI(TAG, "Auto-close timer set: %lu ms", ui->config.timeout_ms);
+        ESP_LOGD(TAG, "Auto-close timer set: %lu ms", ui->config.timeout_ms);
     }
     
     // Принудительная перерисовка
     lv_obj_invalidate(scr);
     
-    ESP_LOGI(TAG, "[OK] Popup shown: pos(%d,%d), size(%dx%d)", 
+    ESP_LOGD(TAG, "[OK] Popup shown: pos(%d,%d), size(%dx%d)", 
              lv_obj_get_x(ui->container), lv_obj_get_y(ui->container),
              lv_obj_get_width(ui->container), lv_obj_get_height(ui->container));
     
@@ -391,14 +394,14 @@ static esp_err_t popup_on_hide(lv_obj_t *scr)
         return ESP_OK;
     }
     
-    ESP_LOGI(TAG, "Popup ON_HIDE");
+    ESP_LOGD(TAG, "Popup ON_HIDE");
     
     // КРИТИЧНО: Удалить кнопку OK из encoder группы перед освобождением
     if (ui->ok_button) {
         screen_instance_t *current = screen_get_current();
         if (current && current->encoder_group) {
             lv_group_remove_obj(ui->ok_button);
-            ESP_LOGI(TAG, "OK button removed from encoder group");
+            ESP_LOGD(TAG, "OK button removed from encoder group");
         }
     }
     
@@ -415,7 +418,7 @@ static esp_err_t popup_on_hide(lv_obj_t *scr)
     g_current_popup = NULL;
     
     // Освобождаем UI данные
-    ESP_LOGI(TAG, "Popup ON_HIDE: freeing UI data");
+    ESP_LOGD(TAG, "Popup ON_HIDE: freeing UI data");
     free(ui);
     lv_obj_set_user_data(scr, NULL);
     
@@ -429,20 +432,20 @@ static void ok_button_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     
-    ESP_LOGI(TAG, ">>> OK button callback triggered! Event code: %d", code);
+    ESP_LOGD(TAG, ">>> OK button callback triggered! Event code: %d", code);
     
     // ИСПРАВЛЕНО: Обрабатываем все типы событий
     if (code == LV_EVENT_CLICKED) {
-        ESP_LOGI(TAG, "OK button CLICKED - closing popup");
+        ESP_LOGD(TAG, "OK button CLICKED - closing popup");
         popup_close();
     } else if (code == LV_EVENT_PRESSED) {
-        ESP_LOGI(TAG, "OK button PRESSED - closing popup");
+        ESP_LOGD(TAG, "OK button PRESSED - closing popup");
         popup_close();
     } else if (code == LV_EVENT_KEY) {
         uint32_t key = lv_event_get_key(e);
-        ESP_LOGI(TAG, "OK button KEY event: key=%lu", key);
+        ESP_LOGD(TAG, "OK button KEY event: key=%lu", key);
         if (key == LV_KEY_ENTER) {
-            ESP_LOGI(TAG, "OK button ENTER key - closing popup");
+            ESP_LOGD(TAG, "OK button ENTER key - closing popup");
             popup_close();
         }
     } else {
@@ -455,14 +458,14 @@ static void ok_button_cb(lv_event_t *e)
  */
 static void close_timer_cb(lv_timer_t *timer)
 {
-    ESP_LOGI(TAG, "Auto-close timer triggered (no cooldown)");
+    ESP_LOGD(TAG, "Auto-close timer triggered (no cooldown)");
     
     // КРИТИЧНО: Удалить кнопку OK из encoder группы ДО закрытия попапа
     if (g_current_popup && g_current_popup->ok_button) {
         screen_instance_t *current = screen_get_current();
         if (current && current->encoder_group) {
             lv_group_remove_obj(g_current_popup->ok_button);
-            ESP_LOGI(TAG, "Auto-close: OK button removed from encoder group");
+            ESP_LOGD(TAG, "Auto-close: OK button removed from encoder group");
         }
     }
     

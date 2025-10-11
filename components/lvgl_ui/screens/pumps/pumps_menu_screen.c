@@ -104,7 +104,7 @@ static lv_obj_t* pumps_menu_screen_create(void *params)
         return NULL;
     }
     
-    ESP_LOGI(TAG, "Pumps menu screen created successfully");
+    ESP_LOGD(TAG, "Pumps menu screen created successfully");
     return screen;
 }
 

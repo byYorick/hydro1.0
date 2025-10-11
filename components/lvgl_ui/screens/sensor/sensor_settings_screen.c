@@ -5,6 +5,7 @@
 
 #include "sensor_settings_screen.h"
 #include "screen_manager/screen_manager.h"
+#include "screen_manager/screen_lifecycle.h"
 #include "screens/base/screen_template.h"
 #include "widgets/menu_list.h"
 #include "esp_log.h"
@@ -62,6 +63,9 @@ static void on_logging_click(lv_event_t *e) {
 
 /**
  * @brief Callback при показе экрана настроек
+ * 
+ * Использует универсальную функцию screen_auto_setup_encoder_group()
+ * вместо ручного обхода виджетов.
  */
 static esp_err_t sensor_settings_on_show(lv_obj_t *screen_obj, void *params)
 {
@@ -71,7 +75,7 @@ static esp_err_t sensor_settings_on_show(lv_obj_t *screen_obj, void *params)
     }
     
     const settings_meta_t *meta = &SETTINGS_META[sensor_id];
-    ESP_LOGI(TAG, "Settings screen '%s' shown - configuring encoder", meta->name);
+    ESP_LOGD(TAG, "Settings screen '%s' shown - auto-configuring encoder", meta->name);
     
     // Получаем instance для доступа к encoder_group
     screen_instance_t *inst = screen_get_by_id(meta->id);
@@ -80,75 +84,13 @@ static esp_err_t sensor_settings_on_show(lv_obj_t *screen_obj, void *params)
         return ESP_OK;
     }
     
-    lv_group_t *group = inst->encoder_group;
+    // Используем универсальную функцию для настройки encoder группы
+    int added = screen_auto_setup_encoder_group(screen_obj, inst->encoder_group);
     
-    // ВАЖНО: Добавляем все интерактивные элементы в группу
-    // Ищем кнопки, слайдеры, текстовые области на экране
-    lv_obj_t *child = lv_obj_get_child(screen_obj, 0);
-    int added = 0;
-    
-    while (child != NULL) {
-        // Добавляем кнопки
-        if (lv_obj_check_type(child, &lv_button_class)) {
-            lv_group_add_obj(group, child);
-            added++;
-            ESP_LOGD(TAG, "  Added button to encoder group");
-        }
-        // Добавляем слайдеры
-        else if (lv_obj_check_type(child, &lv_slider_class)) {
-            lv_group_add_obj(group, child);
-            added++;
-            ESP_LOGD(TAG, "  Added slider to encoder group");
-        }
-        // Добавляем dropdown
-        else if (lv_obj_check_type(child, &lv_dropdown_class)) {
-            lv_group_add_obj(group, child);
-            added++;
-            ESP_LOGD(TAG, "  Added dropdown to encoder group");
-        }
-        // Добавляем checkbox
-        else if (lv_obj_check_type(child, &lv_checkbox_class)) {
-            lv_group_add_obj(group, child);
-            added++;
-            ESP_LOGD(TAG, "  Added checkbox to encoder group");
-        }
-        
-        // Проверяем дочерние элементы
-        lv_obj_t *grandchild = lv_obj_get_child(child, 0);
-        while (grandchild != NULL) {
-            if (lv_obj_check_type(grandchild, &lv_button_class)) {
-                lv_group_add_obj(group, grandchild);
-                added++;
-                ESP_LOGD(TAG, "  Added nested button to encoder group");
-            }
-            else if (lv_obj_check_type(grandchild, &lv_slider_class)) {
-                lv_group_add_obj(group, grandchild);
-                added++;
-                ESP_LOGD(TAG, "  Added nested slider to encoder group");
-            }
-            else if (lv_obj_check_type(grandchild, &lv_dropdown_class)) {
-                lv_group_add_obj(group, grandchild);
-                added++;
-                ESP_LOGD(TAG, "  Added nested dropdown to encoder group");
-            }
-            else if (lv_obj_check_type(grandchild, &lv_checkbox_class)) {
-                lv_group_add_obj(group, grandchild);
-                added++;
-                ESP_LOGD(TAG, "  Added nested checkbox to encoder group");
-            }
-            grandchild = lv_obj_get_child(child, lv_obj_get_index(grandchild) + 1);
-        }
-        
-        child = lv_obj_get_child(screen_obj, lv_obj_get_index(child) + 1);
-    }
-    
-    int obj_count = lv_group_get_obj_count(group);
-    ESP_LOGI(TAG, "  Encoder group has %d objects (added %d)", obj_count, added);
-    
-    // Устанавливаем начальный фокус
-    if (obj_count > 0) {
-        lv_group_focus_next(group);
-        ESP_LOGI(TAG, "  Initial focus set");
+    if (added > 0) {
+        ESP_LOGI(TAG, "Settings screen '%s': %d elements added to encoder group", meta->name, added);
+    } else {
+        ESP_LOGW(TAG, "Settings screen '%s': no interactive elements found", meta->name);
     }
     
     return ESP_OK;

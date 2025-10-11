@@ -4,6 +4,7 @@
  */
 
 #include "back_button.h"
+#include "event_helpers.h"
 #include "screen_manager/screen_manager.h"
 #include "esp_log.h"
 
@@ -50,12 +51,10 @@ lv_obj_t* widget_create_back_button(lv_obj_t *parent,
     // БАГ ИСПРАВЛЕН: Если callback не передан, используем дефолтный!
     // Обработка и клика мышью и нажатия энкодера
     if (callback) {
-        lv_obj_add_event_cb(btn, callback, LV_EVENT_CLICKED, user_data);
-        lv_obj_add_event_cb(btn, callback, LV_EVENT_PRESSED, user_data);
+        widget_add_click_handler(btn, callback, user_data);
         ESP_LOGD(TAG, "Back button created with custom callback");
     } else {
-        lv_obj_add_event_cb(btn, default_back_callback, LV_EVENT_CLICKED, NULL);
-        lv_obj_add_event_cb(btn, default_back_callback, LV_EVENT_PRESSED, NULL);
+        widget_add_click_handler(btn, default_back_callback, NULL);
         ESP_LOGD(TAG, "Back button created with default callback (screen_go_back)");
     }
     
