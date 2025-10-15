@@ -72,6 +72,17 @@ static void on_pumps_menu_click(lv_event_t *e) {
 }
 
 /**
+ * @brief Callback для Интеллектуального PID
+ */
+static void on_intelligent_pid_click(lv_event_t *e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED) {
+        ESP_LOGI(TAG, "Интеллектуальный PID clicked");
+        screen_show("pid_intelligent_dashboard", NULL);
+    }
+}
+
+/**
  * @brief Callback при показе системного меню
  */
 static esp_err_t system_menu_on_show(lv_obj_t *screen_obj, void *params)
@@ -106,6 +117,12 @@ static lv_obj_t* system_menu_create(void *params)
             .text = "Насосы",
             .icon = LV_SYMBOL_CHARGE,
             .callback = on_pumps_menu_click,
+            .user_data = NULL,
+        },
+        {
+            .text = "Интеллектуальный PID",
+            .icon = LV_SYMBOL_SETTINGS,
+            .callback = on_intelligent_pid_click,
             .user_data = NULL,
         },
         {

@@ -39,8 +39,8 @@ lv_obj_t* widget_create_sensor_card(lv_obj_t *parent,
         return NULL;
     }
     
-    // Создаем контейнер карточки - оптимизированный размер для сетки 2x3
-    lv_obj_t *card = lv_obj_create(parent);
+    // КРИТИЧНО: Создаем КНОПКУ для правильной обработки KEY_ENTER и фокуса энкодера
+    lv_obj_t *card = lv_btn_create(parent);
     lv_obj_add_style(card, &style_card, 0);
     lv_obj_set_size(card, 115, 85);  // Оптимизированные размеры
     
@@ -54,9 +54,6 @@ lv_obj_t* widget_create_sensor_card(lv_obj_t *parent,
                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_all(card, 8, 0);  // Компактнее отступы
     lv_obj_set_style_pad_row(card, 4, 0);  // Меньше между строками
-    
-    // Делаем кликабельной
-    lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
     
     // Добавляем callback если есть (клик мышью и нажатие энкодера)
     if (config->on_click) {

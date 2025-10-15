@@ -155,6 +155,10 @@ static lv_obj_t* main_screen_create(void *params)
     
     // Создаем 6 карточек датчиков и размещаем в сетке 2x3
     for (int i = 0; i < 6; i++) {
+        // КРИТИЧНО: Feed watchdog при создании каждого виджета
+        extern void esp_task_wdt_reset(void);
+        esp_task_wdt_reset();
+        
         sensor_card_config_t card_cfg = {
             .name = sensor_names[i],
             .unit = sensor_units[i],

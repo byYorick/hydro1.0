@@ -8,5 +8,6 @@ idf_component_register(
         data_logger 
         notification_system
         esp_timer
+        adaptive_pid
 )
 

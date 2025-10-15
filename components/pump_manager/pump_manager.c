@@ -8,6 +8,7 @@
 #include "config_manager.h"
 #include "data_logger.h"
 #include "notification_system.h"
+#include "adaptive_pid.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -643,3 +644,130 @@ esp_err_t pump_manager_run_direct(pump_index_t pump_idx, uint32_t duration_ms) {
     return ESP_OK;
 }
 
+esp_err_t pump_manager_get_pid_tunings(pump_index_t pump_idx, float *kp, float *ki, float *kd) {
+    if (pump_idx >= PUMP_INDEX_COUNT || kp == NULL || ki == NULL || kd == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (xSemaphoreTake(g_pump_mutexes[pump_idx], pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    *kp = g_pid_controllers[pump_idx].kp;
+    *ki = g_pid_controllers[pump_idx].ki;
+    *kd = g_pid_controllers[pump_idx].kd;
+    
+    xSemaphoreGive(g_pump_mutexes[pump_idx]);
+    
+    return ESP_OK;
+}
+
+esp_err_t pump_manager_run_with_dose(pump_index_t pump_idx, float dose_ml) {
+    if (pump_idx >= PUMP_INDEX_COUNT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (xSemaphoreTake(g_pump_mutexes[pump_idx], pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    // Конвертация мл в мс
+    float flow_rate = g_pump_configs[pump_idx].flow_rate_ml_per_sec;
+    if (flow_rate < 0.001f) flow_rate = 0.1f;
+    
+    uint32_t duration_ms = (uint32_t)((dose_ml / flow_rate) * 1000.0f);
+    
+    // Ограничение длительности
+    if (duration_ms < g_pump_configs[pump_idx].min_duration_ms) {
+        duration_ms = g_pump_configs[pump_idx].min_duration_ms;
+    }
+    if (duration_ms > g_pump_configs[pump_idx].max_duration_ms) {
+        duration_ms = g_pump_configs[pump_idx].max_duration_ms;
+    }
+    
+    ESP_LOGI(TAG, "%s: запуск с дозой %.2f мл (%lu мс)",
+             PUMP_NAMES[pump_idx], dose_ml, (unsigned long)duration_ms);
+    
+    // Запуск насоса
+    esp_err_t result = run_pump_with_retry(pump_idx, duration_ms);
+    
+    // Обновление статистики
+    if (result == ESP_OK) {
+        g_pump_stats[pump_idx].total_volume_ml += dose_ml;
+        g_pump_stats[pump_idx].daily_volume_ml += dose_ml;
+    }
+    
+    xSemaphoreGive(g_pump_mutexes[pump_idx]);
+    
+    return result;
+}
+
+esp_err_t pump_manager_compute_and_execute_adaptive(pump_index_t pump_idx, 
+                                                     float current, 
+                                                     float target) {
+    if (pump_idx >= PUMP_INDEX_COUNT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    ESP_LOGD(TAG, "%s: адаптивная коррекция текущ=%.2f цель=%.2f",
+             PUMP_NAMES[pump_idx], current, target);
+    
+    // 1. Обновить историю в adaptive_pid
+    adaptive_pid_update_history(pump_idx, current);
+    
+    // 2. Получить предсказание
+    prediction_result_t prediction;
+    esp_err_t err = adaptive_pid_predict(pump_idx, current, target, &prediction);
+    
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Ошибка предсказания, используется базовый PID");
+        return pump_manager_compute_and_execute(pump_idx, current, target);
+    }
+    
+    // 3. Проверка упреждающей коррекции
+    if (prediction.needs_preemptive_correction && 
+        prediction.confidence > MIN_CONFIDENCE_FOR_PREDICTION) {
+        
+        ESP_LOGI(TAG, "%s: упреждающая коррекция! %s (уверенность=%.1f%%)",
+                 PUMP_NAMES[pump_idx], prediction.recommendation, 
+                 prediction.confidence * 100.0f);
+        
+        // Расчет дозы на основе буферной емкости
+        float dose_ml;
+        err = adaptive_pid_calculate_dose(pump_idx, current, target, &dose_ml);
+        
+        if (err == ESP_OK && dose_ml > 0.1f) {
+            // Сохранить значение для обучения
+            float value_before = current;
+            
+            // Выполнить упреждающую коррекцию
+            err = pump_manager_run_with_dose(pump_idx, dose_ml);
+            
+            if (err == ESP_OK) {
+                // Создать задачу обучения (проверка через 5 минут)
+                // TODO: Реализовать задачу delayed learning
+                
+                ESP_LOGI(TAG, "Упреждающая коррекция выполнена: %.2f мл", dose_ml);
+                return ESP_OK;
+            }
+        }
+    }
+    
+    // 4. Получить адаптивные коэффициенты
+    float kp_adapt, ki_adapt, kd_adapt;
+    err = adaptive_pid_get_coefficients(pump_idx, &kp_adapt, &ki_adapt, &kd_adapt);
+    
+    if (err == ESP_OK) {
+        // Временно установить адаптивные коэффициенты
+        if (xSemaphoreTake(g_pump_mutexes[pump_idx], pdMS_TO_TICKS(1000)) == pdTRUE) {
+            g_pid_controllers[pump_idx].kp = kp_adapt;
+            g_pid_controllers[pump_idx].ki = ki_adapt;
+            g_pid_controllers[pump_idx].kd = kd_adapt;
+            
+            xSemaphoreGive(g_pump_mutexes[pump_idx]);
+        }
+    }
+    
+    // 5. Обычная PID коррекция с адаптивными коэффициентами
+    return pump_manager_compute_and_execute(pump_idx, current, target);
+}

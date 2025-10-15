@@ -73,14 +73,15 @@ int screen_lifecycle_add_interactive_iterative(lv_obj_t *root_obj, lv_group_t *g
     
     int added = 0;
     
-    // Простая очередь для обхода дерева объектов
-    lv_obj_t *queue[100];  // Максимум 100 объектов в очереди
+    // УЛУЧШЕНИЕ 2: Увеличенная очередь для сложных экранов (tabview, графики)
+    #define MAX_WIDGET_QUEUE 200  // Было 100, увеличено вдвое
+    lv_obj_t *queue[MAX_WIDGET_QUEUE];
     int queue_head = 0;
     int queue_tail = 0;
     
     // Добавляем детей корневого объекта в очередь
     uint32_t child_count = lv_obj_get_child_count(root_obj);
-    for (uint32_t i = 0; i < child_count && queue_tail < 100; i++) {
+    for (uint32_t i = 0; i < child_count && queue_tail < MAX_WIDGET_QUEUE; i++) {
         lv_obj_t *child = lv_obj_get_child(root_obj, i);
         if (child) {
             queue[queue_tail++] = child;
@@ -100,13 +101,15 @@ int screen_lifecycle_add_interactive_iterative(lv_obj_t *root_obj, lv_group_t *g
         
         // Добавляем детей в очередь
         child_count = lv_obj_get_child_count(obj);
-        for (uint32_t i = 0; i < child_count && queue_tail < 100; i++) {
+        for (uint32_t i = 0; i < child_count && queue_tail < MAX_WIDGET_QUEUE; i++) {
             lv_obj_t *child = lv_obj_get_child(obj, i);
             if (child) {
                 queue[queue_tail++] = child;
             }
         }
     }
+    
+    #undef MAX_WIDGET_QUEUE
     
     return added;
 }
@@ -268,7 +271,7 @@ esp_err_t screen_create_instance(const char *screen_id)
     lv_group_t *encoder_group = lv_group_create();
     if (encoder_group) {
         lv_group_set_wrap(encoder_group, true);  // Циклическая навигация
-        ESP_LOGI(TAG, "Encoder group created for '%s'", screen_id);
+        ESP_LOGD(TAG, "Encoder group created for '%s'", screen_id);  // УЛУЧШЕНИЕ 3: Оптимизация
     }
     
     // Теперь захватываем mutex для добавления instance
@@ -459,7 +462,15 @@ esp_err_t screen_show_instance(const char *screen_id, void *params)
         return ESP_ERR_INVALID_ARG;
     }
     
-    ESP_LOGI(TAG, "Showing screen '%s'...", screen_id);
+    // УЛУЧШЕНИЕ 1: Защита от повторного показа уже видимого экрана
+    if (manager->current_screen && 
+        strcmp(manager->current_screen->config->id, screen_id) == 0 &&
+        manager->current_screen->is_visible) {
+        ESP_LOGD(TAG, "Screen '%s' already visible, skipping redundant show", screen_id);
+        return ESP_OK;  // Экран уже показан, не делаем ничего
+    }
+    
+    ESP_LOGD(TAG, "Showing screen '%s'...", screen_id);  // УЛУЧШЕНИЕ 3: Оптимизация логов
     
     // КРИТИЧЕСКАЯ СЕКЦИЯ: Защищаем поиск экземпляра
     if (manager->mutex) {
@@ -580,11 +591,11 @@ esp_err_t screen_show_instance(const char *screen_id, void *params)
     ESP_LOGI(TAG, "  Screen loaded!");
     
     // Устанавливаем группу энкодера для LVGL
-    ESP_LOGI(TAG, ">>> Encoder group check: instance=%p, group=%p", 
+    ESP_LOGD(TAG, "Encoder group check: instance=%p, group=%p",  // УЛУЧШЕНИЕ 3
              instance, instance ? instance->encoder_group : NULL);
     
     if (instance->encoder_group) {
-        ESP_LOGI(TAG, "=== Configuring encoder group for '%s' ===", screen_id);
+        ESP_LOGD(TAG, "Configuring encoder group for '%s'", screen_id);  // УЛУЧШЕНИЕ 3
         
         // КРИТИЧНО: Очищаем группу от всех старых элементов перед добавлением новых
         // Это гарантирует чистое состояние группы для каждого экрана
@@ -604,14 +615,12 @@ esp_err_t screen_show_instance(const char *screen_id, void *params)
             ESP_LOGD(TAG, "Cleared %d total elements from encoder group", old_count);
         }
         
-        ESP_LOGI(TAG, "=== Adding interactive elements to encoder group ===");
-        
         // Добавляем интерактивные элементы в группу после загрузки экрана
         // ИСПРАВЛЕНО: используем универсальную функцию для всех экранов
         int added = screen_lifecycle_add_interactive_iterative(instance->screen_obj, instance->encoder_group, 20);
         
         uint32_t obj_count = lv_group_get_obj_count(instance->encoder_group);
-        ESP_LOGI(TAG, "=== Summary: Added %d elements, total in group: %d ===", added, obj_count);
+        ESP_LOGD(TAG, "Encoder group ready: %d elements added, total %d", added, obj_count);  // УЛУЧШЕНИЕ 3
         
         lv_indev_t *indev = lv_indev_get_next(NULL);
         while (indev) {
@@ -627,7 +636,7 @@ esp_err_t screen_show_instance(const char *screen_id, void *params)
                     }
                 }
                 
-                ESP_LOGI(TAG, ">>> Encoder indev configured for '%s' (group=%p, obj_count=%d)", 
+                ESP_LOGD(TAG, "Encoder indev configured for '%s' (group=%p, obj_count=%d)",  // УЛУЧШЕНИЕ 3
                          screen_id, instance->encoder_group, obj_count);
                 break;
             }

@@ -7,6 +7,7 @@
 #include "../../widgets/back_button.h"
 #include "../../widgets/status_bar.h"
 #include "../../widgets/menu_list.h"
+#include "../../widgets/event_helpers.h"
 #include "esp_log.h"
 #include <stdio.h>
 
@@ -176,17 +177,24 @@ lv_obj_t* template_create_detail_screen(const template_detail_config_t *config,
     
     // Компактная кнопка настроек
     if (config->settings_callback) {
+        extern lv_style_t style_card_focused;
+        
         lv_obj_t *settings_btn = lv_btn_create(base.content);
         lv_obj_add_style(settings_btn, &style_card, 0);
+        lv_obj_add_style(settings_btn, &style_card_focused, LV_STATE_FOCUSED);  // Стиль фокуса энкодера
         lv_obj_set_size(settings_btn, LV_PCT(100), 35);  // Полная ширина, компактная высота
         
-        // ИСПРАВЛЕНО: Правильно передаем settings_user_data
-        lv_obj_add_event_cb(settings_btn, config->settings_callback, 
-                           LV_EVENT_CLICKED, config->settings_user_data);
+        // ИСПРАВЛЕНО: Используем widget_add_click_handler для правильной обработки KEY_ENTER
+        widget_add_click_handler(settings_btn, config->settings_callback, config->settings_user_data);
         
         lv_obj_t *settings_label = lv_label_create(settings_btn);
         lv_label_set_text(settings_label, "Settings");
         lv_obj_center(settings_label);
+        
+        // Добавляем кнопку в группу энкодера если есть
+        if (group) {
+            lv_group_add_obj(group, settings_btn);
+        }
         
         ESP_LOGD(TAG, "Settings button created (user_data: %p)", config->settings_user_data);
     }

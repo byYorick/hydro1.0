@@ -138,7 +138,7 @@ esp_err_t navigator_show(const char *screen_id, void *params)
         return ret;
     }
     
-    ESP_LOGI(TAG, "Navigation to '%s' successful", screen_id);
+    ESP_LOGD(TAG, "Navigation to '%s' successful", screen_id);  // УЛУЧШЕНИЕ 3: Оптимизация логов
     return ESP_OK;
 }
 

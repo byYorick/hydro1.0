@@ -84,6 +84,8 @@ const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
 #include "task_scheduler.h"
 #include "ph_ec_controller.h"
 #include "pump_manager.h"
+#include "adaptive_pid.h"
+#include "pid_auto_tuner.h"
 #include "system_interfaces.h"
 
 // Драйверы оборудования
@@ -614,6 +616,30 @@ static esp_err_t init_system_components(void)
         ESP_LOGW(TAG, "  [WARN] Failed to apply pump manager config: %s", esp_err_to_name(ret));
     } else {
         ESP_LOGI(TAG, "  [OK] Pump Manager config applied from NVS");
+    }
+    
+    // Инициализация адаптивной PID системы
+    ret = adaptive_pid_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "  [WARN] Failed to initialize adaptive PID: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "  [OK] Adaptive PID initialized");
+        
+        // Загрузка выученных параметров из NVS
+        ret = adaptive_pid_load_all();
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "  [OK] Adaptive parameters loaded from NVS");
+        } else {
+            ESP_LOGD(TAG, "  [INFO] No saved adaptive parameters (first run)");
+        }
+    }
+    
+    // Инициализация автонастройки PID
+    ret = pid_auto_tuner_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "  [WARN] Failed to initialize PID auto-tuner: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "  [OK] PID Auto-Tuner initialized");
     }
 
     ret = ph_ec_controller_init();

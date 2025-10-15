@@ -208,6 +208,21 @@ lv_style_t style_value_small;
 lv_style_t style_unit;
 lv_style_t style_focus;
 lv_style_t style_card;
+
+// Стили для PID экранов
+lv_style_t style_pid_card;
+lv_style_t style_pid_active;
+lv_style_t style_pid_idle;
+lv_style_t style_pid_learning;
+lv_style_t style_pid_predicting;
+lv_style_t style_pid_tuning;
+lv_style_t style_pid_target;
+lv_style_t style_pid_error;
+lv_style_t style_param_normal;
+lv_style_t style_param_focused;
+lv_style_t style_param_editing;
+lv_style_t style_progress_bg;
+lv_style_t style_progress_indicator;
 lv_style_t style_card_focused;
 lv_style_t style_status_bar;
 lv_style_t style_status_normal;
@@ -492,9 +507,92 @@ void init_styles(void)  // Глобальная функция - объявле�
     lv_disp_set_theme(lv_disp_get_default(), theme);
     
     ESP_LOGI(TAG, "Default font set to montserrat_ru with fallback for icons");
+    
+    // Инициализация PID стилей
+    init_pid_styles();
 
     styles_initialized = true;
     ESP_LOGI(TAG, "UI styles initialized with improved color scheme for 240x320 display");
+}
+
+/**
+ * @brief Инициализация стилей для PID экранов
+ */
+void init_pid_styles(void) {
+    // Стиль карточки PID - базовый
+    lv_style_init(&style_pid_card);
+    lv_style_set_bg_color(&style_pid_card, lv_color_hex(0x2a2a2a));
+    lv_style_set_bg_opa(&style_pid_card, LV_OPA_COVER);
+    lv_style_set_border_width(&style_pid_card, 2);
+    lv_style_set_border_color(&style_pid_card, lv_color_hex(0x3a3a3a));
+    lv_style_set_radius(&style_pid_card, 8);
+    lv_style_set_pad_all(&style_pid_card, 8);
+    
+    // PID активен - желтая рамка
+    lv_style_init(&style_pid_active);
+    lv_style_set_border_color(&style_pid_active, lv_color_hex(0xFFC107)); // Желтый
+    lv_style_set_border_width(&style_pid_active, 3);
+    
+    // PID неактивен - серый
+    lv_style_init(&style_pid_idle);
+    lv_style_set_border_color(&style_pid_idle, lv_color_hex(0x5a5a5a)); // Серый
+    lv_style_set_border_width(&style_pid_idle, 2);
+    
+    // Режим обучения - синяя рамка
+    lv_style_init(&style_pid_learning);
+    lv_style_set_border_color(&style_pid_learning, lv_color_hex(0x2196F3)); // Синий
+    lv_style_set_border_width(&style_pid_learning, 3);
+    
+    // Упреждающая коррекция - фиолетовая рамка
+    lv_style_init(&style_pid_predicting);
+    lv_style_set_border_color(&style_pid_predicting, lv_color_hex(0x9C27B0)); // Фиолетовый
+    lv_style_set_border_width(&style_pid_predicting, 3);
+    
+    // Автонастройка - оранжевая рамка
+    lv_style_init(&style_pid_tuning);
+    lv_style_set_border_color(&style_pid_tuning, lv_color_hex(0xFF9800)); // Оранжевый
+    lv_style_set_border_width(&style_pid_tuning, 3);
+    
+    // Цель достигнута - зеленая рамка
+    lv_style_init(&style_pid_target);
+    lv_style_set_border_color(&style_pid_target, lv_color_hex(0x4CAF50)); // Зеленый
+    lv_style_set_border_width(&style_pid_target, 3);
+    
+    // Ошибка - красная рамка
+    lv_style_init(&style_pid_error);
+    lv_style_set_border_color(&style_pid_error, lv_color_hex(0xF44336)); // Красный
+    lv_style_set_border_width(&style_pid_error, 3);
+    
+    // Параметр в нормальном режиме
+    lv_style_init(&style_param_normal);
+    lv_style_set_bg_color(&style_param_normal, lv_color_hex(0x3a3a3a));
+    lv_style_set_bg_opa(&style_param_normal, LV_OPA_COVER);
+    lv_style_set_radius(&style_param_normal, 4);
+    lv_style_set_pad_all(&style_param_normal, 6);
+    lv_style_set_text_color(&style_param_normal, lv_color_white());
+    
+    // Параметр в фокусе - голубая рамка
+    lv_style_init(&style_param_focused);
+    lv_style_set_border_color(&style_param_focused, lv_color_hex(0x00D4AA));
+    lv_style_set_border_width(&style_param_focused, 2);
+    
+    // Параметр редактируется - оранжевый фон
+    lv_style_init(&style_param_editing);
+    lv_style_set_bg_color(&style_param_editing, lv_color_hex(0xFF6B35)); // Оранжевый
+    lv_style_set_text_color(&style_param_editing, lv_color_white());
+    
+    // Прогресс-бар фон
+    lv_style_init(&style_progress_bg);
+    lv_style_set_bg_color(&style_progress_bg, lv_color_hex(0x3a3a3a));
+    lv_style_set_bg_opa(&style_progress_bg, LV_OPA_COVER);
+    lv_style_set_radius(&style_progress_bg, 4);
+    
+    // Прогресс-бар индикатор
+    lv_style_init(&style_progress_indicator);
+    lv_style_set_bg_color(&style_progress_indicator, lv_color_hex(0x00D4AA));
+    lv_style_set_bg_opa(&style_progress_indicator, LV_OPA_COVER);
+    
+    ESP_LOGI(TAG, "PID styles initialized");
 }
 
 static float get_sensor_value_by_index(const sensor_data_t *data, int index)

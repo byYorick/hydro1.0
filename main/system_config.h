@@ -135,7 +135,7 @@ extern "C" {
 #define TASK_PRIORITY_ENCODER       6       // Высокий (для отзывчивости)
 
 // Интервалы выполнения задач (в миллисекундах)
-#define TASK_INTERVAL_SENSOR        2000    // Чтение датчиков каждые 2 сек
+#define TASK_INTERVAL_SENSOR        1000    // Чтение датчиков каждую 1 сек (для адаптивного PID)
 #define TASK_INTERVAL_DISPLAY       1000    // Обновление дисплея каждую секунду
 #define TASK_INTERVAL_NOTIFICATION  5000    // Проверка уведомлений каждые 5 сек
 #define TASK_INTERVAL_DATALOGGER    60000   // Логирование каждую минуту
@@ -245,7 +245,7 @@ extern "C" {
 /*******************************************************************************
  * ПАРАМЕТРЫ WATCHDOG
  ******************************************************************************/
-#define WATCHDOG_TIMEOUT_MS         60000   // Timeout watchdog (60 сек) - увеличен для сложных экранов
+#define WATCHDOG_TIMEOUT_MS         1200000 // Timeout watchdog (20 минут) - для автонастройки PID
 #define WATCHDOG_ENABLED            true    // Включить watchdog
 
 /*******************************************************************************

@@ -15,12 +15,11 @@
 #include "../screens/pumps/pumps_status_screen.h"
 #include "../screens/pumps/pumps_manual_screen.h"
 #include "../screens/pumps/pump_calibration_screen.h"
-#include "../screens/pid/pid_main_screen.h"
-#include "../screens/pid/pid_detail_screen.h"
-#include "../screens/pid/pid_tuning_screen.h"
-#include "../screens/pid/pid_advanced_screen.h"
-#include "../screens/pid/pid_thresholds_screen.h"
-#include "../screens/pid/pid_graph_screen.h"
+
+// Intelligent Adaptive PID (LEGACY PID удалён)
+#include "../screens/adaptive/pid_intelligent_dashboard.h"
+#include "../screens/adaptive/pid_intelligent_detail.h"
+#include "../screens/adaptive/pid_auto_tune_screen.h"
 #include "esp_log.h"
 
 static const char *TAG = "SCREEN_INIT";
@@ -132,85 +131,54 @@ esp_err_t screen_system_init_all(void)
     
     ESP_LOGI(TAG, "[OK] 4 pump screens registered");
     
-    // 8. Регистрация экранов PID
-    ESP_LOGI(TAG, "[8/8] Registering PID screens...");
+    // ========================================================================
+    // 8. ИНТЕЛЛЕКТУАЛЬНЫЙ АДАПТИВНЫЙ PID (LEGACY PID УДАЛЁН)
+    // ========================================================================
+    ESP_LOGI(TAG, "[8/8] Registering Intelligent Adaptive PID screens...");
     
-    screen_config_t pid_main_cfg = {
-        .id = "pid_main",
-        .title = "PID Controllers",
-        .category = SCREEN_CATEGORY_MENU,
-        .parent_id = "pumps_menu",
+    // Интеллектуальный адаптивный PID Dashboard
+    screen_config_t pid_intel_dash_cfg = {
+        .id = "pid_intelligent_dashboard",
+        .category = SCREEN_CATEGORY_MAIN,
+        .parent_id = "main",
         .can_go_back = true,
-        .lazy_load = false,  // Часто используется - создаем сразу
-        .cache_on_hide = true,
+        .lazy_load = false,
         .destroy_on_hide = false,
-        .create_fn = pid_main_screen_create,
-        .on_show = pid_main_screen_on_show,
-        .on_hide = pid_main_screen_on_hide,
+        .create_fn = pid_intelligent_dashboard_create,
+        .on_show = pid_intelligent_dashboard_on_show,
+        .on_hide = pid_intelligent_dashboard_on_hide,
     };
-    screen_register(&pid_main_cfg);
+    screen_register(&pid_intel_dash_cfg);
     
-    screen_config_t pid_detail_cfg = {
-        .id = "pid_detail",
-        .title = "PID Detail",
+    // Детальный экран адаптивного PID (3 вкладки)
+    screen_config_t pid_intel_detail_cfg = {
+        .id = "pid_intelligent_detail",
         .category = SCREEN_CATEGORY_DETAIL,
-        .parent_id = "pid_main",
+        .parent_id = "pid_intelligent_dashboard",
         .can_go_back = true,
         .lazy_load = true,
-        .destroy_on_hide = true,
-        .create_fn = pid_detail_screen_create,
+        .destroy_on_hide = true, // Уничтожаем при скрытии для экономии памяти
+        .create_fn = pid_intelligent_detail_create,
+        .on_show = pid_intelligent_detail_on_show,
+        .on_hide = pid_intelligent_detail_on_hide,
     };
-    screen_register(&pid_detail_cfg);
+    screen_register(&pid_intel_detail_cfg);
     
-    screen_config_t pid_tuning_cfg = {
-        .id = "pid_tuning",
-        .title = "PID Tuning",
+    // Экран автонастройки PID
+    screen_config_t pid_autotune_cfg = {
+        .id = "pid_auto_tune",
         .category = SCREEN_CATEGORY_SETTINGS,
-        .parent_id = "pid_detail",
+        .parent_id = "pid_intelligent_dashboard",
         .can_go_back = true,
         .lazy_load = true,
         .destroy_on_hide = true,
-        .create_fn = pid_tuning_screen_create,
+        .create_fn = pid_auto_tune_screen_create,
+        .on_show = pid_auto_tune_screen_on_show,
+        .on_hide = pid_auto_tune_screen_on_hide,
     };
-    screen_register(&pid_tuning_cfg);
+    screen_register(&pid_autotune_cfg);
     
-    screen_config_t pid_advanced_cfg = {
-        .id = "pid_advanced",
-        .title = "PID Advanced",
-        .category = SCREEN_CATEGORY_SETTINGS,
-        .parent_id = "pid_detail",
-        .can_go_back = true,
-        .lazy_load = true,
-        .destroy_on_hide = true,
-        .create_fn = pid_advanced_screen_create,
-    };
-    screen_register(&pid_advanced_cfg);
-    
-    screen_config_t pid_thresh_cfg = {
-        .id = "pid_thresholds",
-        .title = "PID Thresholds",
-        .category = SCREEN_CATEGORY_SETTINGS,
-        .parent_id = "pid_advanced",
-        .can_go_back = true,
-        .lazy_load = true,
-        .destroy_on_hide = true,
-        .create_fn = pid_thresholds_screen_create,
-    };
-    screen_register(&pid_thresh_cfg);
-    
-    screen_config_t pid_graph_cfg = {
-        .id = "pid_graph",
-        .title = "PID Graph",
-        .category = SCREEN_CATEGORY_INFO,
-        .parent_id = "pid_detail",
-        .can_go_back = true,
-        .lazy_load = true,
-        .destroy_on_hide = true,
-        .create_fn = pid_graph_screen_create,
-    };
-    screen_register(&pid_graph_cfg);
-    
-    ESP_LOGI(TAG, "[OK] 6 PID screens registered");
+    ESP_LOGI(TAG, "[OK] 9 PID screens registered (интеллектуальный dashboard + detail + autotune)");
     
     // Итоговая статистика
     uint8_t total = screen_get_registered_count();

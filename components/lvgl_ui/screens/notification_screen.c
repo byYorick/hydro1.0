@@ -5,6 +5,7 @@
 
 #include "notification_screen.h"
 #include "screen_manager/screen_manager.h"
+#include "widgets/event_helpers.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -63,6 +64,7 @@ static esp_err_t notif_screen_on_show(lv_obj_t *scr, void *user_data);
 static esp_err_t notif_screen_on_hide(lv_obj_t *scr);
 static void ok_button_cb(lv_event_t *e);
 static void close_timer_cb(lv_timer_t *timer);
+static void notif_screen_delete_cb(lv_event_t *e);  // КРИТИЧНО: Предотвращение утечки памяти
 
 // Вспомогательные функции
 static lv_color_t get_color(notif_screen_type_t type, const notif_screen_params_t *params);
@@ -218,10 +220,14 @@ static lv_obj_t* notif_screen_create(void *user_data)
     lv_obj_align(msg_label, LV_ALIGN_TOP_MID, 0, 60);
     
     // Кнопка OK
+    extern lv_style_t style_card_focused;
     lv_obj_t *ok_button = lv_btn_create(container);
     lv_obj_set_size(ok_button, 100, 40);
     lv_obj_align(ok_button, LV_ALIGN_BOTTOM_MID, 0, -10);
-    lv_obj_add_event_cb(ok_button, ok_button_cb, LV_EVENT_ALL, NULL);
+    lv_obj_add_style(ok_button, &style_card_focused, LV_STATE_FOCUSED);  // Стиль фокуса энкодера
+    
+    // ИСПРАВЛЕНО: Используем widget_add_click_handler для правильной обработки KEY_ENTER
+    widget_add_click_handler(ok_button, ok_button_cb, NULL);
     
     lv_obj_t *ok_label = lv_label_create(ok_button);
     lv_label_set_text(ok_label, "OK");
@@ -245,8 +251,38 @@ static lv_obj_t* notif_screen_create(void *user_data)
     lv_obj_set_user_data(bg, ui);
     g_current_ui = ui;
     
+    // КРИТИЧНО: Добавляем обработчик удаления для предотвращения утечки памяти
+    lv_obj_add_event_cb(bg, notif_screen_delete_cb, LV_EVENT_DELETE, NULL);
+    
     ESP_LOGD(TAG, "Notification screen created");
     return bg;
+}
+
+/**
+ * @brief Callback при удалении экрана (предотвращение утечки памяти)
+ * 
+ * ВАЖНО: Объявлен выше, реализация здесь
+ */
+static void notif_screen_delete_cb(lv_event_t *e) {
+    lv_obj_t *scr = lv_event_get_target(e);
+    notif_screen_ui_t *ui = (notif_screen_ui_t *)lv_obj_get_user_data(scr);
+    
+    if (ui) {
+        ESP_LOGD(TAG, "Освобождение памяти notification screen");
+        
+        // Останавливаем таймер если есть
+        if (ui->close_timer) {
+            lv_timer_del(ui->close_timer);
+            ui->close_timer = NULL;
+        }
+        
+        free(ui);
+        lv_obj_set_user_data(scr, NULL);
+        
+        if (g_current_ui == ui) {
+            g_current_ui = NULL;
+        }
+    }
 }
 
 /**

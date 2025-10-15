@@ -206,11 +206,11 @@ esp_err_t ph_ec_controller_correct_ph(float current_ph)
 
     xSemaphoreGive(g_mutex);
 
-    // PID расчет и выполнение через pump_manager
-    ESP_LOGI(TAG, "Коррекция pH через PID: текущ=%.2f цель=%.2f насос=%s",
+    // АДАПТИВНАЯ PID коррекция с предсказанием и обучением
+    ESP_LOGI(TAG, "Адаптивная коррекция pH: текущ=%.2f цель=%.2f насос=%s",
              current_ph, target_ph, PUMP_NAMES[pump_idx]);
     
-    return pump_manager_compute_and_execute(pump_idx, current_ph, target_ph);
+    return pump_manager_compute_and_execute_adaptive(pump_idx, current_ph, target_ph);
 }
 
 esp_err_t ph_ec_controller_correct_ec(float current_ec)
@@ -230,30 +230,30 @@ esp_err_t ph_ec_controller_correct_ec(float current_ec)
 
     if (error < 0) {
         // EC выше целевого, нужно разбавить водой
-        ESP_LOGI(TAG, "Коррекция EC водой через PID: текущ=%.2f цель=%.2f",
+        ESP_LOGI(TAG, "Адаптивная коррекция EC водой: текущ=%.2f цель=%.2f",
                  current_ec, target_ec);
         
-        return pump_manager_compute_and_execute(PUMP_INDEX_WATER, current_ec, target_ec);
+        return pump_manager_compute_and_execute_adaptive(PUMP_INDEX_WATER, current_ec, target_ec);
     } else {
         // EC ниже целевого, нужно добавить питательные вещества
-        // Запускаем все три насоса EC последовательно через PID
-        ESP_LOGI(TAG, "Коррекция EC питательными веществами через PID: текущ=%.2f цель=%.2f",
+        // Запускаем все три насоса EC последовательно через адаптивный PID
+        ESP_LOGI(TAG, "Адаптивная коррекция EC питательными веществами: текущ=%.2f цель=%.2f",
                  current_ec, target_ec);
 
         esp_err_t result = ESP_OK;
         
         // EC A
-        esp_err_t err_a = pump_manager_compute_and_execute(PUMP_INDEX_EC_A, current_ec, target_ec);
+        esp_err_t err_a = pump_manager_compute_and_execute_adaptive(PUMP_INDEX_EC_A, current_ec, target_ec);
         if (err_a != ESP_OK) result = err_a;
         vTaskDelay(pdMS_TO_TICKS(500)); // Небольшая пауза между насосами
         
         // EC B
-        esp_err_t err_b = pump_manager_compute_and_execute(PUMP_INDEX_EC_B, current_ec, target_ec);
+        esp_err_t err_b = pump_manager_compute_and_execute_adaptive(PUMP_INDEX_EC_B, current_ec, target_ec);
         if (err_b != ESP_OK) result = err_b;
         vTaskDelay(pdMS_TO_TICKS(500));
         
         // EC C
-        esp_err_t err_c = pump_manager_compute_and_execute(PUMP_INDEX_EC_C, current_ec, target_ec);
+        esp_err_t err_c = pump_manager_compute_and_execute_adaptive(PUMP_INDEX_EC_C, current_ec, target_ec);
         if (err_c != ESP_OK) result = err_c;
 
         return result;

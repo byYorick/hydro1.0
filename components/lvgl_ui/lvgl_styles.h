@@ -47,8 +47,26 @@ extern lv_style_t style_pump_widget;        // Контейнер виджета
 // ===== Стиль фокуса =====
 extern lv_style_t style_focus;
 
+// ===== Стили для PID экранов =====
+extern lv_style_t style_pid_card;           // Карточка PID
+extern lv_style_t style_pid_active;         // Активный PID (желтый)
+extern lv_style_t style_pid_idle;           // Неактивный PID (серый)
+extern lv_style_t style_pid_learning;       // Режим обучения (синий)
+extern lv_style_t style_pid_predicting;     // Упреждающая коррекция (фиолетовый)
+extern lv_style_t style_pid_tuning;         // Автонастройка (оранжевый)
+extern lv_style_t style_pid_target;         // Цель достигнута (зеленый)
+extern lv_style_t style_pid_error;          // Ошибка PID (красный)
+
+extern lv_style_t style_param_normal;       // Параметр в нормальном режиме
+extern lv_style_t style_param_focused;      // Параметр в фокусе
+extern lv_style_t style_param_editing;      // Параметр редактируется
+
+extern lv_style_t style_progress_bg;        // Фон прогресс-бара
+extern lv_style_t style_progress_indicator; // Индикатор прогресс-бара
+
 // ===== Функция инициализации стилей =====
 void init_styles(void);
+void init_pid_styles(void); // Инициализация PID стилей
 
 #ifdef __cplusplus
 }

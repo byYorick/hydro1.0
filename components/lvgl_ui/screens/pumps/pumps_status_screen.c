@@ -43,8 +43,8 @@ static void on_pump_click(lv_event_t *e)
         pump_index_t pump_idx = (pump_index_t)(intptr_t)lv_event_get_user_data(e);
         ESP_LOGI(TAG, "Клик на насос %d (event: %d)", pump_idx, code);
         
-        // Переход к детальному экрану PID для этого насоса
-        screen_show("pid_detail", (void*)(intptr_t)pump_idx);
+        // Переход к детальному экрану интеллектуального адаптивного PID
+        screen_show("pid_intelligent_detail", (void*)(intptr_t)pump_idx);
     }
 }
 

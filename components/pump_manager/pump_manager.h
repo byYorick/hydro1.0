@@ -154,6 +154,44 @@ esp_err_t pump_manager_apply_config(const system_config_t *config);
  */
 esp_err_t pump_manager_run_direct(pump_index_t pump_idx, uint32_t duration_ms);
 
+/**
+ * @brief Получение текущих настроек PID
+ * 
+ * @param pump_idx Индекс насоса
+ * @param kp Указатель для Kp
+ * @param ki Указатель для Ki  
+ * @param kd Указатель для Kd
+ * @return ESP_OK при успехе
+ */
+esp_err_t pump_manager_get_pid_tunings(pump_index_t pump_idx, float *kp, float *ki, float *kd);
+
+/**
+ * @brief Адаптивная PID коррекция с предсказанием
+ * 
+ * Использует adaptive_pid для:
+ * - Предсказания трендов
+ * - Упреждающей коррекции
+ * - Адаптивных коэффициентов
+ * - Обучения буферной емкости
+ * 
+ * @param pump_idx Индекс насоса
+ * @param current Текущее значение
+ * @param target Целевое значение
+ * @return ESP_OK при успехе
+ */
+esp_err_t pump_manager_compute_and_execute_adaptive(pump_index_t pump_idx, 
+                                                     float current, 
+                                                     float target);
+
+/**
+ * @brief Запуск насоса с заданной дозой (для упреждающей коррекции)
+ * 
+ * @param pump_idx Индекс насоса
+ * @param dose_ml Доза в мл
+ * @return ESP_OK при успехе
+ */
+esp_err_t pump_manager_run_with_dose(pump_index_t pump_idx, float dose_ml);
+
 #ifdef __cplusplus
 }
 #endif

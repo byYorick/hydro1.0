@@ -29,13 +29,10 @@ idf_component_register(
         "screens/pumps/pumps_manual_screen.c"
         "screens/pumps/pump_calibration_screen.c"
         
-        # PID screens
-        "screens/pid/pid_main_screen.c"
-        "screens/pid/pid_detail_screen.c"
-        "screens/pid/pid_tuning_screen.c"
-        "screens/pid/pid_advanced_screen.c"
-        "screens/pid/pid_thresholds_screen.c"
-        "screens/pid/pid_graph_screen.c"
+        # Intelligent Adaptive PID screens (LEGACY PID удалён)
+        "screens/adaptive/pid_intelligent_dashboard.c"
+        "screens/adaptive/pid_intelligent_detail.c"
+        "screens/adaptive/pid_auto_tune_screen.c"
         
         # Widgets
         "widgets/back_button.c"
@@ -43,6 +40,7 @@ idf_component_register(
         "widgets/menu_list.c"
         "widgets/sensor_card.c"
         "widgets/encoder_value_edit.c"
+        "widgets/intelligent_pid_card.c"
         
     INCLUDE_DIRS 
         "."
@@ -52,13 +50,15 @@ idf_component_register(
         "screens/sensor"
         "screens/system"
         "screens/pumps"
-        "screens/pid"
+        "screens/adaptive"
         "widgets"
         
     REQUIRES
         pump_manager
         config_manager
         data_logger
+        adaptive_pid
+        pid_auto_tuner
         
     PRIV_REQUIRES 
         lvgl__lvgl 

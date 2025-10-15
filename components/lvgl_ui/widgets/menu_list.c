@@ -47,8 +47,15 @@ lv_obj_t* widget_create_menu_list(lv_obj_t *parent,
     
     // Создаем компактные кнопки меню
     for (uint8_t i = 0; i < item_count; i++) {
+        // КРИТИЧНО: Feed watchdog при создании каждого виджета
+        extern void esp_task_wdt_reset(void);
+        esp_task_wdt_reset();
+        
+        extern lv_style_t style_card_focused;
+        
         lv_obj_t *btn = lv_btn_create(list);
         lv_obj_add_style(btn, &style_card, 0);
+        lv_obj_add_style(btn, &style_card_focused, LV_STATE_FOCUSED);  // Стиль фокуса энкодера
         lv_obj_set_size(btn, LV_PCT(100), 32);  // Компактная высота
         
         // Добавляем callback если есть (клик мышью и нажатие энкодера)

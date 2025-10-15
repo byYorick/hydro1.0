@@ -27,4 +27,7 @@ idf_component_register(
         system_interfaces
         ph_ec_controller
         pump_manager
+        adaptive_pid
+        pid_auto_tuner
+        trend_predictor
 )
