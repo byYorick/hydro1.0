@@ -100,32 +100,32 @@ static lv_obj_t* main_screen_create(void *params)
     lv_obj_set_flex_align(screen, LV_FLEX_ALIGN_START, 
                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
     
-    // Создаем компактный статус-бар с максимальной информативностью
+    // Статус-бар - вернули высоту, оптимизировали ширину
     lv_obj_t *status_bar = lv_obj_create(screen);
     lv_obj_add_style(status_bar, &style_card, 0);
-    lv_obj_set_size(status_bar, LV_PCT(100), 40);  // Еще компактнее
-    lv_obj_set_style_pad_all(status_bar, 6, 0);
+    lv_obj_set_size(status_bar, LV_PCT(100), 40);  // Вернули 40px
+    lv_obj_set_style_pad_all(status_bar, 5, 0);    // Вернули 5px (было 6)
     
     // Flex layout для равномерного распределения
     lv_obj_set_flex_flow(status_bar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(status_bar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     
-    // Заголовок - компактный
+    // Заголовок - компактный по ширине
     extern lv_style_t style_title;
     lv_obj_t *title = lv_label_create(status_bar);
     lv_obj_add_style(title, &style_title, 0);
-    lv_label_set_text(title, "Hydro v3.0");
-    lv_obj_set_flex_grow(title, 1);
+    lv_label_set_text(title, "Hydro");  // Короче название
+    lv_obj_set_flex_grow(title, 0);  // Не растягиваем
     
     // Время работы системы
     lv_obj_t *uptime_label = lv_label_create(status_bar);
     lv_obj_add_style(uptime_label, &style_unit, 0);
     lv_label_set_text(uptime_label, "00:00");
     
-    // Кнопка SET - минималистичная
+    // Кнопка SET
     lv_obj_t *set_btn = lv_btn_create(status_bar);
     lv_obj_add_style(set_btn, &style_card, 0);
-    lv_obj_set_size(set_btn, 35, 28);
+    lv_obj_set_size(set_btn, 35, 28);  // Вернули размер
     // Обработка клика мышью и нажатия энкодера
     widget_add_click_handler(set_btn, on_system_settings_click, NULL);
     
@@ -133,24 +133,24 @@ static lv_obj_t* main_screen_create(void *params)
     lv_label_set_text(set_label, "SET");
     lv_obj_center(set_label);
     
-    // Контейнер для карточек датчиков - оптимизированная сетка
+    // Контейнер для карточек датчиков - оптимизация по ГОРИЗОНТАЛИ
     lv_obj_t *content = lv_obj_create(screen);
     lv_obj_remove_style_all(content);
     lv_obj_set_size(content, LV_PCT(100), LV_SIZE_CONTENT);
     
-    // GRID LAYOUT: 2 колонки × 3 ряда с оптимизированными размерами
-    // Расчёт: 240px - 4px (left) - 4px (right) - 4px (между) = 228px / 2 = 114px
-    static int32_t col_dsc[] = {110, 110, LV_GRID_TEMPLATE_LAST};  // 2 колонки по 110px (уменьшено для экрана 240px)
+    // GRID LAYOUT: 2 колонки × 3 ряда
+    // ТОЧНЫЙ РАСЧЁТ ДЛЯ 240px: 2px + 110px + 2px + 110px + 2px = 226px (запас 14px) ✓
+    static int32_t col_dsc[] = {110, 110, LV_GRID_TEMPLATE_LAST};  // 2 колонки по 110px
     static int32_t row_dsc[] = {85, 85, 85, LV_GRID_TEMPLATE_LAST}; // 3 ряда по 85px
     lv_obj_set_grid_dsc_array(content, col_dsc, row_dsc);
-    lv_obj_set_style_pad_all(content, 5, 0);     // Увеличен до 5px для симметрии
-    lv_obj_set_style_pad_row(content, 4, 0);
-    lv_obj_set_style_pad_column(content, 10, 0);  // Увеличен до 10px для красоты
+    lv_obj_set_style_pad_all(content, 2, 0);     // Минимальные отступы 2px
+    lv_obj_set_style_pad_row(content, 4, 0);     // Вертикаль 4px
+    lv_obj_set_style_pad_column(content, 2, 0);  // Горизонталь 2px
     lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
     
-    // Метаданные датчиков
-    const char *sensor_names[] = {"pH", "EC", "Temperature", "Humidity", "Light", "CO2"};
-    const char *sensor_units[] = {"", "mS/cm", "°C", "%", "lux", "ppm"};
+    // Метаданные датчиков - УЛЬТРА-КОРОТКИЕ для экономии места
+    const char *sensor_names[] = {"pH", "EC", "Temp", "Humid", "Light", "CO2"};
+    const char *sensor_units[] = {"", "", "C", "%", "", ""};  // Минимум единиц
     const uint8_t decimals[] = {2, 2, 1, 1, 0, 0};
     
     // Создаем 6 карточек датчиков и размещаем в сетке 2x3

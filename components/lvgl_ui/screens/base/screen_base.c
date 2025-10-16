@@ -63,13 +63,13 @@ screen_base_t screen_base_create(const screen_base_config_t *config)
     }
     lv_obj_remove_style_all(base.content);
     
-    // Правильно вычисляем размер (240x320 экран, компактный дизайн)
+    // Правильно вычисляем размер (240x320 экран, зазор 3px между header и body)
     int screen_height = 320;
-    int content_height = screen_height - content_y_offset - 16;  // 16 = отступы экрана (уменьшено)
+    int content_height = screen_height - content_y_offset - 11;  // 8 нижний + 3 зазор
     
     lv_obj_set_size(base.content, LV_PCT(100), content_height);
-    lv_obj_align(base.content, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_pad_all(base.content, 4, 0);  // Компактные отступы контента
+    lv_obj_align(base.content, LV_ALIGN_TOP_LEFT, 0, content_y_offset + 3);  // Зазор 3px после header
+    lv_obj_set_style_pad_all(base.content, 0, 0);  // БЕЗ отступов - body на весь экран
     
     ESP_LOGD(TAG, "Content area: height=%d (screen_height=%d - offset=%d - padding=32)", 
              content_height, screen_height, content_y_offset);

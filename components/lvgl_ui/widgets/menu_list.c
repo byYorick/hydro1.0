@@ -31,19 +31,19 @@ lv_obj_t* widget_create_menu_list(lv_obj_t *parent,
     
     ESP_LOGI(TAG, "Creating menu list with %d items", item_count);
     
-    // Создаем контейнер для списка
+    // Создаем контейнер для списка - НА ВЕСЬ ЭКРАН
     lv_obj_t *list = lv_obj_create(parent);
     lv_obj_remove_style_all(list);
     lv_obj_add_style(list, &style_card, 0);
-    lv_obj_set_size(list, LV_PCT(90), LV_SIZE_CONTENT);
-    lv_obj_align(list, LV_ALIGN_CENTER, 0, 20);
+    lv_obj_set_size(list, LV_PCT(100), LV_SIZE_CONTENT);  // 100% ширины
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 0);  // БЕЗ ОТСТУПА сверху
     
-    // Настраиваем flex layout для вертикального списка - компактный
+    // Настраиваем flex layout для вертикального списка
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(list, LV_FLEX_ALIGN_START, 
                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_all(list, 8, 0);  // Меньше отступов
-    lv_obj_set_style_pad_row(list, 4, 0);  // Меньше отступов между кнопками
+    lv_obj_set_style_pad_all(list, 6, 0);  // Меньше отступы по краям
+    lv_obj_set_style_pad_row(list, 4, 0);  // Вернули 4
     
     // Создаем компактные кнопки меню
     for (uint8_t i = 0; i < item_count; i++) {
@@ -56,7 +56,7 @@ lv_obj_t* widget_create_menu_list(lv_obj_t *parent,
         lv_obj_t *btn = lv_btn_create(list);
         lv_obj_add_style(btn, &style_card, 0);
         lv_obj_add_style(btn, &style_card_focused, LV_STATE_FOCUSED);  // Стиль фокуса энкодера
-        lv_obj_set_size(btn, LV_PCT(100), 32);  // Компактная высота
+        lv_obj_set_size(btn, LV_PCT(100), 32);  // Вернули высоту 32px
         
         // Добавляем callback если есть (клик мышью и нажатие энкодера)
         if (items[i].callback) {

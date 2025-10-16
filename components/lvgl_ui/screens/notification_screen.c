@@ -217,13 +217,13 @@ static lv_obj_t* notif_screen_create(void *user_data)
     lv_obj_set_style_text_align(msg_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(msg_label, SCREEN_WIDTH - 30);
     lv_label_set_long_mode(msg_label, LV_LABEL_LONG_WRAP);
-    lv_obj_align(msg_label, LV_ALIGN_TOP_MID, 0, 60);
+    lv_obj_align(msg_label, LV_ALIGN_CENTER, 0, -20);  // Центрируем с отступом вверх
     
-    // Кнопка OK
+    // Кнопка OK - переносим на самый низ ЭКРАНА (bg, а не container)
     extern lv_style_t style_card_focused;
-    lv_obj_t *ok_button = lv_btn_create(container);
+    lv_obj_t *ok_button = lv_btn_create(bg);  // Создаём на bg, а не на container!
     lv_obj_set_size(ok_button, 100, 40);
-    lv_obj_align(ok_button, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_align(ok_button, LV_ALIGN_BOTTOM_MID, 0, -15);  // Низ экрана
     lv_obj_add_style(ok_button, &style_card_focused, LV_STATE_FOCUSED);  // Стиль фокуса энкодера
     
     // ИСПРАВЛЕНО: Используем widget_add_click_handler для правильной обработки KEY_ENTER

@@ -8,6 +8,7 @@
 #include "../../widgets/back_button.h"
 #include "../../widgets/status_bar.h"
 #include "../../widgets/event_helpers.h"
+#include "../../widgets/encoder_value_edit.h"
 #include "../../lvgl_styles.h"
 #include "montserrat14_ru.h"
 #include "adaptive_pid.h"
@@ -30,13 +31,10 @@ static lv_obj_t *g_overview_values_label = NULL;
 static lv_obj_t *g_overview_pid_label = NULL;
 static lv_obj_t *g_overview_adaptive_label = NULL;
 
-// Вкладка "Настройки"
-static lv_obj_t *g_settings_kp_slider = NULL;
-static lv_obj_t *g_settings_ki_slider = NULL;
-static lv_obj_t *g_settings_kd_slider = NULL;
-static lv_obj_t *g_settings_kp_label = NULL;
-static lv_obj_t *g_settings_ki_label = NULL;
-static lv_obj_t *g_settings_kd_label = NULL;
+// Вкладка "Настройки" - числовые редакторы
+static lv_obj_t *g_settings_kp_edit = NULL;
+static lv_obj_t *g_settings_ki_edit = NULL;
+static lv_obj_t *g_settings_kd_edit = NULL;
 
 // Вкладка "График"
 static lv_obj_t *g_chart = NULL;
@@ -232,6 +230,7 @@ static void create_settings_tab(lv_obj_t *parent) {
     lv_slider_set_range(g_settings_kp_slider, 0, 1000); // 0.00 - 10.00
     lv_slider_set_value(g_settings_kp_slider, (int32_t)(kp * 100), LV_ANIM_OFF);
     lv_obj_add_event_cb(g_settings_kp_slider, on_kp_slider_changed, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_flag(g_settings_kp_slider, LV_OBJ_FLAG_CLICK_FOCUSABLE);  // КРИТИЧНО: Разрешаем фокус
     
     // Слайдер Ki
     g_settings_ki_label = lv_label_create(parent);
@@ -244,6 +243,7 @@ static void create_settings_tab(lv_obj_t *parent) {
     lv_slider_set_range(g_settings_ki_slider, 0, 1000); // 0.000 - 1.000
     lv_slider_set_value(g_settings_ki_slider, (int32_t)(ki * 1000), LV_ANIM_OFF);
     lv_obj_add_event_cb(g_settings_ki_slider, on_ki_slider_changed, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_flag(g_settings_ki_slider, LV_OBJ_FLAG_CLICK_FOCUSABLE);  // КРИТИЧНО: Разрешаем фокус
     
     // Слайдер Kd
     g_settings_kd_label = lv_label_create(parent);
@@ -256,6 +256,7 @@ static void create_settings_tab(lv_obj_t *parent) {
     lv_slider_set_range(g_settings_kd_slider, 0, 500); // 0.00 - 5.00
     lv_slider_set_value(g_settings_kd_slider, (int32_t)(kd * 100), LV_ANIM_OFF);
     lv_obj_add_event_cb(g_settings_kd_slider, on_kd_slider_changed, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_flag(g_settings_kd_slider, LV_OBJ_FLAG_CLICK_FOCUSABLE);  // КРИТИЧНО: Разрешаем фокус
     
     // Кнопка автонастройки
     lv_obj_t *autotune_btn = lv_btn_create(parent);
@@ -366,6 +367,15 @@ esp_err_t pid_intelligent_detail_on_show(lv_obj_t *screen, void *params) {
     g_pump_idx = pump_idx;
     
     ESP_LOGI(TAG, "Детальный экран показан для %s", PUMP_NAMES[pump_idx]);
+    
+    // КРИТИЧНО: Добавляем слайдеры в encoder group для управления энкодером
+    screen_instance_t *inst = screen_get_by_id("pid_intelligent_detail");
+    if (inst && inst->encoder_group) {
+        if (g_settings_kp_slider) lv_group_add_obj(inst->encoder_group, g_settings_kp_slider);
+        if (g_settings_ki_slider) lv_group_add_obj(inst->encoder_group, g_settings_ki_slider);
+        if (g_settings_kd_slider) lv_group_add_obj(inst->encoder_group, g_settings_kd_slider);
+        ESP_LOGI(TAG, "Слайдеры добавлены в encoder group");
+    }
     
     // Обновление данных
     update_overview_tab();

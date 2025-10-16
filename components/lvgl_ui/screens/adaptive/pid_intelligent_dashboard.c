@@ -266,10 +266,7 @@ lv_obj_t* pid_intelligent_dashboard_create(void *context) {
             // КРИТИЧНО: Используем widget_add_click_handler для правильной обработки KEY_ENTER
             widget_add_click_handler(g_cards[i]->container, on_card_click, (void*)(intptr_t)i);
             
-            // Первая карточка в фокусе
-            if (i == 0) {
-                widget_intelligent_pid_card_set_focused(g_cards[i], true);
-            }
+            // Фокус управляется автоматически через screen_manager, не устанавливаем вручную
         }
     }
     

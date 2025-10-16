@@ -42,7 +42,7 @@ lv_obj_t* widget_create_sensor_card(lv_obj_t *parent,
     // КРИТИЧНО: Создаем КНОПКУ для правильной обработки KEY_ENTER и фокуса энкодера
     lv_obj_t *card = lv_btn_create(parent);
     lv_obj_add_style(card, &style_card, 0);
-    lv_obj_set_size(card, 115, 85);  // Оптимизированные размеры
+    lv_obj_set_size(card, 110, 85);  // Ширина 110px (гарантированно влезает в 240px)
     
     // ВАЖНО: Применяем стиль фокуса при получении состояния FOCUSED
     extern lv_style_t style_card_focused;
@@ -52,8 +52,8 @@ lv_obj_t* widget_create_sensor_card(lv_obj_t *parent,
     lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, 
                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
-    lv_obj_set_style_pad_all(card, 8, 0);  // Компактнее отступы
-    lv_obj_set_style_pad_row(card, 4, 0);  // Меньше между строками
+    lv_obj_set_style_pad_all(card, 6, 0);  // Вернули отступы (было 8)
+    lv_obj_set_style_pad_row(card, 3, 0);  // Вернули (было 4)
     
     // Добавляем callback если есть (клик мышью и нажатие энкодера)
     if (config->on_click) {
@@ -71,9 +71,9 @@ lv_obj_t* widget_create_sensor_card(lv_obj_t *parent,
     // Текущее значение (большой шрифт) с единицами в одной строке
     lv_obj_t *value_label = lv_label_create(card);
     lv_obj_add_style(value_label, &style_value_large, 0);
+    lv_obj_set_flex_grow(value_label, 1);  // Занимает свободное пространство
     
-    char value_text[32];
-    // Проверка на валидность начального значения
+    char value_text[16];
     if (isnan(config->current_value) || isinf(config->current_value) || config->current_value < -999.0f) {
         snprintf(value_text, sizeof(value_text), "--%s", 
                  config->unit ? config->unit : "");
@@ -83,6 +83,8 @@ lv_obj_t* widget_create_sensor_card(lv_obj_t *parent,
                  config->unit ? config->unit : "");
     }
     lv_label_set_text(value_label, value_text);
+    lv_label_set_long_mode(value_label, LV_LABEL_LONG_DOT);  // Обрезать если не влезает
+    lv_obj_set_width(value_label, LV_PCT(100));
     
     // ИСПРАВЛЕНО: Сохраняем и value_label, и config в user_data
     // Создаем структуру для хранения обоих указателей
