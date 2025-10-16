@@ -18,7 +18,7 @@
 static const char *TAG = "PID_AUTO_TUNER";
 
 // Глобальные данные для всех 6 насосов
-static tuning_result_t g_results[PUMP_INDEX_COUNT];
+static tuning_result_t *g_results = NULL;  // ПЕРЕНЕСЕНО НА PSRAM для экономии 1.8 KB DRAM
 static TaskHandle_t g_tuning_tasks[PUMP_INDEX_COUNT] = {NULL};
 static SemaphoreHandle_t g_mutexes[PUMP_INDEX_COUNT];
 static bool g_initialized = false;
@@ -309,6 +309,21 @@ esp_err_t pid_auto_tuner_init(void) {
     }
     
     ESP_LOGI(TAG, "Инициализация pid_auto_tuner...");
+    
+    // Выделяем память для результатов в PSRAM для экономии DRAM
+    if (g_results == NULL) {
+        g_results = heap_caps_calloc(
+            PUMP_INDEX_COUNT,
+            sizeof(tuning_result_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
+        );
+        if (g_results == NULL) {
+            ESP_LOGE(TAG, "Failed to allocate PID tuning results in PSRAM");
+            return ESP_ERR_NO_MEM;
+        }
+        ESP_LOGI(TAG, "PID tuning results allocated in PSRAM: %d bytes (saved 1.8 KB DRAM)",
+                 PUMP_INDEX_COUNT * sizeof(tuning_result_t));
+    }
     
     // Создание мьютексов
     for (int i = 0; i < PUMP_INDEX_COUNT; i++) {

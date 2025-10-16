@@ -244,7 +244,7 @@ static bool styles_initialized = false;
 static QueueHandle_t sensor_data_queue = NULL;
 static bool display_task_started = false;
 static sensor_data_t last_sensor_data = {0};
-static lv_coord_t sensor_history[SENSOR_COUNT][HISTORY_POINTS];
+static lv_coord_t *sensor_history = NULL;  // ПЕРЕНЕСЕНО НА PSRAM для экономии 1.4 KB DRAM (было [6][60])
 static uint16_t sensor_history_pos[SENSOR_COUNT];
 static bool sensor_history_full[SENSOR_COUNT];
 static bool sensor_snapshot_valid = false;
@@ -283,6 +283,22 @@ void init_styles(void)  // Глобальная функция - объявле�
 {
     if (styles_initialized) {
         return;
+    }
+
+    // Выделяем память для истории датчиков в PSRAM для экономии DRAM
+    if (sensor_history == NULL) {
+        sensor_history = heap_caps_calloc(
+            SENSOR_COUNT * HISTORY_POINTS,
+            sizeof(lv_coord_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
+        );
+        if (sensor_history == NULL) {
+            ESP_LOGE("LVGL_MAIN", "Failed to allocate sensor history in PSRAM");
+            // Продолжаем работу без истории графиков
+        } else {
+            ESP_LOGI("LVGL_MAIN", "Sensor history allocated in PSRAM: %d bytes (saved 1.4 KB DRAM)",
+                     SENSOR_COUNT * HISTORY_POINTS * sizeof(lv_coord_t));
+        }
     }
 
     // =============================================
@@ -610,9 +626,12 @@ static float get_sensor_value_by_index(const sensor_data_t *data, int index)
 
 static void record_sensor_value(int index, float value)
 {
+    if (sensor_history == NULL) return;  // Защита если PSRAM не выделен
+    
     const sensor_meta_t *meta = &SENSOR_META[index];
     lv_coord_t scaled = (lv_coord_t)lroundf(value * meta->chart_scale);
-    sensor_history[index][sensor_history_pos[index]] = scaled;
+    // Изменена индексация для одномерного массива в PSRAM
+    sensor_history[index * HISTORY_POINTS + sensor_history_pos[index]] = scaled;
     sensor_history_pos[index] = (sensor_history_pos[index] + 1) % HISTORY_POINTS;
     if (sensor_history_pos[index] == 0) {
         sensor_history_full[index] = true;

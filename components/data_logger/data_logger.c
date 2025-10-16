@@ -233,6 +233,25 @@ static esp_err_t load_locked(void)
     return ESP_OK;
 }
 
+// PID Log Buffer - определения перенесены сюда для использования в data_logger_init
+#define PID_LOG_BUFFER_SIZE 10
+
+typedef struct {
+    uint8_t pump;
+    float setpoint;
+    float current;
+    float p_term;
+    float i_term;
+    float d_term;
+    float output_ml;
+    char status[32];
+    uint32_t timestamp;
+} pid_log_entry_t;
+
+static pid_log_entry_t *g_pid_log_buffer = NULL;  // ПЕРЕНЕСЕНО НА PSRAM для экономии 8.6 KB DRAM
+static uint8_t g_pid_log_count = 0;
+static SemaphoreHandle_t g_pid_log_mutex = NULL;
+
 esp_err_t data_logger_init(uint32_t max_entries)
 {
     if (g_log_entries != NULL) {
@@ -261,6 +280,23 @@ esp_err_t data_logger_init(uint32_t max_entries)
     g_next_id = 1;
     g_dirty = false;
     g_last_persist_ts = time(NULL);
+
+    // Выделяем PID log buffer в PSRAM для экономии DRAM
+    if (g_pid_log_buffer == NULL) {
+        g_pid_log_buffer = heap_caps_calloc(
+            PID_LOG_BUFFER_SIZE,
+            sizeof(pid_log_entry_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
+        );
+        if (g_pid_log_buffer == NULL) {
+            ESP_LOGE(TAG, "Failed to allocate PID log buffer in PSRAM");
+            free(g_log_entries);
+            g_log_entries = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+        ESP_LOGI(TAG, "PID log buffer allocated in PSRAM: %d bytes (saved 8.6 KB DRAM)", 
+                 PID_LOG_BUFFER_SIZE * sizeof(pid_log_entry_t));
+    }
 
     ESP_LOGI(TAG, "Data logger initialized (capacity: %lu entries)", (unsigned long)max_entries);
     return ESP_OK;
@@ -522,24 +558,6 @@ const char* data_logger_type_to_string(log_record_type_t type)
 // ============================================================================
 // PID LOGGING FUNCTIONS (SD Card)
 // ============================================================================
-
-#define PID_LOG_BUFFER_SIZE 10
-
-typedef struct {
-    uint8_t pump;
-    float setpoint;
-    float current;
-    float p_term;
-    float i_term;
-    float d_term;
-    float output_ml;
-    char status[32];
-    uint32_t timestamp;
-} pid_log_entry_t;
-
-static pid_log_entry_t g_pid_log_buffer[PID_LOG_BUFFER_SIZE];
-static uint8_t g_pid_log_count = 0;
-static SemaphoreHandle_t g_pid_log_mutex = NULL;
 
 static const char* PUMP_NAMES_FOR_LOG[] = {
     "pH_UP", "pH_DOWN", "EC_A", "EC_B", "EC_C", "Water"

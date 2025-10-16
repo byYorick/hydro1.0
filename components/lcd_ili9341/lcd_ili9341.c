@@ -75,7 +75,7 @@
 // Минимальная задержка задачи LVGL в миллисекундах
 #define LVGL_TASK_MIN_DELAY_MS 1
 // Размер стека задачи LVGL (увеличен до 32 КБ для надежности с PSRAM буферами и сложными экранами)
-#define LVGL_TASK_STACK_SIZE   (32 * 1024)
+#define LVGL_TASK_STACK_SIZE   (24 * 1024)  // Уменьшено с 32 КБ для экономии DRAM
 // Приоритет задачи LVGL (КРИТИЧНО: должен быть выше Display/Encoder для предотвращения блокировок)
 #define LVGL_TASK_PRIORITY     7
 
@@ -396,8 +396,8 @@ lv_display_t* lcd_ili9341_init(void)
     disp = lv_display_create(LCD_H_RES, LCD_V_RES);
     
     // Выделяем буферы для LVGL используя SPI DMA память (как в официальном примере ESP-IDF)
-    // Размер: 20 строк (как в примере) для оптимального баланса между памятью и производительностью
-    size_t draw_buffer_sz = LCD_H_RES * 20 * sizeof(lv_color16_t);  // 9.6 KB each
+    // Размер: 15 строк - уменьшено с 20 для экономии DRAM под WiFi
+    size_t draw_buffer_sz = LCD_H_RES * 15 * sizeof(lv_color16_t);  // 7.2 KB each (экономия 4.8 KB)
     
     void *buf1 = spi_bus_dma_memory_alloc(LCD_HOST, draw_buffer_sz, 0);
     if (buf1 == NULL) {

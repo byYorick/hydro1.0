@@ -32,6 +32,7 @@ extern "C" {
 #define MAX_WIFI_SSID_LEN       32
 #define MAX_WIFI_PASSWORD_LEN   64
 #define MAX_SCAN_RESULTS        20
+#define NETWORK_MANAGER_MAXIMUM_RETRY  5  ///< Максимальное количество попыток переподключения
 
 /* =============================
  *  ТИПЫ ДАННЫХ
@@ -70,6 +71,13 @@ typedef struct {
     wifi_auth_mode_t authmode;  ///< Тип защиты
     uint8_t channel;            ///< Канал
 } wifi_scan_result_t;
+
+/**
+ * @brief Callback функция для событий WiFi
+ * 
+ * @param status Текущий статус WiFi подключения
+ */
+typedef void (*network_event_cb_t)(wifi_status_t status);
 
 /* =============================
  *  ПУБЛИЧНЫЙ API
@@ -154,6 +162,31 @@ esp_err_t network_manager_load_and_connect(void);
  * @return ESP_OK при успехе
  */
 esp_err_t network_manager_get_mac(char *mac_str, size_t len);
+
+/**
+ * @brief Подключение к WiFi сети с ожиданием результата (блокирующая версия)
+ * 
+ * @param ssid SSID сети
+ * @param password Пароль (может быть NULL для открытых сетей)
+ * @param timeout_ms Таймаут ожидания в миллисекундах
+ * @return ESP_OK при успешном подключении, ESP_FAIL при неудаче, ESP_ERR_TIMEOUT при таймауте
+ */
+esp_err_t network_manager_connect_blocking(const char *ssid, const char *password, uint32_t timeout_ms);
+
+/**
+ * @brief Установка callback функции для событий WiFi
+ * 
+ * @param callback Функция обратного вызова
+ * @return ESP_OK при успехе
+ */
+esp_err_t network_manager_set_event_callback(network_event_cb_t callback);
+
+/**
+ * @brief Получение текущего количества попыток переподключения
+ * 
+ * @return Количество попыток
+ */
+uint32_t network_manager_get_retry_count(void);
 
 #ifdef __cplusplus
 }

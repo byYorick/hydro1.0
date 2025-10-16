@@ -146,6 +146,9 @@ static void wifi_scan_task(void *arg)
 {
     ESP_LOGI(TAG, "WiFi scan task started");
     
+    // НЕ сбрасываем watchdog - задача не зарегистрирована в WDT
+    // esp_task_wdt_reset();
+    
     // Выполняем сканирование БЕЗ LVGL lock (не блокируем UI!)
     wifi_scan_result_t *scan_results = malloc(sizeof(wifi_scan_result_t) * MAX_NETWORKS);
     if (!scan_results) {
@@ -189,52 +192,109 @@ static void wifi_scan_task(void *arg)
     
     free(scan_results);
     
-    // КРИТИЧНО: Заполняем список С LVGL LOCK и добавляем в encoder group!
+    // НЕ сбрасываем watchdog - задача не зарегистрирована в WDT
+    // esp_task_wdt_reset();
+    
+    // КРИТИЧНО: Заполняем список батчами по 3 сети, отпуская lock между батчами
     if (g_network_list && g_network_count > 0) {
-        lv_lock();  // ОБЯЗАТЕЛЬНО для UI обновлений из задачи!
+        ESP_LOGI(TAG, "Preparing to add %d networks to UI...", g_network_count);
         
-        // Получаем encoder group текущего экрана
-        lv_group_t *group = lv_group_get_default();
+        // ВАЖНО: Сначала очищаем старый список
+        lv_lock();
+        lv_obj_clean(g_network_list);
+        ESP_LOGI(TAG, "Network list cleared");
+        lv_unlock();
         
-        for (int i = 0; i < g_network_count; i++) {
-            lv_obj_t *btn = lv_btn_create(g_network_list);
-            lv_obj_set_width(btn, LV_PCT(100));
-            lv_obj_set_height(btn, 40);
-            lv_obj_set_style_radius(btn, 4, 0);
-            lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a3a3a), 0);
+        // esp_task_wdt_reset();
+        
+        // Получаем encoder group ДО входа в lock
+        lv_group_t *group = NULL;
+        lv_lock();
+        group = lv_group_get_default();
+        ESP_LOGI(TAG, "Got encoder group: %p", group);
+        lv_unlock();
+        
+        ESP_LOGI(TAG, "Starting batch creation...");
+        
+        // Обрабатываем сети батчами по 3 штуки
+        for (int i = 0; i < g_network_count; i += 3) {
+            // НЕ сбрасываем watchdog - задача не зарегистрирована
+            // esp_task_wdt_reset();
             
-            // КРИТИЧНО: Делаем кнопку фокусируемой энкодером!
-            lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
-            if (group) {
-                lv_group_add_obj(group, btn);  // Добавляем в encoder group!
-            }
+            // Берем lock на батч из 3 сетей (или меньше)
+            lv_lock();
             
-            lv_obj_t *label = lv_label_create(btn);
-            
-            // ФИКС квадратиков: ограничиваем SSID ASCII символами
-            char safe_ssid[33];
-            strncpy(safe_ssid, g_scanned_networks[i], 32);
-            safe_ssid[32] = '\0';
-            
-            // Заменяем не-ASCII символы на '?'
-            for (int j = 0; safe_ssid[j]; j++) {
-                if ((unsigned char)safe_ssid[j] > 127) {
-                    safe_ssid[j] = '?';
+            // Обрабатываем до 3 сетей за раз
+            for (int j = 0; j < 3 && (i + j) < g_network_count; j++) {
+                int idx = i + j;
+                
+                lv_obj_t *btn = lv_btn_create(g_network_list);
+                lv_obj_set_width(btn, LV_PCT(100));
+                lv_obj_set_height(btn, 40);
+                lv_obj_set_style_radius(btn, 4, 0);
+                lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a3a3a), 0);
+                
+                // КРИТИЧНО: Делаем кнопку фокусируемой энкодером!
+                lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
+                if (group) {
+                    lv_group_add_obj(group, btn);
                 }
+                
+                lv_obj_t *label = lv_label_create(btn);
+                
+                // ФИКС квадратиков: ограничиваем SSID ASCII символами
+                char safe_ssid[33];
+                strncpy(safe_ssid, g_scanned_networks[idx], 32);
+                safe_ssid[32] = '\0';
+                
+                // Заменяем не-ASCII символы на '?'
+                for (int k = 0; safe_ssid[k]; k++) {
+                    if ((unsigned char)safe_ssid[k] > 127) {
+                        safe_ssid[k] = '?';
+                    }
+                }
+                
+                lv_label_set_text(label, safe_ssid);
+                lv_obj_center(label);
+                
+                lv_obj_set_user_data(btn, (void*)(intptr_t)idx);
+                widget_add_click_handler(btn, on_network_select, (void*)(intptr_t)idx);
+                // Добавляем также обработку клавиши энкодера
+                lv_obj_add_event_cb(btn, on_network_select, LV_EVENT_KEY, (void*)(intptr_t)idx);
+                
+                ESP_LOGI(TAG, "  Added network #%d: %s", idx, safe_ssid);
             }
             
-            lv_label_set_text(label, safe_ssid);
-            lv_obj_center(label);
+            // Отпускаем lock после батча
+            lv_unlock();
             
-            // Сохраняем индекс сети
-            lv_obj_set_user_data(btn, (void*)(intptr_t)i);
-            
-            // Добавляем обработчик клика
-            widget_add_click_handler(btn, on_network_select, (void*)(intptr_t)i);
+            ESP_LOGI(TAG, "Batch %d/%d completed", (i/3)+1, (g_network_count+2)/3);
         }
         
+        ESP_LOGI(TAG, "All %d networks added to UI successfully", g_network_count);
+        
+        // НОВОЕ: Фокусируем первую сеть в списке для удобства
+        lv_lock();
+        if (g_network_list) {
+            lv_obj_t *first_btn = lv_obj_get_child(g_network_list, 0);
+            if (first_btn) {
+                lv_group_t *group = lv_group_get_default();
+                if (group) {
+                    lv_group_focus_obj(first_btn);
+                    ESP_LOGI(TAG, "Focused first network in list");
+                }
+            }
+        }
         lv_unlock();
+        
+        // НЕ сбрасываем watchdog - задача не зарегистрирована
+        // esp_task_wdt_reset();
+    } else {
+        ESP_LOGW(TAG, "Network list is NULL or no networks found");
     }
+    
+    // НЕ сбрасываем watchdog - задача не зарегистрирована
+    // esp_task_wdt_reset();
     
     // Восстанавливаем текст кнопки
     lv_lock();
@@ -249,6 +309,9 @@ static void wifi_scan_task(void *arg)
     g_is_scanning = false;
     
     // notification_system(NOTIFICATION_INFO, "Scan complete", NOTIF_SOURCE_SYSTEM);
+    
+    // НЕ сбрасываем watchdog - задача не зарегистрирована
+    // esp_task_wdt_reset();
     
     ESP_LOGI(TAG, "WiFi scan task completed");
     vTaskDelete(NULL);  // Завершаем задачу
@@ -269,6 +332,8 @@ static void on_scan_click(lv_event_t *e)
     
     g_is_scanning = true;
     
+    ESP_LOGI(TAG, "Starting WiFi scan in separate task...");
+    
     // Обновляем текст кнопки
     if (g_scan_btn) {
         lv_obj_t *label = lv_obj_get_child(g_scan_btn, 0);
@@ -277,15 +342,10 @@ static void on_scan_click(lv_event_t *e)
         }
     }
     
-    // Очищаем список
-    if (g_network_list) {
-        lv_obj_clean(g_network_list);
-    }
+    // Список будет очищен в самой задаче wifi_scan_task
     
-    ESP_LOGI(TAG, "Starting WiFi scan in separate task...");
-    
-    // КРИТИЧНО: Запускаем сканирование в отдельной задаче чтобы не блокировать UI!
-    xTaskCreate(wifi_scan_task, "wifi_scan", 4096, NULL, 5, NULL);
+    // КРИТИЧНО: Запускаем сканирование в отдельной задаче с увеличенным стеком
+    xTaskCreate(wifi_scan_task, "wifi_scan", 6144, NULL, 5, NULL);
 }
 
 /**
@@ -294,7 +354,14 @@ static void on_scan_click(lv_event_t *e)
 static void on_network_select(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
-    if (code != LV_EVENT_CLICKED && code != LV_EVENT_PRESSED) return;
+    
+    // Обрабатываем клик мыши, нажатие и клавишу энкодера
+    if (code == LV_EVENT_KEY) {
+        uint32_t key = lv_event_get_key(e);
+        if (key != LV_KEY_ENTER) return;  // Только Enter (нажатие энкодера)
+    } else if (code != LV_EVENT_CLICKED && code != LV_EVENT_PRESSED) {
+        return;
+    }
     
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
     
@@ -316,14 +383,25 @@ static void on_network_select(lv_event_t *e)
             }
         }
         
-        // Фокусируем поле пароля
+        // НОВОЕ: Автоматический фокус на поле пароля для энкодера
         if (g_password_textarea) {
             lv_obj_clear_flag(g_password_textarea, LV_OBJ_FLAG_HIDDEN);
+            
+            // Добавляем в encoder group если еще не добавлено
+            lv_group_t *group = lv_group_get_default();
+            if (group) {
+                // Проверяем, не добавлен ли уже (используем USER_1 как маркер)
+                if (!lv_obj_has_flag(g_password_textarea, LV_OBJ_FLAG_USER_1)) {
+                    lv_group_add_obj(group, g_password_textarea);
+                    lv_obj_add_flag(g_password_textarea, LV_OBJ_FLAG_USER_1); // Маркер
+                    ESP_LOGI(TAG, "Password field added to encoder group");
+                }
+                // Фокусируем на textarea
+                lv_group_focus_obj(g_password_textarea);
+                ESP_LOGI(TAG, "Password field focused");
+            }
         }
         
-        // char msg[64];
-        // snprintf(msg, sizeof(msg), "Выбрана сеть: %s", g_scanned_networks[idx]);
-        // notification_system(NOTIFICATION_INFO, msg, NOTIF_SOURCE_SYSTEM);
         ESP_LOGI(TAG, "Selected network: %s", g_scanned_networks[idx]);
     }
 }
@@ -490,6 +568,10 @@ lv_obj_t* wifi_settings_screen_create(void *params)
     lv_obj_set_style_text_color(g_password_textarea, lv_color_white(), 0);
     lv_obj_add_flag(g_password_textarea, LV_OBJ_FLAG_HIDDEN);
     
+    // НОВОЕ: Делаем textarea редактируемым энкодером
+    lv_obj_add_flag(g_password_textarea, LV_OBJ_FLAG_CLICKABLE);
+    // НЕ добавляем сразу в группу, добавим при выборе сети
+    
     // Кнопка подключения
     g_connect_btn = lv_btn_create(scroll);
     lv_obj_set_size(g_connect_btn, LV_PCT(45), 40);
@@ -555,6 +637,11 @@ esp_err_t wifi_settings_screen_on_hide(lv_obj_t *screen_obj, void *params)
     }
     g_network_count = 0;
     g_selected_network_idx = -1;
+    
+    // Удаляем маркер при скрытии
+    if (g_password_textarea) {
+        lv_obj_clear_flag(g_password_textarea, LV_OBJ_FLAG_USER_1);
+    }
     
     // Очищаем ссылки
     g_screen = NULL;

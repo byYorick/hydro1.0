@@ -16,7 +16,7 @@ static const char *TAG = "CONFIG_MANAGER";
 static nvs_handle_t s_nvs_handle = 0;
 static bool s_initialized = false;
 static SemaphoreHandle_t s_mutex = NULL;
-static system_config_t s_cached_config = {0};
+static system_config_t *s_cached_config = NULL;  // ПЕРЕНЕСЕНО НА PSRAM для экономии 1.2 KB DRAM
 static bool s_cache_valid = false;
 
 static const char *s_pump_names[PUMP_INDEX_COUNT] = {
@@ -176,7 +176,7 @@ static esp_err_t config_save_locked(const system_config_t *config)
         return err;
     }
 
-    s_cached_config = *config;
+    memcpy(s_cached_config, config, sizeof(system_config_t));
     s_cache_valid = true;
     return ESP_OK;
 }
@@ -193,6 +193,20 @@ esp_err_t config_manager_init(void)
             ESP_LOGE(TAG, "Failed to create config mutex");
             return ESP_ERR_NO_MEM;
         }
+    }
+
+    // Выделяем память для кэша конфигурации в PSRAM для экономии DRAM
+    if (s_cached_config == NULL) {
+        s_cached_config = heap_caps_calloc(
+            1,
+            sizeof(system_config_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
+        );
+        if (s_cached_config == NULL) {
+            ESP_LOGE(TAG, "Failed to allocate cached config in PSRAM");
+            return ESP_ERR_NO_MEM;
+        }
+        ESP_LOGI(TAG, "Cached config allocated in PSRAM: %d bytes (saved 1.2 KB DRAM)", sizeof(system_config_t));
     }
 
     esp_err_t err = nvs_open(CONFIG_MANAGER_NAMESPACE, NVS_READWRITE, &s_nvs_handle);
@@ -220,7 +234,7 @@ esp_err_t config_manager_init(void)
             ESP_ERROR_CHECK_WITHOUT_ABORT(config_save_locked(&defaults));
         } else {
             size = sizeof(system_config_t);
-            err = nvs_get_blob(s_nvs_handle, CONFIG_MANAGER_KEY, &s_cached_config, &size);
+            err = nvs_get_blob(s_nvs_handle, CONFIG_MANAGER_KEY, s_cached_config, &size);
             if (err == ESP_OK && size == sizeof(system_config_t)) {
                 s_cache_valid = true;
             }
@@ -256,7 +270,7 @@ esp_err_t config_load(system_config_t *config)
     } else if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read config: %s", esp_err_to_name(err));
     } else {
-        s_cached_config = *config;
+        memcpy(s_cached_config, config, sizeof(system_config_t));
         s_cache_valid = true;
     }
 
@@ -312,7 +326,7 @@ const system_config_t *config_manager_get_cached(void)
     if (!s_initialized || !s_cache_valid) {
         return NULL;
     }
-    return &s_cached_config;
+    return s_cached_config;
 }
 
 void config_manager_get_defaults(system_config_t *config)

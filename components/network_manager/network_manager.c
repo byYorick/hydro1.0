@@ -30,29 +30,55 @@ static wifi_config_t g_current_config = {0};
 static uint32_t g_reconnect_count = 0;
 static int8_t g_last_rssi = 0;
 
+// Event handler instances (для правильной деинициализации)
+static esp_event_handler_instance_t s_instance_any_id = NULL;
+static esp_event_handler_instance_t s_instance_got_ip = NULL;
+
+// Retry logic
+static int s_retry_num = 0;
+
+// Callback для событий
+static network_event_cb_t s_event_callback = NULL;
+
 /* =============================
  *  EVENT HANDLERS
  * ============================= */
 
-static void wifi_event_handler(void *arg, esp_event_base_t event_base,
-                                int32_t event_id, void *event_data)
+static void event_handler(void *arg, esp_event_base_t event_base,
+                          int32_t event_id, void *event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         ESP_LOGI(TAG, "WiFi station started");
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGW(TAG, "WiFi disconnected");
         g_connected = false;
-        g_reconnect_count++;
         
-        // Автопереподключение
-        esp_wifi_connect();
-        xEventGroupSetBits(g_wifi_event_group, WIFI_FAIL_BIT);
+        if (s_retry_num < NETWORK_MANAGER_MAXIMUM_RETRY) {
+            esp_wifi_connect();
+            s_retry_num++;
+            ESP_LOGI(TAG, "Retry to connect to the AP (attempt %d/%d)", 
+                     s_retry_num, NETWORK_MANAGER_MAXIMUM_RETRY);
+            g_reconnect_count++;
+        } else {
+            xEventGroupSetBits(g_wifi_event_group, WIFI_FAIL_BIT);
+            ESP_LOGI(TAG, "Failed to connect after %d attempts", NETWORK_MANAGER_MAXIMUM_RETRY);
+        }
+        
+        // Вызываем callback если установлен
+        if (s_event_callback) {
+            s_event_callback(WIFI_STATUS_DISCONNECTED);
+        }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Got IP:" IPSTR, IP2STR(&event->ip_info.ip));
+        s_retry_num = 0;  // Сброс счетчика при успешном подключении
         g_connected = true;
         xEventGroupSetBits(g_wifi_event_group, WIFI_CONNECTED_BIT);
+        
+        // Вызываем callback если установлен
+        if (s_event_callback) {
+            s_event_callback(WIFI_STATUS_CONNECTED);
+        }
     }
 }
 
@@ -93,17 +119,17 @@ esp_err_t network_manager_init(void)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     
-    // Регистрируем обработчики событий
+    // Регистрируем обработчики событий с сохранением instance handlers
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
-                                                        &wifi_event_handler,
+                                                        &event_handler,
                                                         NULL,
-                                                        NULL));
+                                                        &s_instance_any_id));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
                                                         IP_EVENT_STA_GOT_IP,
-                                                        &wifi_event_handler,
+                                                        &event_handler,
                                                         NULL,
-                                                        NULL));
+                                                        &s_instance_got_ip));
     
     // Устанавливаем режим STA
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
@@ -128,6 +154,20 @@ esp_err_t network_manager_deinit(void)
     // Отключаемся
     network_manager_disconnect();
     
+    // Отписываемся от событий
+    if (s_instance_any_id) {
+        ESP_ERROR_CHECK(esp_event_handler_instance_unregister(WIFI_EVENT, 
+                                                              ESP_EVENT_ANY_ID, 
+                                                              s_instance_any_id));
+        s_instance_any_id = NULL;
+    }
+    if (s_instance_got_ip) {
+        ESP_ERROR_CHECK(esp_event_handler_instance_unregister(IP_EVENT, 
+                                                              IP_EVENT_STA_GOT_IP, 
+                                                              s_instance_got_ip));
+        s_instance_got_ip = NULL;
+    }
+    
     // Останавливаем WiFi
     esp_wifi_stop();
     esp_wifi_deinit();
@@ -137,6 +177,12 @@ esp_err_t network_manager_deinit(void)
         vEventGroupDelete(g_wifi_event_group);
         g_wifi_event_group = NULL;
     }
+    
+    // Сбрасываем все состояния
+    s_retry_num = 0;
+    s_event_callback = NULL;
+    g_connected = false;
+    g_reconnect_count = 0;
     
     g_initialized = false;
     ESP_LOGI(TAG, "Network manager deinitialized");
@@ -172,6 +218,12 @@ esp_err_t network_manager_connect(const char *ssid, const char *password)
     g_current_config.sta.pmf_cfg.capable = true;
     g_current_config.sta.pmf_cfg.required = false;
     
+    // Сброс счетчика попыток
+    s_retry_num = 0;
+    
+    // Очистка event bits
+    xEventGroupClearBits(g_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+    
     // Устанавливаем конфигурацию
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &g_current_config));
     
@@ -180,8 +232,8 @@ esp_err_t network_manager_connect(const char *ssid, const char *password)
     
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Connect failed: %s", esp_err_to_name(ret));
-    return ret;
-}
+        return ret;
+    }
 
     ESP_LOGI(TAG, "Connection initiated");
     return ESP_OK;
@@ -411,4 +463,50 @@ esp_err_t network_manager_get_mac(char *mac_str, size_t len)
     }
 
     return ret;
+}
+
+esp_err_t network_manager_connect_blocking(const char *ssid, const char *password, uint32_t timeout_ms)
+{
+    if (!g_initialized) {
+        ESP_LOGE(TAG, "Not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Запускаем подключение
+    esp_err_t ret = network_manager_connect(ssid, password);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    
+    ESP_LOGI(TAG, "Waiting for connection result (timeout: %lu ms)...", timeout_ms);
+    
+    // Ожидание результата
+    EventBits_t bits = xEventGroupWaitBits(g_wifi_event_group,
+            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+            pdFALSE,
+            pdFALSE,
+            pdMS_TO_TICKS(timeout_ms));
+    
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "Connected to AP SSID:%s", ssid);
+        return ESP_OK;
+    } else if (bits & WIFI_FAIL_BIT) {
+        ESP_LOGI(TAG, "Failed to connect to SSID:%s", ssid);
+        return ESP_FAIL;
+    } else {
+        ESP_LOGW(TAG, "Connection timeout");
+        return ESP_ERR_TIMEOUT;
+    }
+}
+
+esp_err_t network_manager_set_event_callback(network_event_cb_t callback)
+{
+    s_event_callback = callback;
+    ESP_LOGI(TAG, "Event callback %s", callback ? "set" : "cleared");
+    return ESP_OK;
+}
+
+uint32_t network_manager_get_retry_count(void)
+{
+    return s_retry_num;
 }

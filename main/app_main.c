@@ -146,8 +146,8 @@ static bool system_initialized = false;
 /// Дескрипторы задач (управляются модулем system_tasks)
 static system_task_handles_t task_handles = {0};
 
-/// Кэш системной конфигурации
-static system_config_t g_system_config = {0};
+/// Кэш системной конфигурации  
+static system_config_t *g_system_config = NULL;  // ПЕРЕНЕСЕНО НА PSRAM для экономии 400 байт DRAM
 
 /*******************************************************************************
  * ПРОТОТИПЫ ФУНКЦИЙ
@@ -245,7 +245,7 @@ void app_main(void)
     }
 
     // Передаем конфигурацию в контекст задач
-    esp_err_t cfg_ret = system_tasks_set_config(&g_system_config);
+    esp_err_t cfg_ret = system_tasks_set_config(g_system_config);
     if (cfg_ret != ESP_OK) {
         ESP_LOGW(TAG, "Failed to share configuration with tasks: %s", esp_err_to_name(cfg_ret));
     }
@@ -518,19 +518,33 @@ static esp_err_t init_system_components(void)
         return ret;
     }
 
-    ret = config_load(&g_system_config);
+    // Выделяем память для системной конфигурации в PSRAM для экономии DRAM
+    if (g_system_config == NULL) {
+        g_system_config = heap_caps_calloc(
+            1,
+            sizeof(system_config_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
+        );
+        if (g_system_config == NULL) {
+            ESP_LOGE(TAG, "Failed to allocate system config in PSRAM");
+            return ESP_ERR_NO_MEM;
+        }
+        ESP_LOGI(TAG, "System config allocated in PSRAM: %d bytes (saved 400 B DRAM)", sizeof(system_config_t));
+    }
+
+    ret = config_load(g_system_config);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to load system configuration: %s", esp_err_to_name(ret));
         return ret;
     }
     ESP_LOGI(TAG, "  [OK] Config Manager initialized (auto mode: %s, brightness: %d%%)",
-             g_system_config.auto_control_enabled ? "ON" : "OFF",
-             g_system_config.display_brightness);
+             g_system_config->auto_control_enabled ? "ON" : "OFF",
+             g_system_config->display_brightness);
     
     // Применяем сохраненную яркость дисплея
-    if (g_system_config.display_brightness > 0) {
-        lcd_ili9341_set_brightness(g_system_config.display_brightness);
-        ESP_LOGI(TAG, "  Display brightness restored to %d%%", g_system_config.display_brightness);
+    if (g_system_config->display_brightness > 0) {
+        lcd_ili9341_set_brightness(g_system_config->display_brightness);
+        ESP_LOGI(TAG, "  Display brightness restored to %d%%", g_system_config->display_brightness);
     } else {
         ESP_LOGW(TAG, "  Display brightness is 0, keeping default 80%%");
     }
@@ -544,11 +558,7 @@ static esp_err_t init_system_components(void)
     ESP_LOGI(TAG, "  [OK] Sensor Manager initialized");
 
     // Network Manager: WiFi подключение
-    // ❌ ОТКЛЮЧЕНО: Недостаточно DRAM даже с single buffer!
-    // WiFi требует ~20-30 KB, а свободно только ~55 KB
-    // Это вызывает ESP_ERR_NO_MEM в adaptive_pid, pid_auto_tuner, ph_ec_controller
-    // ВЫВОД: ESP32-S3 с 328 KB DRAM слишком мало для LVGL + WiFi одновременно
-    /*
+    // ✅ ВКЛЮЧЕНО ПОСЛЕ ОПТИМИЗАЦИИ: Перенос больших объектов на PSRAM освободил DRAM
     ret = network_manager_init();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "  [WARN] Network Manager initialization failed: %s", esp_err_to_name(ret));
@@ -556,8 +566,6 @@ static esp_err_t init_system_components(void)
         ESP_LOGI(TAG, "  [OK] Network Manager initialized");
         network_manager_load_and_connect();
     }
-    */
-    ESP_LOGI(TAG, "  [SKIP] WiFi disabled - insufficient DRAM (need 30+ KB free, have only 55 KB)");
 
     // Interfaces: базовые адаптеры датчиков и исполнительных устройств
     ret = system_interfaces_init();
@@ -639,7 +647,7 @@ static esp_err_t init_system_components(void)
     ESP_LOGI(TAG, "  [OK] Pump Manager initialized (6 pumps with PID)");
     
     // Применение конфигурации PID из NVS
-    ret = pump_manager_apply_config(&g_system_config);
+    ret = pump_manager_apply_config(g_system_config);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "  [WARN] Failed to apply pump manager config: %s", esp_err_to_name(ret));
     } else {
@@ -677,7 +685,7 @@ static esp_err_t init_system_components(void)
     }
     ph_ec_controller_set_pump_callback(pump_event_callback);
     ph_ec_controller_set_correction_callback(correction_event_callback);
-    ret = ph_ec_controller_apply_config(&g_system_config);
+    ret = ph_ec_controller_apply_config(g_system_config);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "  ! Failed to apply controller config: %s", esp_err_to_name(ret));
     }

@@ -117,13 +117,13 @@ extern "C" {
 
 // Размеры стека задач (в словах, 1 слово = 4 байта)
 // Оптимизированы для экономии памяти с запасом безопасности
-#define TASK_STACK_SIZE_SENSOR      4096    // Задача чтения датчиков (4KB) - оптимизировано
-#define TASK_STACK_SIZE_DISPLAY     3072    // Задача обновления дисплея (3KB) - увеличено для стабильности
-#define TASK_STACK_SIZE_NOTIFICATION 2560   // Задача уведомлений (2.5KB) - увеличено для стабильности
-#define TASK_STACK_SIZE_DATALOGGER  3584    // Задача логирования (3.5KB) - увеличено для NVS операций
-#define TASK_STACK_SIZE_SCHEDULER   2048    // Задача планировщика (2KB) - увеличено для безопасности
-#define TASK_STACK_SIZE_PH_EC       2048    // Задача pH/EC контроля (2KB) - увеличено для безопасности
-#define TASK_STACK_SIZE_ENCODER     2048    // Задача энкодера (2KB) - увеличено для безопасности
+#define TASK_STACK_SIZE_SENSOR      4096    // Задача чтения датчиков (16KB)
+#define TASK_STACK_SIZE_DISPLAY     2816    // Задача обновления дисплея (11KB) - уменьшено для WiFi
+#define TASK_STACK_SIZE_NOTIFICATION 2560   // Задача уведомлений (10KB)
+#define TASK_STACK_SIZE_DATALOGGER  3584    // Задача логирования (14KB)
+#define TASK_STACK_SIZE_SCHEDULER   2048    // Задача планировщика (8KB)
+#define TASK_STACK_SIZE_PH_EC       2048    // Задача pH/EC контроля (8KB)
+#define TASK_STACK_SIZE_ENCODER     1792    // Задача энкодера (7KB) - уменьшено для WiFi
 
 // Приоритеты задач (0 = самый низкий, 31 = самый высокий)
 #define TASK_PRIORITY_SENSOR        5       // Средний приоритет

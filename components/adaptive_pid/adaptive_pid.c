@@ -18,7 +18,7 @@
 static const char *TAG = "ADAPTIVE_PID";
 
 // Глобальные данные для всех 6 насосов
-static adaptive_pid_state_t g_states[PUMP_INDEX_COUNT];
+static adaptive_pid_state_t *g_states = NULL;  // ПЕРЕНЕСЕНО НА PSRAM для экономии 3 KB DRAM
 static SemaphoreHandle_t g_mutexes[PUMP_INDEX_COUNT];
 static bool g_initialized = false;
 
@@ -187,6 +187,21 @@ esp_err_t adaptive_pid_init(void) {
     }
     
     ESP_LOGI(TAG, "Инициализация adaptive_pid...");
+    
+    // Выделяем память для состояний в PSRAM для экономии DRAM
+    if (g_states == NULL) {
+        g_states = heap_caps_calloc(
+            PUMP_INDEX_COUNT,
+            sizeof(adaptive_pid_state_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
+        );
+        if (g_states == NULL) {
+            ESP_LOGE(TAG, "Failed to allocate adaptive PID states in PSRAM");
+            return ESP_ERR_NO_MEM;
+        }
+        ESP_LOGI(TAG, "Adaptive PID states allocated in PSRAM: %d bytes (saved 3.0 KB DRAM)",
+                 PUMP_INDEX_COUNT * sizeof(adaptive_pid_state_t));
+    }
     
     // Создание мьютексов
     for (int i = 0; i < PUMP_INDEX_COUNT; i++) {
