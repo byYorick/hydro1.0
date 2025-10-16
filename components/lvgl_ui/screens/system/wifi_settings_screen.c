@@ -146,8 +146,9 @@ static void wifi_scan_task(void *arg)
 {
     ESP_LOGI(TAG, "WiFi scan task started");
     
-    // НЕ сбрасываем watchdog - задача не зарегистрирована в WDT
-    // esp_task_wdt_reset();
+    // Регистрируем задачу в watchdog для долгих операций
+    esp_task_wdt_add(NULL);
+    esp_task_wdt_reset();
     
     // Выполняем сканирование БЕЗ LVGL lock (не блокируем UI!)
     wifi_scan_result_t *scan_results = malloc(sizeof(wifi_scan_result_t) * MAX_NETWORKS);
@@ -192,8 +193,7 @@ static void wifi_scan_task(void *arg)
     
     free(scan_results);
     
-    // НЕ сбрасываем watchdog - задача не зарегистрирована в WDT
-    // esp_task_wdt_reset();
+    esp_task_wdt_reset();
     
     // КРИТИЧНО: Заполняем список батчами по 3 сети, отпуская lock между батчами
     if (g_network_list && g_network_count > 0) {
@@ -218,8 +218,7 @@ static void wifi_scan_task(void *arg)
         
         // Обрабатываем сети батчами по 3 штуки
         for (int i = 0; i < g_network_count; i += 3) {
-            // НЕ сбрасываем watchdog - задача не зарегистрирована
-            // esp_task_wdt_reset();
+            esp_task_wdt_reset();
             
             // Берем lock на батч из 3 сетей (или меньше)
             lv_lock();
@@ -287,14 +286,12 @@ static void wifi_scan_task(void *arg)
         }
         lv_unlock();
         
-        // НЕ сбрасываем watchdog - задача не зарегистрирована
-        // esp_task_wdt_reset();
+        esp_task_wdt_reset();
     } else {
         ESP_LOGW(TAG, "Network list is NULL or no networks found");
     }
     
-    // НЕ сбрасываем watchdog - задача не зарегистрирована
-    // esp_task_wdt_reset();
+    esp_task_wdt_reset();
     
     // Восстанавливаем текст кнопки
     lv_lock();
@@ -310,10 +307,13 @@ static void wifi_scan_task(void *arg)
     
     // notification_system(NOTIFICATION_INFO, "Scan complete", NOTIF_SOURCE_SYSTEM);
     
-    // НЕ сбрасываем watchdog - задача не зарегистрирована
-    // esp_task_wdt_reset();
+    esp_task_wdt_reset();
     
     ESP_LOGI(TAG, "WiFi scan task completed");
+    
+    // Удаляем задачу из watchdog перед завершением
+    esp_task_wdt_delete(NULL);
+    
     vTaskDelete(NULL);  // Завершаем задачу
 }
 
