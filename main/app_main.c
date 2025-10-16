@@ -77,6 +77,7 @@ const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
 
 // Компоненты системы управления
 #include "config_manager.h"
+#include "sensor_manager.h"
 #include "system_interfaces.h"
 #include "notification_system.h"
 #include "error_handler.h"
@@ -532,6 +533,14 @@ static esp_err_t init_system_components(void)
     } else {
         ESP_LOGW(TAG, "  Display brightness is 0, keeping default 80%%");
     }
+
+    // Sensor Manager: Централизованное управление датчиками
+    ret = sensor_manager_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize sensor manager: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  [OK] Sensor Manager initialized");
 
     // Interfaces: базовые адаптеры датчиков и исполнительных устройств
     ret = system_interfaces_init();

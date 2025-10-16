@@ -118,7 +118,7 @@
 
 1. **Sensor Layer** — драйверы датчиков с поддержкой fallback значений
 2. **Controller Layer** — логика управления pH/EC с алгоритмами PID
-3. **UI Layer** — графический интерфейс на базе LVGL 9.x
+3. **UI Layer** — графический интерфейс на базе LVGL 9.2
 4. **Storage Layer** — управление конфигурацией и логами в NVS
 5. **Network Layer** — WiFi/BLE интеграция и REST API
 6. **Error Handler** — централизованная обработка ошибок
@@ -995,7 +995,7 @@ hydro1.0/
 │
 ├── managed_components/
 │   ├── espressif__esp_lcd_ili9341/  # Драйвер ILI9341
-│   └── lvgl__lvgl/             # LVGL библиотека v9.x
+│   └── lvgl__lvgl/             # LVGL библиотека v9.2
 │
 ├── build/                      # Результаты сборки (генерируется)
 ├── CMakeLists.txt              # Основной файл сборки
@@ -1254,7 +1254,7 @@ for (int i = 0; i < PUMP_INDEX_COUNT; i++) {
 
 ### Внешние библиотеки
 
-- **LVGL v9.x** — графическая библиотека UI
+- **LVGL v9.2** — графическая библиотека UI
 - **esp_lcd_ili9341** — драйвер дисплея ILI9341
 
 Зависимости указаны в `main/idf_component.yml` и загружаются автоматически при сборке.

@@ -20,6 +20,7 @@ idf_component_register(
         lcd_ili9341
         trema_relay
         config_manager
+        sensor_manager
         notification_system
         error_handler
         data_logger

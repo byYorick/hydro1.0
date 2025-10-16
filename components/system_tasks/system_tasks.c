@@ -17,6 +17,7 @@
 #include "task_scheduler.h"
 #include "ph_ec_controller.h"
 #include "config_manager.h"
+#include "sensor_manager.h"
 #include "system_interfaces.h"
 #include "error_handler.h"
 #include "trema_ec.h"
@@ -290,8 +291,8 @@ static void sensor_task(void *pvParameters)
 
         uint64_t cycle_start_us = esp_timer_get_time();
 
-        // Читаем все датчики
-        esp_err_t ret = read_all_sensors(&sensor_data);
+        // Читаем все датчики через sensor_manager
+        esp_err_t ret = sensor_manager_read_all(&sensor_data);
 
         task_context.sensor_stats.execution_count++;
         if (ret != ESP_OK) {
@@ -534,53 +535,32 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
         return ESP_ERR_INVALID_ARG;
     }
 
-    const sensor_interface_t *sensor_if = system_interfaces_get_sensor_interface();
-    if (sensor_if == NULL) {
-        ERROR_CRITICAL(ERROR_CATEGORY_SENSOR, ESP_ERR_INVALID_STATE, TAG,
-                      "Интерфейс датчиков не инициализирован!");
-        ESP_LOGE(TAG, "Sensor interface not initialized");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    memset(data, 0, sizeof(sensor_data_t));
-    data->timestamp = esp_timer_get_time();
-
+    // Используем sensor_manager для чтения всех датчиков
+    // Это дает нам retry логику, кэширование и валидацию
+    esp_err_t ret = sensor_manager_read_all(data);
+    
     int successful_reads = 0;
 
-    float temp = 0.0f;
-    float hum = 0.0f;
-    if (sensor_if->read_temperature_humidity != NULL &&
-        sensor_if->read_temperature_humidity(&temp, &hum)) {
-        data->temperature = temp;
-        data->humidity = hum;
-        data->temp = temp;
-        data->hum = hum;
-        data->valid[SENSOR_INDEX_TEMPERATURE] = true;
-        data->valid[SENSOR_INDEX_HUMIDITY] = true;
+    // Обрабатываем результаты и обновляем статистику
+    // sensor_manager уже установил valid[] флаги
+    
+    // Температура и влажность
+    if (data->valid[SENSOR_INDEX_TEMPERATURE] && data->valid[SENSOR_INDEX_HUMIDITY]) {
         successful_reads += 2;
         register_sensor_recovery(SENSOR_INDEX_TEMPERATURE);
         register_sensor_recovery(SENSOR_INDEX_HUMIDITY);
-        ESP_LOGI(TAG, "Temperature/Humidity: %.1fC %.1f%%", temp, hum);
     } else {
-        data->temperature = NAN;
-        data->humidity = NAN;
         register_sensor_failure(SENSOR_INDEX_TEMPERATURE, "датчик не отвечает");
         register_sensor_failure(SENSOR_INDEX_HUMIDITY, "датчик не отвечает");
-        ESP_LOGW(TAG, "Failed to read temperature/humidity");
     }
 
-    float ph = NAN;
-    if (sensor_if->read_ph != NULL && sensor_if->read_ph(&ph) == ESP_OK) {
-        data->ph = ph;
-        data->valid[SENSOR_INDEX_PH] = true;
-        sensor_update_success(SENSOR_INDEX_PH, ph);
+    // pH
+    if (data->valid[SENSOR_INDEX_PH]) {
+        sensor_update_success(SENSOR_INDEX_PH, data->ph);
         successful_reads++;
         register_sensor_recovery(SENSOR_INDEX_PH);
-        ESP_LOGI(TAG, "pH read: %.2f", ph);
     } else {
-        data->ph = NAN;
         register_sensor_failure(SENSOR_INDEX_PH, "датчик не отвечает");
-        ESP_LOGW(TAG, "pH read failed");
     }
 
     // Устанавливаем температуру для компенсации EC измерений (критично для точности!)
@@ -589,50 +569,35 @@ static esp_err_t read_all_sensors(sensor_data_t *data)
         ESP_LOGD(TAG, "Temperature compensation set for EC: %.1fC", data->temperature);
     }
     
-    float ec = NAN;
-    if (sensor_if->read_ec != NULL && sensor_if->read_ec(&ec) == ESP_OK) {
-        data->ec = ec;
-        data->valid[SENSOR_INDEX_EC] = true;
-        sensor_update_success(SENSOR_INDEX_EC, ec);
+    // EC
+    if (data->valid[SENSOR_INDEX_EC]) {
+        sensor_update_success(SENSOR_INDEX_EC, data->ec);
         successful_reads++;
         register_sensor_recovery(SENSOR_INDEX_EC);
-        ESP_LOGI(TAG, "EC read: %.2f mS/cm", ec);
     } else {
-        data->ec = NAN;
         register_sensor_failure(SENSOR_INDEX_EC, "датчик не отвечает");
-        ESP_LOGW(TAG, "EC read failed");
     }
 
-    float lux = NAN;
-    if (sensor_if->read_lux != NULL && sensor_if->read_lux(&lux)) {
-        data->lux = lux;
-        data->valid[SENSOR_INDEX_LUX] = true;
+    // Lux
+    if (data->valid[SENSOR_INDEX_LUX]) {
         sensor_update_success(SENSOR_INDEX_LUX, data->lux);
         successful_reads++;
         register_sensor_recovery(SENSOR_INDEX_LUX);
-        ESP_LOGI(TAG, "Lux read: %.0f", lux);
     } else {
-        data->lux = NAN;
         register_sensor_failure(SENSOR_INDEX_LUX, "датчик не отвечает");
-        ESP_LOGW(TAG, "Lux read failed");
     }
 
-    float co2 = NAN;
-    float tvoc = 0.0f;
-    if (sensor_if->read_co2 != NULL && sensor_if->read_co2(&co2, &tvoc)) {
-        data->co2 = co2;
-        data->valid[SENSOR_INDEX_CO2] = true;
-        sensor_update_success(SENSOR_INDEX_CO2, co2);
+    // CO2
+    if (data->valid[SENSOR_INDEX_CO2]) {
+        sensor_update_success(SENSOR_INDEX_CO2, data->co2);
         successful_reads++;
         register_sensor_recovery(SENSOR_INDEX_CO2);
-        ESP_LOGI(TAG, "CO2 read: %.0f ppm (TVOC: %.0f)", co2, tvoc);
     } else {
-        data->co2 = NAN;
         register_sensor_failure(SENSOR_INDEX_CO2, "датчик не отвечает");
-        ESP_LOGW(TAG, "CO2 read failed");
     }
 
-    ESP_LOGD(TAG, "Sensors read: %d successful values", successful_reads);
+    ESP_LOGD(TAG, "Sensors read via sensor_manager: %d/%d successful", 
+             successful_reads, SENSOR_INDEX_COUNT);
 
     return (successful_reads > 0) ? ESP_OK : ESP_FAIL;
 }
