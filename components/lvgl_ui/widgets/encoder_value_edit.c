@@ -21,6 +21,7 @@ typedef struct {
     bool editing;
     lv_color_t normal_bg_color;
     lv_color_t edit_bg_color;
+    lv_obj_t *label;  // Ссылка на внутренний label
 } encoder_value_data_t;
 
 /**
@@ -49,15 +50,18 @@ static void update_display(lv_obj_t *obj)
         }
     }
     
-    lv_label_set_text(obj, text);
+    // Обновляем текст в label (внутри кнопки)
+    if (data->label) {
+        lv_label_set_text(data->label, text);
+    }
     
-    // Изменение стиля в зависимости от режима
+    // Изменение стиля кнопки в зависимости от режима
     if (data->editing) {
         lv_obj_set_style_bg_color(obj, data->edit_bg_color, 0);
-        lv_obj_set_style_text_color(obj, lv_color_white(), 0);
+        if (data->label) lv_obj_set_style_text_color(data->label, lv_color_white(), 0);
     } else {
         lv_obj_set_style_bg_color(obj, data->normal_bg_color, 0);
-        lv_obj_set_style_text_color(obj, lv_color_white(), 0);
+        if (data->label) lv_obj_set_style_text_color(data->label, lv_color_white(), 0);
     }
 }
 
@@ -132,8 +136,8 @@ lv_obj_t* widget_encoder_value_create(lv_obj_t *parent, const encoder_value_conf
         return NULL;
     }
     
-    // Создание объекта label
-    lv_obj_t *obj = lv_label_create(parent);
+    // КРИТИЧНО: Создание КНОПКИ для правильной работы с энкодером
+    lv_obj_t *obj = lv_btn_create(parent);
     
     // Выделение памяти для данных
     encoder_value_data_t *data = (encoder_value_data_t *)malloc(sizeof(encoder_value_data_t));
@@ -165,11 +169,13 @@ lv_obj_t* widget_encoder_value_create(lv_obj_t *parent, const encoder_value_conf
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(obj, data->normal_bg_color, 0);
     lv_obj_set_style_radius(obj, 4, 0);
-    lv_obj_set_style_pad_all(obj, 4, 0);
+    lv_obj_set_style_pad_all(obj, 8, 0);  // Увеличено для кнопки
     lv_obj_set_style_text_color(obj, lv_color_white(), 0);
     
-    // Делаем кликабельным
-    lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+    // Создаем label внутри кнопки для отображения текста
+    lv_obj_t *label = lv_label_create(obj);
+    lv_obj_center(label);
+    data->label = label;  // Сохраняем ссылку на label
     
     // Добавление обработчиков
     lv_obj_add_event_cb(obj, value_event_handler, LV_EVENT_ALL, NULL);

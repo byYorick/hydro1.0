@@ -110,69 +110,42 @@ static void on_autotune_click(lv_event_t *e) {
 }
 
 /**
- * @brief Callback изменения слайдера Kp
+ * @brief Callback при сохранении Kp (выход из режима редактирования)
  */
-static void on_kp_slider_changed(lv_event_t *e) {
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code != LV_EVENT_VALUE_CHANGED) return;
+static void on_kp_value_saved(lv_event_t *e) {
+    float new_kp = widget_encoder_value_get(lv_event_get_target(e));
     
-    lv_obj_t *slider = lv_event_get_target(e);
-    float kp = (float)lv_slider_get_value(slider) / 100.0f;
-    
-    char text[32];
-    snprintf(text, sizeof(text), "Kp: %.2f", kp);
-    lv_label_set_text(g_settings_kp_label, text);
-    
-    // Применение к системе
     float ki, kd;
     pump_manager_get_pid_tunings(g_pump_idx, NULL, &ki, &kd);
-    pump_manager_set_pid_tunings(g_pump_idx, kp, ki, kd);
+    pump_manager_set_pid_tunings(g_pump_idx, new_kp, ki, kd);
     
-    ESP_LOGI(TAG, "Kp изменен на %.2f для %s", kp, PUMP_NAMES[g_pump_idx]);
+    ESP_LOGI(TAG, "Kp сохранен: %.2f для %s", new_kp, PUMP_NAMES[g_pump_idx]);
 }
 
 /**
- * @brief Callback изменения слайдера Ki
+ * @brief Callback при сохранении Ki
  */
-static void on_ki_slider_changed(lv_event_t *e) {
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code != LV_EVENT_VALUE_CHANGED) return;
+static void on_ki_value_saved(lv_event_t *e) {
+    float new_ki = widget_encoder_value_get(lv_event_get_target(e));
     
-    lv_obj_t *slider = lv_event_get_target(e);
-    float ki = (float)lv_slider_get_value(slider) / 1000.0f;
-    
-    char text[32];
-    snprintf(text, sizeof(text), "Ki: %.3f", ki);
-    lv_label_set_text(g_settings_ki_label, text);
-    
-    // Применение к системе
     float kp, kd;
     pump_manager_get_pid_tunings(g_pump_idx, &kp, NULL, &kd);
-    pump_manager_set_pid_tunings(g_pump_idx, kp, ki, kd);
+    pump_manager_set_pid_tunings(g_pump_idx, kp, new_ki, kd);
     
-    ESP_LOGI(TAG, "Ki изменен на %.3f для %s", ki, PUMP_NAMES[g_pump_idx]);
+    ESP_LOGI(TAG, "Ki сохранен: %.3f для %s", new_ki, PUMP_NAMES[g_pump_idx]);
 }
 
 /**
- * @brief Callback изменения слайдера Kd
+ * @brief Callback при сохранении Kd
  */
-static void on_kd_slider_changed(lv_event_t *e) {
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code != LV_EVENT_VALUE_CHANGED) return;
+static void on_kd_value_saved(lv_event_t *e) {
+    float new_kd = widget_encoder_value_get(lv_event_get_target(e));
     
-    lv_obj_t *slider = lv_event_get_target(e);
-    float kd = (float)lv_slider_get_value(slider) / 100.0f;
-    
-    char text[32];
-    snprintf(text, sizeof(text), "Kd: %.2f", kd);
-    lv_label_set_text(g_settings_kd_label, text);
-    
-    // Применение к системе
     float kp, ki;
     pump_manager_get_pid_tunings(g_pump_idx, &kp, &ki, NULL);
-    pump_manager_set_pid_tunings(g_pump_idx, kp, ki, kd);
+    pump_manager_set_pid_tunings(g_pump_idx, kp, ki, new_kd);
     
-    ESP_LOGI(TAG, "Kd изменен на %.2f для %s", kd, PUMP_NAMES[g_pump_idx]);
+    ESP_LOGI(TAG, "Kd сохранен: %.2f для %s", new_kd, PUMP_NAMES[g_pump_idx]);
 }
 
 /**
@@ -219,44 +192,59 @@ static void create_settings_tab(lv_obj_t *parent) {
     float kp, ki, kd;
     pump_manager_get_pid_tunings(g_pump_idx, &kp, &ki, &kd);
     
-    // Слайдер Kp
-    g_settings_kp_label = lv_label_create(parent);
-    char kp_text[32];
-    snprintf(kp_text, sizeof(kp_text), "Kp: %.2f", kp);
-    lv_label_set_text(g_settings_kp_label, kp_text);
+    // Числовой редактор Kp: клик → редактирование, вращение → +0.01, клик → сохранение
+    lv_obj_t *kp_label = lv_label_create(parent);
+    lv_label_set_text(kp_label, "Kp:");
     
-    g_settings_kp_slider = lv_slider_create(parent);
-    lv_obj_set_width(g_settings_kp_slider, LV_PCT(90));
-    lv_slider_set_range(g_settings_kp_slider, 0, 1000); // 0.00 - 10.00
-    lv_slider_set_value(g_settings_kp_slider, (int32_t)(kp * 100), LV_ANIM_OFF);
-    lv_obj_add_event_cb(g_settings_kp_slider, on_kp_slider_changed, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_flag(g_settings_kp_slider, LV_OBJ_FLAG_CLICK_FOCUSABLE);  // КРИТИЧНО: Разрешаем фокус
+    encoder_value_config_t kp_cfg = {
+        .min_value = 0.0f,
+        .max_value = 10.0f,
+        .step = 0.01f,  // Шаг 0.01 при вращении энкодера
+        .initial_value = kp,
+        .decimals = 2,
+        .unit = "",
+        .edit_color = lv_color_hex(0xFFAA00)  // Оранжевый в режиме редактирования
+    };
+    g_settings_kp_edit = widget_encoder_value_create(parent, &kp_cfg);
+    lv_obj_add_event_cb(g_settings_kp_edit, on_kp_value_saved, LV_EVENT_READY, NULL);  // При сохранении
     
-    // Слайдер Ki
-    g_settings_ki_label = lv_label_create(parent);
-    char ki_text[32];
-    snprintf(ki_text, sizeof(ki_text), "Ki: %.3f", ki);
-    lv_label_set_text(g_settings_ki_label, ki_text);
+    // КРИТИЧНО: Добавляем стиль фокуса для визуальной индикации
+    extern lv_style_t style_card_focused;
+    lv_obj_add_style(g_settings_kp_edit, &style_card_focused, LV_STATE_FOCUSED);
     
-    g_settings_ki_slider = lv_slider_create(parent);
-    lv_obj_set_width(g_settings_ki_slider, LV_PCT(90));
-    lv_slider_set_range(g_settings_ki_slider, 0, 1000); // 0.000 - 1.000
-    lv_slider_set_value(g_settings_ki_slider, (int32_t)(ki * 1000), LV_ANIM_OFF);
-    lv_obj_add_event_cb(g_settings_ki_slider, on_ki_slider_changed, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_flag(g_settings_ki_slider, LV_OBJ_FLAG_CLICK_FOCUSABLE);  // КРИТИЧНО: Разрешаем фокус
+    // Числовой редактор Ki
+    lv_obj_t *ki_label = lv_label_create(parent);
+    lv_label_set_text(ki_label, "Ki:");
     
-    // Слайдер Kd
-    g_settings_kd_label = lv_label_create(parent);
-    char kd_text[32];
-    snprintf(kd_text, sizeof(kd_text), "Kd: %.2f", kd);
-    lv_label_set_text(g_settings_kd_label, kd_text);
+    encoder_value_config_t ki_cfg = {
+        .min_value = 0.0f,
+        .max_value = 1.0f,
+        .step = 0.01f,
+        .initial_value = ki,
+        .decimals = 3,
+        .unit = "",
+        .edit_color = lv_color_hex(0xFFAA00)
+    };
+    g_settings_ki_edit = widget_encoder_value_create(parent, &ki_cfg);
+    lv_obj_add_event_cb(g_settings_ki_edit, on_ki_value_saved, LV_EVENT_READY, NULL);
+    lv_obj_add_style(g_settings_ki_edit, &style_card_focused, LV_STATE_FOCUSED);
     
-    g_settings_kd_slider = lv_slider_create(parent);
-    lv_obj_set_width(g_settings_kd_slider, LV_PCT(90));
-    lv_slider_set_range(g_settings_kd_slider, 0, 500); // 0.00 - 5.00
-    lv_slider_set_value(g_settings_kd_slider, (int32_t)(kd * 100), LV_ANIM_OFF);
-    lv_obj_add_event_cb(g_settings_kd_slider, on_kd_slider_changed, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_flag(g_settings_kd_slider, LV_OBJ_FLAG_CLICK_FOCUSABLE);  // КРИТИЧНО: Разрешаем фокус
+    // Числовой редактор Kd
+    lv_obj_t *kd_label = lv_label_create(parent);
+    lv_label_set_text(kd_label, "Kd:");
+    
+    encoder_value_config_t kd_cfg = {
+        .min_value = 0.0f,
+        .max_value = 5.0f,
+        .step = 0.01f,
+        .initial_value = kd,
+        .decimals = 2,
+        .unit = "",
+        .edit_color = lv_color_hex(0xFFAA00)
+    };
+    g_settings_kd_edit = widget_encoder_value_create(parent, &kd_cfg);
+    lv_obj_add_event_cb(g_settings_kd_edit, on_kd_value_saved, LV_EVENT_READY, NULL);
+    lv_obj_add_style(g_settings_kd_edit, &style_card_focused, LV_STATE_FOCUSED);
     
     // Кнопка автонастройки
     lv_obj_t *autotune_btn = lv_btn_create(parent);
@@ -368,14 +356,7 @@ esp_err_t pid_intelligent_detail_on_show(lv_obj_t *screen, void *params) {
     
     ESP_LOGI(TAG, "Детальный экран показан для %s", PUMP_NAMES[pump_idx]);
     
-    // КРИТИЧНО: Добавляем слайдеры в encoder group для управления энкодером
-    screen_instance_t *inst = screen_get_by_id("pid_intelligent_detail");
-    if (inst && inst->encoder_group) {
-        if (g_settings_kp_slider) lv_group_add_obj(inst->encoder_group, g_settings_kp_slider);
-        if (g_settings_ki_slider) lv_group_add_obj(inst->encoder_group, g_settings_ki_slider);
-        if (g_settings_kd_slider) lv_group_add_obj(inst->encoder_group, g_settings_kd_slider);
-        ESP_LOGI(TAG, "Слайдеры добавлены в encoder group");
-    }
+    // Числовые редакторы автоматически добавляются в encoder group через screen_lifecycle
     
     // Обновление данных
     update_overview_tab();
@@ -393,9 +374,9 @@ esp_err_t pid_intelligent_detail_on_hide(lv_obj_t *screen) {
     g_overview_values_label = NULL;
     g_overview_pid_label = NULL;
     g_overview_adaptive_label = NULL;
-    g_settings_kp_slider = NULL;
-    g_settings_ki_slider = NULL;
-    g_settings_kd_slider = NULL;
+    g_settings_kp_edit = NULL;
+    g_settings_ki_edit = NULL;
+    g_settings_kd_edit = NULL;
     g_chart = NULL;
     g_tabview = NULL;
     g_screen = NULL;
