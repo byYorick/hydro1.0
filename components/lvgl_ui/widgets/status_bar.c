@@ -59,7 +59,7 @@ lv_obj_t* widget_create_status_bar(lv_obj_t *parent, const char *title)
     
     // Создаем иконку уведомлений (справа)
     lv_obj_t *notif_icon = lv_label_create(bar);
-    lv_label_set_text(notif_icon, LV_SYMBOL_BELL);
+    lv_label_set_text(notif_icon, "!");
     lv_obj_set_style_text_color(notif_icon, lv_color_hex(0xFFFFFF), 0);
     lv_obj_align(notif_icon, LV_ALIGN_RIGHT_MID, -5, 0);
     lv_obj_add_flag(notif_icon, LV_OBJ_FLAG_HIDDEN); // Скрываем по умолчанию

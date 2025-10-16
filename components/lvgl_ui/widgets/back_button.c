@@ -62,7 +62,7 @@ lv_obj_t* widget_create_back_button(lv_obj_t *parent,
     lv_obj_t *label = lv_label_create(btn);
     // Используем встроенный шрифт LVGL для иконок (fallback)
     lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
-    lv_label_set_text(label, LV_SYMBOL_LEFT);  // ←
+    lv_label_set_text(label, "<");  // Простой символ вместо LV_SYMBOL_LEFT
     lv_obj_center(label);
     
     return btn;

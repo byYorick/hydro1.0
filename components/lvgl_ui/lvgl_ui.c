@@ -31,20 +31,20 @@ static const char *TAG = "LVGL_MAIN";
 /* =============================
  *  УЛУЧШЕННАЯ ЦВЕТОВАЯ ПАЛИТРА ДЛЯ ГИДРОПОНИКИ
  * ============================= */
-#define COLOR_BG            lv_color_hex(0x0F1419)        // Темный фон (как ночное небо)
-#define COLOR_SURFACE       lv_color_hex(0x1A2332)        // Поверхности (темно-синий)
-#define COLOR_CARD          lv_color_hex(0x2D3E50)        // Карточки (темно-серый)
-#define COLOR_ACCENT        lv_color_hex(0x00D4AA)        // Акцент (бирюзовый - цвет растений)
-#define COLOR_ACCENT_SOFT   lv_color_hex(0x26E5B3)        // Мягкий акцент (светло-бирюзовый)
+#define COLOR_BG            lv_color_hex(0x1a1a1a)        // Темный фон (как в калибровке)
+#define COLOR_SURFACE       lv_color_hex(0x2a2a2a)        // Поверхности (заголовки)
+#define COLOR_CARD          lv_color_hex(0x2a2a2a)        // Карточки (единый серый)
+#define COLOR_ACCENT        lv_color_hex(0x2196F3)        // Акцент (голубой как в калибровке)
+#define COLOR_ACCENT_SOFT   lv_color_hex(0x2196F3)        // Мягкий акцент (голубой)
 #define COLOR_NORMAL        lv_color_hex(0x4CAF50)        // Нормальные значения (зеленый)
 #define COLOR_WARNING       lv_color_hex(0xFF9800)        // Предупреждения (оранжевый)
 #define COLOR_DANGER        lv_color_hex(0xF44336)        // Опасность (красный)
 #define COLOR_TEXT          lv_color_hex(0xFFFFFF)        // Основной текст (белый)
-#define COLOR_TEXT_MUTED    lv_color_hex(0xB0BEC5)        // Приглушенный текст (серый)
-#define COLOR_FOCUS         lv_color_hex(0x00D4AA)        // Фокус (бирюзовый)
+#define COLOR_TEXT_MUTED    lv_color_hex(0xaaaaaa)        // Приглушенный текст (серый как в калибровке)
+#define COLOR_FOCUS         lv_color_hex(0x2196F3)        // Фокус (голубой)
 #define COLOR_SHADOW        lv_color_hex(0x000000)        // Тени (черный)
-#define COLOR_GRADIENT_START lv_color_hex(0x1A2332)       // Градиент начало
-#define COLOR_GRADIENT_END  lv_color_hex(0x0F1419)        // Градиент конец
+#define COLOR_GRADIENT_START lv_color_hex(0x2a2a2a)       // Градиент начало
+#define COLOR_GRADIENT_END  lv_color_hex(0x1a1a1a)        // Градиент конец
 
 /* =============================
  *  SENSOR META DATA
@@ -499,8 +499,8 @@ void init_styles(void)  // Глобальная функция - объявле�
     // Это обеспечит поддержку кириллицы и символов LVGL (LV_SYMBOL_*)
     lv_theme_t *theme = lv_theme_default_init(
         lv_disp_get_default(),
-        lv_color_hex(0x00D4AA),  // COLOR_ACCENT
-        lv_color_hex(0x0F1419),  // COLOR_BG
+        lv_color_hex(0x2196F3),  // COLOR_ACCENT - голубой
+        lv_color_hex(0x1a1a1a),  // COLOR_BG - темно-серый
         true,                     // dark theme
         &montserrat_ru           // дефолтный шрифт
     );

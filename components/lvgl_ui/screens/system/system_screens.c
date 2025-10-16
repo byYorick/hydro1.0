@@ -89,12 +89,12 @@ static lv_obj_t* auto_control_create(void *params)
     ESP_LOGI(TAG, "Creating auto control screen");
     
     screen_base_config_t cfg;
-    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "Auto Control");
+    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "Авто контроль");
     screen_base_t base = screen_base_create(&cfg);
     
     lv_obj_t *label = lv_label_create(base.content);
     lv_obj_add_style(label, &style_label, 0);
-    lv_label_set_text(label, "Auto Control Settings\n\n(Placeholder)");
+    lv_label_set_text(label, "Настройки авто контроля\n\n(В разработке)");
     lv_obj_center(label);
     
     return base.screen;
@@ -109,12 +109,12 @@ static lv_obj_t* wifi_settings_create(void *params)
     ESP_LOGI(TAG, "Creating WiFi settings screen");
     
     screen_base_config_t cfg;
-    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "WiFi Settings");
+    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "WiFi");
     screen_base_t base = screen_base_create(&cfg);
     
     lv_obj_t *label = lv_label_create(base.content);
     lv_obj_add_style(label, &style_label, 0);
-    lv_label_set_text(label, "WiFi Configuration\n\n(Placeholder)");
+    lv_label_set_text(label, "Настройки WiFi\n\n(В разработке)");
     lv_obj_center(label);
     
     return base.screen;
@@ -156,7 +156,7 @@ static lv_obj_t* display_settings_create(void *params)
     ESP_LOGI(TAG, "Creating display settings screen");
     
     screen_base_config_t cfg;
-    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "Display");
+    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "Дисплей");
     screen_base_t base = screen_base_create(&cfg);
     
     // Получаем текущую яркость
@@ -227,7 +227,7 @@ static lv_obj_t* data_logger_create(void *params)
     ESP_LOGI(TAG, "Creating data logger screen");
     
     screen_base_config_t cfg;
-    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "Data Logger");
+    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "Логи данных");
     screen_base_t base = screen_base_create(&cfg);
     
     lv_obj_t *label = lv_label_create(base.content);
@@ -247,7 +247,7 @@ static lv_obj_t* system_info_create(void *params)
     ESP_LOGI(TAG, "Creating system info screen");
     
     screen_base_config_t cfg;
-    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "System Info");
+    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "О системе");
     screen_base_t base = screen_base_create(&cfg);
     
     lv_obj_t *label = lv_label_create(base.content);
@@ -267,7 +267,7 @@ static lv_obj_t* reset_confirm_create(void *params)
     ESP_LOGI(TAG, "Creating reset confirm screen");
     
     screen_base_config_t cfg;
-    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "Reset Confirm");
+    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "Подтверждение сброса");
     screen_base_t base = screen_base_create(&cfg);
     
     lv_obj_t *label = lv_label_create(base.content);
@@ -287,7 +287,7 @@ static lv_obj_t* system_status_create(void *params)
     ESP_LOGI(TAG, "Creating system status screen");
     
     screen_base_config_t cfg;
-    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "System Status");
+    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "Статус системы");
     screen_base_t base = screen_base_create(&cfg);
     
     lv_obj_t *label = lv_label_create(base.content);

@@ -60,29 +60,29 @@ static lv_obj_t* pumps_menu_screen_create(void *params)
     (void)params;
     ESP_LOGI(TAG, "Creating pumps menu screen");
     
-    // Определяем пункты меню
+    // Определяем пункты меню - БЕЗ иконок (чтобы не было квадратиков)
     menu_item_config_t menu_items[] = {
         {
             .text = "Статус насосов",
-            .icon = LV_SYMBOL_LIST,  // Используем LIST вместо EYE
+            .icon = "",  // Убраны иконки
             .callback = on_pumps_status_click,
             .user_data = NULL,
         },
         {
             .text = "Ручное управление",
-            .icon = LV_SYMBOL_PLAY,
+            .icon = "",
             .callback = on_pumps_manual_click,
             .user_data = NULL,
         },
         {
             .text = "Калибровка",
-            .icon = LV_SYMBOL_SETTINGS,
+            .icon = "",
             .callback = on_pump_calibration_click,
             .user_data = NULL,
         },
         {
             .text = "PID настройки",
-            .icon = LV_SYMBOL_EDIT,
+            .icon = "",
             .callback = on_pid_main_click,
             .user_data = NULL,
         },

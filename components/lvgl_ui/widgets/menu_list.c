@@ -90,7 +90,7 @@ lv_obj_t* widget_create_menu_list(lv_obj_t *parent,
         lv_obj_t *arrow = lv_label_create(btn);
         // Используем встроенный шрифт LVGL для иконок
         lv_obj_set_style_text_font(arrow, &lv_font_montserrat_14, 0);
-        lv_label_set_text(arrow, LV_SYMBOL_RIGHT);  // →
+        lv_label_set_text(arrow, ">");  // Простой символ вместо LV_SYMBOL_RIGHT
         lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -10, 0);
         
         // Добавляем кнопку в группу энкодера если передана

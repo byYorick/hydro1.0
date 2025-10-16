@@ -113,35 +113,35 @@ static lv_obj_t* sensor_settings_create(void *params)
     
     ESP_LOGI(TAG, "Creating settings screen for %s", meta->name);
     
-    // Пункты меню настроек
+    // Пункты меню настроек - БЕЗ иконок (чтобы не было квадратиков)
     menu_item_config_t items[] = {
         {
-            .text = "Calibration",
-            .icon = LV_SYMBOL_SETTINGS,
+            .text = "Калибровка",
+            .icon = "",  // Убраны иконки
             .callback = on_calibration_click,
             .user_data = (void*)(intptr_t)sensor_index,
         },
         {
-            .text = "Alarm Thresholds",
-            .icon = LV_SYMBOL_WARNING,
+            .text = "Пороги тревог",
+            .icon = "",
             .callback = on_alarms_click,
             .user_data = (void*)(intptr_t)sensor_index,
         },
         {
-            .text = "Update Interval",
-            .icon = LV_SYMBOL_REFRESH,
+            .text = "Интервал обновл.",
+            .icon = "",
             .callback = on_interval_click,
             .user_data = (void*)(intptr_t)sensor_index,
         },
         {
-            .text = "Display Units",
-            .icon = LV_SYMBOL_IMAGE,
+            .text = "Единицы измер.",
+            .icon = "",
             .callback = on_units_click,
             .user_data = (void*)(intptr_t)sensor_index,
         },
         {
-            .text = "Data Logging",
-            .icon = LV_SYMBOL_SD_CARD,
+            .text = "Логирование",
+            .icon = "",
             .callback = on_logging_click,
             .user_data = (void*)(intptr_t)sensor_index,
         },

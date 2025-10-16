@@ -447,18 +447,18 @@ static const char* get_icon(notif_screen_type_t type, const notif_screen_params_
 {
     if (type == NOTIF_SCREEN_TYPE_NOTIFICATION) {
         switch (params->data.notification.type) {
-            case NOTIF_TYPE_INFO:     return LV_SYMBOL_OK;
-            case NOTIF_TYPE_WARNING:  return LV_SYMBOL_WARNING;
-            case NOTIF_TYPE_ERROR:    return LV_SYMBOL_CLOSE;
-            case NOTIF_TYPE_CRITICAL: return LV_SYMBOL_CLOSE;
-            default: return LV_SYMBOL_BELL;
+            case NOTIF_TYPE_INFO:     return "OK";
+            case NOTIF_TYPE_WARNING:  return "!";
+            case NOTIF_TYPE_ERROR:    return "X";
+            case NOTIF_TYPE_CRITICAL: return "X";
+            default: return "!";
         }
     } else {
         switch (params->data.error.level) {
-            case ERROR_LEVEL_WARNING:  return LV_SYMBOL_WARNING;
-            case ERROR_LEVEL_ERROR:    return LV_SYMBOL_CLOSE;
-            case ERROR_LEVEL_CRITICAL: return LV_SYMBOL_CLOSE;
-            default: return LV_SYMBOL_WARNING;
+            case ERROR_LEVEL_WARNING:  return "!";
+            case ERROR_LEVEL_ERROR:    return "X";
+            case ERROR_LEVEL_CRITICAL: return "X";
+            default: return "!";
         }
     }
 }

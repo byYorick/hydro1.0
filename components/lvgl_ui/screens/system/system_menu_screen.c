@@ -111,53 +111,53 @@ static lv_obj_t* system_menu_create(void *params)
 {
     ESP_LOGI(TAG, "Creating system menu screen");
     
-    // Пункты системного меню - компактные с символами LVGL
+    // Пункты системного меню - БЕЗ иконок (чтобы не было квадратиков)
     menu_item_config_t items[] = {
         {
             .text = "Насосы",
-            .icon = LV_SYMBOL_CHARGE,
+            .icon = "",  // Убраны иконки
             .callback = on_pumps_menu_click,
             .user_data = NULL,
         },
         {
             .text = "Интеллектуальный PID",
-            .icon = LV_SYMBOL_SETTINGS,
+            .icon = "",
             .callback = on_intelligent_pid_click,
             .user_data = NULL,
         },
         {
-            .text = "Auto Control",
-            .icon = LV_SYMBOL_PLAY,
+            .text = "Авто контроль",
+            .icon = "",
             .callback = on_auto_control_click,
             .user_data = NULL,
         },
         {
             .text = "WiFi",
-            .icon = LV_SYMBOL_WIFI,
+            .icon = "",
             .callback = on_wifi_settings_click,
             .user_data = NULL,
         },
         {
-            .text = "Display",
-            .icon = LV_SYMBOL_IMAGE,
+            .text = "Дисплей",
+            .icon = "",
             .callback = on_display_settings_click,
             .user_data = NULL,
         },
         {
-            .text = "Data Logger",
-            .icon = LV_SYMBOL_SD_CARD,
+            .text = "Логи",
+            .icon = "",
             .callback = on_data_logger_click,
             .user_data = NULL,
         },
         {
-            .text = "System Info",
-            .icon = LV_SYMBOL_LIST,
+            .text = "О системе",
+            .icon = "",
             .callback = on_system_info_click,
             .user_data = NULL,
         },
         {
-            .text = "Reset",
-            .icon = LV_SYMBOL_REFRESH,
+            .text = "Сброс",
+            .icon = "",
             .callback = on_reset_click,
             .user_data = NULL,
         },
@@ -165,7 +165,7 @@ static lv_obj_t* system_menu_create(void *params)
     
     // Используем шаблон меню (без группы - настроится в on_show)
     template_menu_config_t menu_cfg = {
-        .title = "System",
+        .title = "Система",
         .items = items,
         .item_count = 7,
         .has_back_button = true,
@@ -185,7 +185,7 @@ esp_err_t system_menu_screen_init(void)
     
     screen_config_t config = {
         .id = "system_menu",
-        .title = "System",
+        .title = "Система",
         .category = SCREEN_CATEGORY_MENU,
         .parent_id = "main",            // Возврат на главный экран
         .can_go_back = true,
