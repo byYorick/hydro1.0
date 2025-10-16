@@ -21,6 +21,7 @@ idf_component_register(
         trema_relay
         config_manager
         sensor_manager
+        network_manager
         notification_system
         error_handler
         data_logger

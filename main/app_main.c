@@ -78,6 +78,7 @@ const char* PUMP_NAMES[PUMP_INDEX_COUNT] = {
 // Компоненты системы управления
 #include "config_manager.h"
 #include "sensor_manager.h"
+#include "network_manager.h"
 #include "system_interfaces.h"
 #include "notification_system.h"
 #include "error_handler.h"
@@ -542,6 +543,22 @@ static esp_err_t init_system_components(void)
     }
     ESP_LOGI(TAG, "  [OK] Sensor Manager initialized");
 
+    // Network Manager: WiFi подключение
+    // ❌ ОТКЛЮЧЕНО: Недостаточно DRAM даже с single buffer!
+    // WiFi требует ~20-30 KB, а свободно только ~55 KB
+    // Это вызывает ESP_ERR_NO_MEM в adaptive_pid, pid_auto_tuner, ph_ec_controller
+    // ВЫВОД: ESP32-S3 с 328 KB DRAM слишком мало для LVGL + WiFi одновременно
+    /*
+    ret = network_manager_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "  [WARN] Network Manager initialization failed: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "  [OK] Network Manager initialized");
+        network_manager_load_and_connect();
+    }
+    */
+    ESP_LOGI(TAG, "  [SKIP] WiFi disabled - insufficient DRAM (need 30+ KB free, have only 55 KB)");
+
     // Interfaces: базовые адаптеры датчиков и исполнительных устройств
     ret = system_interfaces_init();
     if (ret != ESP_OK) {
@@ -550,30 +567,32 @@ static esp_err_t init_system_components(void)
     }
     ESP_LOGI(TAG, "  [OK] System interfaces initialized");
     
-    // Notification System: Система уведомлений
-    ret = notification_system_init(MAX_NOTIFICATIONS); // Используем константу из system_config.h
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize notification system: %s", esp_err_to_name(ret));
-        return ret;
-    }
-    notification_set_callback(notification_callback);
+    // Notification System: Система уведомлений (ОТКЛЮЧЕНО)
+    // ret = notification_system_init(MAX_NOTIFICATIONS); // Используем константу из system_config.h
+    // if (ret != ESP_OK) {
+    //     ESP_LOGE(TAG, "Failed to initialize notification system: %s", esp_err_to_name(ret));
+    //     return ret;
+    // }
+    // notification_set_callback(notification_callback);
     
     // Применяем настройки cooldown из конфигурации
-    notification_screen_set_cooldown(g_system_config.notification_config.popup_cooldown_ms);
-    ESP_LOGI(TAG, "  Notification cooldown set to %lu ms", 
-             (unsigned long)g_system_config.notification_config.popup_cooldown_ms);
+    // notification_screen_set_cooldown(g_system_config.notification_config.popup_cooldown_ms);
+    
+    ESP_LOGI(TAG, "  [SKIP] Notification system disabled");
+    // ESP_LOGI(TAG, "  Notification cooldown set to %lu ms", 
+    //          (unsigned long)g_system_config.notification_config.popup_cooldown_ms);
     
     // Восстанавливаем критические уведомления из NVS (если включено)
-    if (g_system_config.notification_config.save_critical_to_nvs) {
-        ret = notification_load_critical_from_nvs();
-        if (ret == ESP_OK) {
-            uint32_t unread = notification_get_unread_count();
-            ESP_LOGI(TAG, "  Restored critical notifications from NVS (unread: %lu)", 
-                     (unsigned long)unread);
-        }
-    }
+    // if (g_system_config.notification_config.save_critical_to_nvs) {
+    //     ret = notification_load_critical_from_nvs();
+    //     if (ret == ESP_OK) {
+    //         uint32_t unread = notification_get_unread_count();
+    //         ESP_LOGI(TAG, "  Restored critical notifications from NVS (unread: %lu)", 
+    //                  (unsigned long)unread);
+    //     }
+    // }
     
-    ESP_LOGI(TAG, "  [OK] Notification System initialized");
+    // ESP_LOGI(TAG, "  [OK] Notification System initialized");
     
     // Error Handler: Централизованная обработка ошибок
     ret = error_handler_init(true); // Включаем всплывающие окна

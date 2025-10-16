@@ -20,6 +20,7 @@
 #include "driver/ledc.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 #include "esp_lcd_ili9341.h"
 #include "lvgl.h"
 
@@ -73,10 +74,10 @@
 #define LVGL_TASK_MAX_DELAY_MS 40  // ensure LVGL handler runs at least 25 times per second
 // Минимальная задержка задачи LVGL в миллисекундах
 #define LVGL_TASK_MIN_DELAY_MS 1
-// Размер стека задачи LVGL (20 КБ)
-#define LVGL_TASK_STACK_SIZE   (20 * 1024)
-// Приоритет задачи LVGL
-#define LVGL_TASK_PRIORITY     2
+// Размер стека задачи LVGL (увеличен до 32 КБ для надежности с PSRAM буферами и сложными экранами)
+#define LVGL_TASK_STACK_SIZE   (32 * 1024)
+// Приоритет задачи LVGL (КРИТИЧНО: должен быть выше Display/Encoder для предотвращения блокировок)
+#define LVGL_TASK_PRIORITY     7
 
 // Мьютекс для обеспечения потокобезопасности при работе с LVGL
 static SemaphoreHandle_t lvgl_mux = NULL;
@@ -148,12 +149,30 @@ static void lvgl_task_handler(void *pvParameters)
     ESP_LOGD("LCD", "LVGL task handler started");
     
     while (1) {
+        // Сброс watchdog перед захватом мьютекса
+        esp_task_wdt_reset();
+        
         // Блокировка мьютекса, так как API LVGL не являются потокобезопасными
         if (lvgl_lock(-1)) {  // Ожидать бесконечно для получения блокировки
             // Дополнительная проверка, что LVGL инициализирован
             if (lv_is_initialized()) {
+                // Замеряем время удержания мьютекса для диагностики
+                uint64_t lock_start = esp_timer_get_time();
+                
                 // Обработка таймеров LVGL и получение времени до следующего события
                 task_delay_ms = lv_timer_handler();
+                
+                // Проверяем сколько времени держали мьютекс
+                uint64_t lock_time_us = esp_timer_get_time() - lock_start;
+                uint32_t lock_time_ms = lock_time_us / 1000;
+                
+                // Предупреждаем если держали мьютекс > 300 мс (это блокирует Display task)
+                if (lock_time_ms > 300) {
+                    ESP_LOGW("LCD", "LVGL held mutex for %lu ms (blocking Display task!)", lock_time_ms);
+                }
+                
+                // Сброс watchdog после обработки (может занять время при отрисовке)
+                esp_task_wdt_reset();
             } else {
                 // Если LVGL не инициализирован, выводим предупреждение и устанавливаем максимальную задержку
                 ESP_LOGW("LCD", "LVGL not initialized, skipping timer handler");
@@ -215,8 +234,6 @@ lv_display_t* lcd_ili9341_init(void)
 {
     // Статические буферы для графики LVGL 9.x
     static lv_display_t *disp;
-    static lv_color_t disp_buf1[LCD_H_RES * 60];
-    static lv_color_t disp_buf2[LCD_H_RES * 60];
     
     // Выводим информацию о начале инициализации дисплея
     ESP_LOGI("LCD", "Initializing LCD ILI9341 display");
@@ -276,7 +293,7 @@ lv_display_t* lcd_ili9341_init(void)
         .miso_io_num = PIN_NUM_MISO,        // Пин данных SPI (MISO), -1 если не используется
         .quadwp_io_num = -1,                // Не используется в данном проекте
         .quadhd_io_num = -1,                // Не используется в данном проекте
-        .max_transfer_sz = LCD_H_RES * 80 * sizeof(uint16_t), // Максимальный размер передачи данных
+        .max_transfer_sz = LCD_H_RES * 100 * sizeof(uint16_t), // Максимальный размер передачи (увеличено для буферизации)
     };
     // Выводим информацию о начале инициализации шины SPI
     ESP_LOGI("LCD", "Initializing SPI bus");
@@ -301,7 +318,7 @@ lv_display_t* lcd_ili9341_init(void)
         .lcd_cmd_bits = 8,                  // Количество бит для команды
         .lcd_param_bits = 8,                // Количество бит для параметра
         .spi_mode = 0,                      // Режим SPI (0 или 3)
-        .trans_queue_depth = 10,            // Глубина очереди передач
+        .trans_queue_depth = 30,            // Глубина очереди передач (увеличено для предотвращения переполнения)
         // Callback будет зарегистрирован ПОСЛЕ создания LVGL дисплея
     };
     // Выводим информацию о создании дескриптора ввода-вывода
@@ -371,25 +388,43 @@ lv_display_t* lcd_ili9341_init(void)
     
     // Выводим информацию об инициализации библиотеки LVGL
     ESP_LOGI("LCD", "Initialize LVGL library");
-    // Инициализируем библиотеку LVGL с размером буфера, достаточным для четверти экрана
+    // Инициализируем библиотеку LVGL
     lv_init();
-    // Буферы уже объявлены выше как статические массивы
+    
     // Создаем дисплей в LVGL 9.x
     ESP_LOGI("LCD", "Creating LVGL display");
     disp = lv_display_create(LCD_H_RES, LCD_V_RES);
+    
+    // Выделяем буферы для LVGL используя SPI DMA память (как в официальном примере ESP-IDF)
+    // Размер: 20 строк (как в примере) для оптимального баланса между памятью и производительностью
+    size_t draw_buffer_sz = LCD_H_RES * 20 * sizeof(lv_color16_t);  // 9.6 KB each
+    
+    void *buf1 = spi_bus_dma_memory_alloc(LCD_HOST, draw_buffer_sz, 0);
+    if (buf1 == NULL) {
+        ESP_LOGE("LCD", "Failed to allocate LVGL draw buffer 1 via SPI DMA");
+        return NULL;
+    }
+    ESP_LOGI("LCD", "[OK] LVGL buffer 1: %d bytes (20 lines)", draw_buffer_sz);
+    
+    void *buf2 = spi_bus_dma_memory_alloc(LCD_HOST, draw_buffer_sz, 0);
+    if (buf2 == NULL) {
+        ESP_LOGE("LCD", "Failed to allocate LVGL draw buffer 2 via SPI DMA");
+        free(buf1);
+        return NULL;
+    }
+    ESP_LOGI("LCD", "[OK] LVGL buffer 2: %d bytes (20 lines)", draw_buffer_sz);
+    
+    // Инициализируем буферы LVGL (новый API для LVGL 9.x)
+    lv_display_set_buffers(disp, buf1, buf2, draw_buffer_sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    
+    // Устанавливаем дополнительные параметры дисплея
+    lv_display_set_user_data(disp, panel_handle);
+    lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
     lv_display_set_flush_cb(disp, lvgl_flush_cb);
     
-    // Создаем буферы для LVGL 9.x
-    static lv_draw_buf_t draw_buf1;
-    static lv_draw_buf_t draw_buf2;
-    lv_draw_buf_init(&draw_buf1, LCD_H_RES, 60, LV_COLOR_FORMAT_RGB565, LCD_H_RES * sizeof(lv_color_t), disp_buf1, LCD_H_RES * 60 * sizeof(lv_color_t));
-    lv_draw_buf_init(&draw_buf2, LCD_H_RES, 60, LV_COLOR_FORMAT_RGB565, LCD_H_RES * sizeof(lv_color_t), disp_buf2, LCD_H_RES * 60 * sizeof(lv_color_t));
-    lv_display_set_draw_buffers(disp, &draw_buf1, &draw_buf2);
+    ESP_LOGI("LCD", "[INFO] LVGL configured with double buffering (total 19.2 KB DMA, saved ~38 KB)");
     
-    lv_display_set_user_data(disp, panel_handle);
-    lv_display_set_driver_data(disp, panel_handle);
-    
-    // Устанавливаем ротацию
+    // Устанавливаем ротацию дисплея
     lv_display_set_rotation(disp, LV_DISPLAY_ROTATION_180);
     
     // Выводим информацию о создании таймера LVGL
@@ -421,6 +456,12 @@ lv_display_t* lcd_ili9341_init(void)
     // - Приоритет: LVGL_TASK_PRIORITY
     // - Дескриптор задачи: &lvgl_task_handle
     xTaskCreate(lvgl_task_handler, "LVGL", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, &lvgl_task_handle);
+    
+    // Регистрируем LVGL task в watchdog (критично для предотвращения timeout при долгой отрисовке)
+    if (lvgl_task_handle != NULL) {
+        esp_task_wdt_add(lvgl_task_handle);
+        ESP_LOGI("LCD", "LVGL task registered in watchdog");
+    }
     
     // Инициализация энкодера как устройства ввода LVGL 9.x
     ESP_LOGI("LCD", "Initialize encoder as LVGL input device");

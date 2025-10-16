@@ -22,6 +22,7 @@ idf_component_register(
         "screens/sensor/sensor_settings_screen.c"
         "screens/system/system_menu_screen.c"
         "screens/system/system_screens.c"
+        "screens/system/wifi_settings_screen.c"
         
         # Pump screens
         "screens/pumps/pumps_menu_screen.c"
@@ -69,5 +70,6 @@ idf_component_register(
         nvs_flash
         notification_system
         error_handler
+        network_manager
 )
 

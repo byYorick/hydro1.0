@@ -1,5 +1,5 @@
-nvs,      data, nvs,     ,        0x6000,
-phy_init, data, phy,     ,        0x1000,
-factory,  app,  factory, ,        2M,
-ota_0,    app,  ota_0,   ,        2M,
-ota_1,    app,  ota_1,   ,        2M,
+# Name,     Type, SubType, Offset,   Size,     Flags
+# Оптимизированная таблица разделов БЕЗ OTA (больше места для приложения)
+nvs,        data, nvs,     ,         0x6000,
+phy_init,   data, phy,     ,         0x1000,
+factory,    app,  factory, ,         0x3D0000,

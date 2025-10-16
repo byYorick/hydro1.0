@@ -4,6 +4,7 @@
  */
 
 #include "system_screens.h"
+#include "wifi_settings_screen.h"
 #include "screen_manager/screen_manager.h"
 #include "screen_manager/screen_lifecycle.h"
 #include "screens/base/screen_base.h"
@@ -104,21 +105,8 @@ static lv_obj_t* auto_control_create(void *params)
  *  WIFI SETTINGS SCREEN
  * ============================= */
 
-static lv_obj_t* wifi_settings_create(void *params)
-{
-    ESP_LOGI(TAG, "Creating WiFi settings screen");
-    
-    screen_base_config_t cfg;
-    INIT_SYSTEM_SCREEN_BASE_CONFIG(cfg, "WiFi");
-    screen_base_t base = screen_base_create(&cfg);
-    
-    lv_obj_t *label = lv_label_create(base.content);
-    lv_obj_add_style(label, &style_label, 0);
-    lv_label_set_text(label, "Настройки WiFi\n\n(В разработке)");
-    lv_obj_center(label);
-    
-    return base.screen;
-}
+// WiFi экран реализован в отдельном файле wifi_settings_screen.c
+// static lv_obj_t* wifi_settings_create(void *params) - см. wifi_settings_screen.c
 
 /* =============================
  *  DISPLAY SETTINGS SCREEN
@@ -333,9 +321,9 @@ static const system_screen_meta_t SYSTEM_SCREENS_META[] = {
     },
     {
         .id = "wifi_settings",
-        .title = "WiFi Settings",
+        .title = "WiFi",
         .category = SCREEN_CATEGORY_SETTINGS,
-        .create_fn = wifi_settings_create,
+        .create_fn = wifi_settings_screen_create,  // Из wifi_settings_screen.c
     },
     {
         .id = "display_settings",
@@ -420,5 +408,9 @@ esp_err_t system_screens_register_all(void)
     }
     
     ESP_LOGI(TAG, "All %d system screens registered successfully", SYSTEM_SCREENS_COUNT);
+    
+    // WiFi экран имеет специфические callbacks - они установлены в config.on_show
+    // через wifi_settings_screen_on_show и wifi_settings_screen_on_hide
+    
     return ESP_OK;
 }

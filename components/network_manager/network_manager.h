@@ -1,103 +1,91 @@
 /**
  * @file network_manager.h
- * @brief Заголовочный файл менеджера сетевых функций ESP32S3
- *
- * @author Hydroponics Monitor Team
- * @date 2025
+ * @brief Network Manager - управление WiFi подключением
+ * 
+ * Менеджер сетевых функций для Hydro System 1.0
+ * - Подключение к WiFi
+ * - Сканирование сетей
+ * - Получение статуса подключения
+ * - Автопереподключение
+ * - Сохранение настроек в NVS
+ * 
+ * @author Hydroponics Team
+ * @date 2025-10-16
  */
 
 #ifndef NETWORK_MANAGER_H
 #define NETWORK_MANAGER_H
 
 #include "esp_err.h"
-#include "esp_http_server.h"
+#include "esp_wifi.h"
 #include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/* =============================
+ *  КОНСТАНТЫ
+ * ============================= */
+
+#define MAX_WIFI_SSID_LEN       32
+#define MAX_WIFI_PASSWORD_LEN   64
+#define MAX_SCAN_RESULTS        20
+
+/* =============================
+ *  ТИПЫ ДАННЫХ
+ * ============================= */
+
 /**
- * @brief Режимы сетевого подключения
+ * @brief Статус WiFi подключения
  */
 typedef enum {
-    NETWORK_MODE_NONE = 0,   ///< Сеть не используется
-    NETWORK_MODE_STA,        ///< Режим станции (клиент WiFi)
-    NETWORK_MODE_AP,         ///< Режим точки доступа
-    NETWORK_MODE_HYBRID      ///< Гибридный режим (STA + AP)
-} network_mode_t;
+    WIFI_STATUS_DISCONNECTED = 0,  ///< Отключено
+    WIFI_STATUS_CONNECTING,        ///< Подключение...
+    WIFI_STATUS_CONNECTED,         ///< Подключено
+    WIFI_STATUS_ERROR              ///< Ошибка
+} wifi_status_t;
 
 /**
- * @brief Статусы сетевого подключения
- */
-typedef enum {
-    NETWORK_STATUS_DISCONNECTED = 0,  ///< Отключено
-    NETWORK_STATUS_CONNECTING,        ///< Подключение
-    NETWORK_STATUS_CONNECTED,         ///< Подключено
-    NETWORK_STATUS_AP_MODE,           ///< Режим точки доступа
-    NETWORK_STATUS_ERROR              ///< Ошибка
-} network_status_t;
-
-/**
- * @brief Конфигурация WiFi станции
+ * @brief Информация о WiFi подключении
  */
 typedef struct {
-    char ssid[32];           ///< SSID сети
-    char password[64];       ///< Пароль сети
-    uint8_t channel;         ///< Канал (0 - автовыбор)
-    bool auto_reconnect;     ///< Автоматическое переподключение
-} network_wifi_config_t;
+    wifi_status_t status;       ///< Текущий статус
+    int8_t rssi;                ///< Уровень сигнала (dBm)
+    char ssid[33];              ///< Текущая сеть
+    char ip[16];                ///< IP адрес
+    char gateway[16];           ///< Шлюз
+    char netmask[16];           ///< Маска сети
+    uint32_t reconnect_count;   ///< Количество переподключений
+    bool is_connected;          ///< Флаг подключения
+} wifi_info_t;
 
 /**
- * @brief Конфигурация точки доступа
+ * @brief Результат сканирования WiFi
  */
 typedef struct {
-    char ssid[32];           ///< SSID точки доступа
-    char password[64];       ///< Пароль точки доступа
-    uint8_t channel;         ///< Канал WiFi
-    uint8_t max_connection;  ///< Максимум подключений
-    bool ssid_hidden;        ///< Скрытая сеть
-} ap_config_t;
+    char ssid[33];              ///< SSID сети
+    int8_t rssi;                ///< Уровень сигнала
+    wifi_auth_mode_t authmode;  ///< Тип защиты
+    uint8_t channel;            ///< Канал
+} wifi_scan_result_t;
+
+/* =============================
+ *  ПУБЛИЧНЫЙ API
+ * ============================= */
 
 /**
- * @brief Статистика сети
- */
-typedef struct {
-    uint32_t packets_sent;       ///< Отправлено пакетов
-    uint32_t packets_received;   ///< Получено пакетов
-    uint32_t bytes_sent;         ///< Отправлено байт
-    uint32_t bytes_received;     ///< Получено байт
-    uint32_t wifi_reconnects;    ///< Количество переподключений WiFi
-    int8_t rssi;                 ///< Уровень сигнала (dBm)
-    uint32_t uptime_seconds;     ///< Время работы (секунды)
-} network_stats_t;
-
-/**
- * @brief Обработчик HTTP запросов
+ * @brief Инициализация network manager
  * 
- * @param ctx Контекст пользователя
- */
-typedef void (*http_handler_func_t)(void *ctx);
-
-/**
- * @brief Обработчик BLE событий
+ * Инициализирует WiFi, создает event loop, регистрирует обработчики
  * 
- * @param ctx Контекст пользователя
- */
-typedef void (*ble_handler_func_t)(void *ctx);
-
-/**
- * @brief Инициализация сетевого менеджера
- * 
- * @param mode Режим сетевого подключения
  * @return ESP_OK при успехе
  */
-esp_err_t network_manager_init(network_mode_t mode);
+esp_err_t network_manager_init(void);
 
 /**
- * @brief Деинициализация сетевого менеджера
+ * @brief Деинициализация network manager
  * 
  * @return ESP_OK при успехе
  */
@@ -106,222 +94,69 @@ esp_err_t network_manager_deinit(void);
 /**
  * @brief Подключение к WiFi сети
  * 
- * @param config Конфигурация WiFi
+ * @param ssid SSID сети
+ * @param password Пароль (может быть NULL для открытых сетей)
  * @return ESP_OK при успехе
  */
-esp_err_t network_manager_connect_wifi(const network_wifi_config_t *config);
+esp_err_t network_manager_connect(const char *ssid, const char *password);
 
 /**
- * @brief Запуск точки доступа
- * 
- * @param config Конфигурация точки доступа
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_start_ap(const ap_config_t *config);
-
-/**
- * @brief Отключение от WiFi сети
+ * @brief Отключение от WiFi
  * 
  * @return ESP_OK при успехе
  */
-esp_err_t network_manager_disconnect_wifi(void);
-
-/**
- * @brief Получение статистики сети
- * 
- * @param stats Указатель на структуру для записи статистики
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_get_stats(network_stats_t *stats);
+esp_err_t network_manager_disconnect(void);
 
 /**
  * @brief Сканирование доступных WiFi сетей
  * 
- * @param networks Массив для записи имён сетей
- * @param max_networks Максимальное количество сетей
- * @return Количество найденных сетей
+ * @param results Массив для записи результатов
+ * @param max_results Максимальное количество результатов
+ * @param actual_count Указатель для записи реального количества найденных сетей
+ * @return ESP_OK при успехе
  */
-int network_manager_scan_wifi(char (*networks)[32], int max_networks);
+esp_err_t network_manager_scan(wifi_scan_result_t *results, uint16_t max_results, uint16_t *actual_count);
 
 /**
- * @brief Проверка доступности интернета
+ * @brief Получение информации о WiFi подключении
  * 
- * @return true если интернет доступен
+ * @param info Указатель на структуру для записи информации
+ * @return ESP_OK при успехе
  */
-bool network_manager_is_internet_available(void);
+esp_err_t network_manager_get_info(wifi_info_t *info);
 
 /**
- * @brief Синхронизация времени через NTP
+ * @brief Проверка подключения к WiFi
+ * 
+ * @return true если подключено
+ */
+bool network_manager_is_connected(void);
+
+/**
+ * @brief Сохранение текущей WiFi конфигурации в NVS
  * 
  * @return ESP_OK при успехе
  */
-esp_err_t network_manager_sync_time(void);
+esp_err_t network_manager_save_credentials(void);
 
 /**
- * @brief Получение текущего времени
+ * @brief Загрузка WiFi конфигурации из NVS и автоподключение
  * 
- * @param timestamp Указатель для записи временной метки (Unix timestamp)
- * @param time_str Буфер для записи времени (формат HH:MM:SS), может быть NULL
- * @param date_str Буфер для записи даты (формат YYYY-MM-DD), может быть NULL
  * @return ESP_OK при успехе
  */
-esp_err_t network_manager_get_time(uint32_t *timestamp, char *time_str, char *date_str);
-
-/**
- * @brief Получение IP адреса
- * 
- * @param ip_str Буфер для записи IP адреса
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_get_ip(char *ip_str);
+esp_err_t network_manager_load_and_connect(void);
 
 /**
  * @brief Получение MAC адреса
  * 
- * @param mac_str Буфер для записи MAC адреса
+ * @param mac_str Буфер для записи MAC (формат XX:XX:XX:XX:XX:XX)
+ * @param len Размер буфера (минимум 18 байт)
  * @return ESP_OK при успехе
  */
-esp_err_t network_manager_get_mac(char *mac_str);
-
-/**
- * @brief Сохранение конфигурации сети
- * 
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_save_config(void);
-
-/**
- * @brief Загрузка конфигурации сети
- * 
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_load_config(void);
-
-/**
- * @brief Сброс конфигурации сети к значениям по умолчанию
- * 
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_reset_config(void);
-
-/**
- * @brief Запуск HTTP сервера
- * 
- * @param port Порт сервера
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_start_http_server(uint16_t port);
-
-/**
- * @brief Остановка HTTP сервера
- * 
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_stop_http_server(void);
-
-/**
- * @brief Регистрация обработчика HTTP запросов
- * 
- * @param uri URI пути
- * @param method HTTP метод (GET, POST, и т.д.)
- * @param handler Функция-обработчик
- * @param user_ctx Контекст пользователя
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_register_http_handler(const char *uri, const char *method,
-                                               http_handler_func_t handler, void *user_ctx);
-
-/**
- * @brief Запуск mDNS сервиса
- * 
- * @param hostname Имя хоста
- * @param service_name Имя сервиса
- * @param port Порт сервиса
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_start_mdns(const char *hostname, const char *service_name, uint16_t port);
-
-/**
- * @brief Остановка mDNS сервиса
- * 
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_stop_mdns(void);
-
-/**
- * @brief Запуск BLE сервиса
- * 
- * @param device_name Имя BLE устройства
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_start_ble(const char *device_name);
-
-/**
- * @brief Остановка BLE сервиса
- * 
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_stop_ble(void);
-
-/**
- * @brief Проверка наличия обновления по OTA
- * 
- * @param current_version Текущая версия прошивки
- * @return true если доступно обновление
- */
-bool network_manager_check_ota_update(const char *current_version);
-
-/**
- * @brief Запуск обновления по OTA
- * 
- * @param url URL файла обновления
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_start_ota_update(const char *url);
-
-/**
- * @brief Регистрация обработчика BLE событий
- * 
- * @param event Имя события
- * @param handler Функция-обработчик
- * @param user_ctx Контекст пользователя
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_register_ble_handler(const char *event,
-                                               ble_handler_func_t handler, void *user_ctx);
-
-/**
- * @brief Отправка данных через BLE
- * 
- * @param data Указатель на данные
- * @param length Длина данных
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_send_ble(const uint8_t *data, size_t length);
-
-/**
- * @brief Регистрация обработчика WebSocket событий
- * 
- * @param event Имя события
- * @param handler Функция-обработчик
- * @param user_ctx Контекст пользователя
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_register_ws_handler(const char *event,
-                                              http_handler_func_t handler, void *user_ctx);
-
-/**
- * @brief Отправка данных через WebSocket
- * 
- * @param data Указатель на данные
- * @param length Длина данных
- * @return ESP_OK при успехе
- */
-esp_err_t network_manager_send_websocket(const uint8_t *data, size_t length);
+esp_err_t network_manager_get_mac(char *mac_str, size_t len);
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif // NETWORK_MANAGER_H
-

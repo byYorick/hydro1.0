@@ -1,20 +1,18 @@
-# Temporarily disabled due to compilation errors
-# idf_component_register(
-#     SRCS "network_manager.c"
-#     INCLUDE_DIRS "."
-#     PRIV_REQUIRES
-#         driver
-#         freertos
-#         esp_wifi
-#         esp_event
-#         nvs_flash
-#         esp_eth
-#         esp_http_server
-#         esp_http_client
-#         esp_https_ota
-#         app_update
-#         main
-#         ph_ec_controller
-#         system_interfaces
-# )
-
+idf_component_register(
+    SRCS "network_manager.c"
+    INCLUDE_DIRS "."
+    REQUIRES 
+        esp_wifi
+        esp_netif
+        esp_event
+        esp_http_server
+        esp_https_ota
+        lwip
+        nvs_flash
+    PRIV_REQUIRES
+        esp_timer
+        esp_eth
+        esp_http_client
+        esp_https_server
+        app_update
+)

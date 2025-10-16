@@ -50,12 +50,18 @@ static sensor_calibration_t calibrations[SENSOR_TYPE_COUNT] = {0};
 // Флаг инициализации
 static bool initialized = false;
 
+// Защита от спама I2C ошибок - счетчики последовательных ошибок
+#define MAX_CONSECUTIVE_ERRORS 10  // После 10 ошибок подряд временно отключаем датчик
+#define ERROR_RETRY_INTERVAL_MS 60000  // Пытаемся включить через 60 секунд
+static uint8_t consecutive_errors[SENSOR_TYPE_COUNT] = {0};
+static uint64_t sensor_disabled_until[SENSOR_TYPE_COUNT] = {0};
+
 /*******************************************************************************
  * ВНУТРЕННИЕ ФУНКЦИИ
  ******************************************************************************/
 
 /**
- * @brief Обновление статистики датчика
+ * @brief Обновление статистики датчика с защитой от спама ошибок
  */
 static void update_stats(sensor_type_t sensor, bool success)
 {
@@ -71,9 +77,22 @@ static void update_stats(sensor_type_t sensor, bool success)
     if (success) {
         s->successful_reads++;
         s->last_success_time = now;
+        // Сбрасываем счетчик ошибок при успехе
+        consecutive_errors[sensor] = 0;
+        sensor_disabled_until[sensor] = 0;
     } else {
         s->failed_reads++;
         s->last_failure_time = now;
+        
+        // Увеличиваем счетчик последовательных ошибок
+        consecutive_errors[sensor]++;
+        
+        // Если слишком много ошибок подряд - временно отключаем датчик
+        if (consecutive_errors[sensor] >= MAX_CONSECUTIVE_ERRORS) {
+            sensor_disabled_until[sensor] = now + ERROR_RETRY_INTERVAL_MS;
+            ESP_LOGW(TAG, "Sensor %d disabled until %llu ms (too many errors)", sensor, sensor_disabled_until[sensor]);
+            consecutive_errors[sensor] = 0; // Сбрасываем чтобы не переполнить uint8_t
+        }
     }
     
     // Расчет процента успешных чтений
@@ -108,10 +127,28 @@ static float apply_calibration(sensor_type_t sensor, float value)
 }
 
 /**
+ * @brief Проверка, не отключен ли датчик временно
+ */
+static bool is_sensor_enabled(sensor_type_t sensor)
+{
+    if (sensor >= SENSOR_TYPE_COUNT) {
+        return false;
+    }
+    
+    uint64_t now = esp_timer_get_time() / 1000; // мс
+    return now >= sensor_disabled_until[sensor];
+}
+
+/**
  * @brief Чтение SHT3x с retry
  */
 static bool read_sht3x_with_retry(float *temp, float *hum)
 {
+    // Пропускаем если датчик временно отключен
+    if (!is_sensor_enabled(SENSOR_TYPE_TEMPERATURE)) {
+        return false;
+    }
+    
     for (int i = 0; i < RETRY_COUNT; i++) {
         if (sht3x_read(temp, hum)) {
             return true;
@@ -126,6 +163,11 @@ static bool read_sht3x_with_retry(float *temp, float *hum)
  */
 static bool read_ph_with_retry(float *ph)
 {
+    // Пропускаем если датчик временно отключен
+    if (!is_sensor_enabled(SENSOR_TYPE_PH)) {
+        return false;
+    }
+    
     for (int i = 0; i < RETRY_COUNT; i++) {
         esp_err_t ret = trema_ph_read(ph);
         if (ret == ESP_OK && !isnan(*ph) && *ph >= 0.0f && *ph <= 14.0f) {
@@ -143,6 +185,11 @@ static bool read_ph_with_retry(float *ph)
  */
 static bool read_ec_with_retry(float *ec)
 {
+    // Пропускаем если датчик временно отключен
+    if (!is_sensor_enabled(SENSOR_TYPE_EC)) {
+        return false;
+    }
+    
     for (int i = 0; i < RETRY_COUNT; i++) {
         esp_err_t ret = trema_ec_read(ec);
         if (ret == ESP_OK && !isnan(*ec) && *ec >= 0.0f) {
@@ -160,6 +207,11 @@ static bool read_ec_with_retry(float *ec)
  */
 static bool read_lux_with_retry(float *lux)
 {
+    // Пропускаем если датчик временно отключен
+    if (!is_sensor_enabled(SENSOR_TYPE_LUX)) {
+        return false;
+    }
+    
     for (int i = 0; i < RETRY_COUNT; i++) {
         if (trema_lux_read_float(lux) && !isnan(*lux) && *lux >= 0.0f) {
             return true;

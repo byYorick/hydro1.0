@@ -666,8 +666,9 @@ static void display_update_task(void *pvParameters)
         }
         
         // КРИТИЧНО: Блокируем LVGL для обработки очередей даже БЕЗ данных датчиков
-        if (!lvgl_lock(100)) {
-            ESP_LOGW(TAG, "Failed to get LVGL lock in display task");
+        // Увеличенный таймаут (500 мс) для ожидания освобождения мьютекса при создании экранов
+        if (!lvgl_lock(500)) {
+            ESP_LOGW(TAG, "Failed to get LVGL lock in display task (timeout 500ms)");
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
