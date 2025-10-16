@@ -150,7 +150,7 @@ static esp_err_t run_pump_with_retry(pump_index_t pump_idx, uint32_t duration_ms
     const int MAX_RETRIES = 3;
     
     for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        ESP_LOGI(TAG, "Запуск насоса %s, попытка %d/%d, длительность %lu мс",
+        ESP_LOGD(TAG, "Запуск насоса %s, попытка %d/%d, длительность %lu мс",
                  PUMP_NAMES[pump_idx], attempt + 1, MAX_RETRIES, (unsigned long)duration_ms);
         
         // Попытка запуска через оптопару (один пин)
@@ -165,7 +165,7 @@ static esp_err_t run_pump_with_retry(pump_index_t pump_idx, uint32_t duration_ms
         g_pump_stats[pump_idx].last_run_time = get_time_ms();
         g_last_run_times[pump_idx] = get_time_ms();
         
-        ESP_LOGI(TAG, "Насос %s успешно запущен", PUMP_NAMES[pump_idx]);
+        ESP_LOGD(TAG, "Насос %s успешно запущен", PUMP_NAMES[pump_idx]);
         return ESP_OK;
     }
     
@@ -484,7 +484,7 @@ esp_err_t pump_manager_compute_and_execute(pump_index_t pump_idx, float current,
         duration_ms = g_pump_configs[pump_idx].max_duration_ms;
     }
     
-    ESP_LOGI(TAG, "%s: PID коррекция - Текущ=%.2f Цель=%.2f P=%.2f I=%.2f D=%.2f Выход=%.2f мл (%lu мс)",
+    ESP_LOGD(TAG, "%s: PID коррекция - Текущ=%.2f Цель=%.2f P=%.2f I=%.2f D=%.2f Выход=%.2f мл (%lu мс)",
              PUMP_NAMES[pump_idx], current, target, 
              output.p_term, output.i_term, output.d_term, 
              output.output, (unsigned long)duration_ms);
@@ -626,7 +626,7 @@ esp_err_t pump_manager_run_direct(pump_index_t pump_idx, uint32_t duration_ms) {
         return ESP_ERR_INVALID_ARG;
     }
     
-    ESP_LOGI(TAG, "Прямой запуск насоса %s на %lu мс", 
+    ESP_LOGD(TAG, "Прямой запуск насоса %s на %lu мс", 
              PUMP_NAMES[pump_idx], (unsigned long)duration_ms);
     
     // Прямой запуск без PID и большинства проверок (через оптопару)
@@ -685,7 +685,7 @@ esp_err_t pump_manager_run_with_dose(pump_index_t pump_idx, float dose_ml) {
         duration_ms = g_pump_configs[pump_idx].max_duration_ms;
     }
     
-    ESP_LOGI(TAG, "%s: запуск с дозой %.2f мл (%lu мс)",
+    ESP_LOGD(TAG, "%s: запуск с дозой %.2f мл (%lu мс)",
              PUMP_NAMES[pump_idx], dose_ml, (unsigned long)duration_ms);
     
     // Запуск насоса
@@ -747,7 +747,7 @@ esp_err_t pump_manager_compute_and_execute_adaptive(pump_index_t pump_idx,
                 // Создать задачу обучения (проверка через 5 минут)
                 // TODO: Реализовать задачу delayed learning
                 
-                ESP_LOGI(TAG, "Упреждающая коррекция выполнена: %.2f мл", dose_ml);
+                ESP_LOGD(TAG, "Упреждающая коррекция выполнена: %.2f мл", dose_ml);
                 return ESP_OK;
             }
         }

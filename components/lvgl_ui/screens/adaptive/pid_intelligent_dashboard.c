@@ -134,6 +134,9 @@ static void dashboard_update_task(void *arg) {
         
         // Обновление всех карточек
         for (int i = 0; i < PUMP_INDEX_COUNT; i++) {
+            // Сброс watchdog внутри цикла (для каждой карточки)
+            esp_task_wdt_reset();
+            
             if (g_cards[i]) {
                 // Получение данных PID
                 pid_output_t output;

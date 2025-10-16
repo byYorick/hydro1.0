@@ -1,0 +1,126 @@
+Executing action: flash
+Running ninja in directory C:\Users\admin\2\hydro1.0\build
+Executing "ninja flash"...
+[0/1] Re-running CMake...
+-- Minimal build - OFF
+-- ccache will be used for faster recompilation
+-- Building ESP-IDF components for target esp32s3
+NOTICE: Processing 4 dependencies:
+NOTICE: [1/4] espressif/cmake_utilities (0.5.3)
+NOTICE: [2/4] espressif/esp_lcd_ili9341 (1.2.0)
+NOTICE: [3/4] lvgl/lvgl (9.2.2)
+NOTICE: [4/4] idf (5.5.1)
+-- Project sdkconfig file C:/Users/admin/2/hydro1.0/sdkconfig
+Loading defaults file C:/Users/admin/2/hydro1.0/sdkconfig.defaults...
+C:/Users/admin/2/hydro1.0/sdkconfig.defaults:21 CONFIG_CONSOLE_UART_DEFAULT was replaced with CONFIG_ESP_CONSOLE_UART_DEFAULT 
+warning: unknown kconfig symbol 'ESP32_DEFAULT_CPU_FREQ_240' assigned to 'y' in C:/Users/admin/2/hydro1.0/sdkconfig.defaults
+warning: unknown kconfig symbol 'I2C_SUPPORT' assigned to 'y' in C:/Users/admin/2/hydro1.0/sdkconfig.defaults
+warning: unknown kconfig symbol 'SPI_MASTER' assigned to 'y' in C:/Users/admin/2/hydro1.0/sdkconfig.defaults
+warning: unknown kconfig symbol 'GPIO' assigned to 'y' in C:/Users/admin/2/hydro1.0/sdkconfig.defaults
+warning: unknown kconfig symbol 'UART_CONSOLE' assigned to 'y' in C:/Users/admin/2/hydro1.0/sdkconfig.defaults
+warning: unknown kconfig symbol 'LVGL_ENABLED' assigned to 'y' in C:/Users/admin/2/hydro1.0/sdkconfig.defaults
+warning: unknown kconfig symbol 'LVGL_VERSION_8_3' assigned to 'y' in C:/Users/admin/2/hydro1.0/sdkconfig.defaults
+warning: unknown kconfig symbol 'LVGL_TICK_PERIOD_MS' assigned to '5' in C:/Users/admin/2/hydro1.0/sdkconfig.defaults
+warning: unknown kconfig symbol 'LVGL_MAX_DRAW_BUF_SIZE' assigned to '8192' in C:/Users/admin/2/hydro1.0/sdkconfig.defaults
+warning: unknown kconfig symbol 'LVGL_BITS_PER_PIXEL' assigned to '16' in C:/Users/admin/2/hydro1.0/sdkconfig.defaults
+warning: unknown kconfig symbol 'I2C_PORT_0_SCL' assigned to '17' in C:/Users/admin/2/hydro1.0/sdkconfig.defaults
+warning: unknown kconfig symbol 'I2C_PORT_0_SDA' assigned to '18' in C:/Users/admin/2/hydro1.0/sdkconfig.defaults
+warning: unknown kconfig symbol 'I2C_PORT_0_SPEED_HZ' assigned to '100000' in C:/Users/admin/2/hydro1.0/sdkconfig.defaults
+warning: unknown kconfig symbol 'ESP_WIFI_STA_ENABLED' assigned to 'y' in C:/Users/admin/2/hydro1.0/sdkconfig.defaults
+-- Compiler supported targets: xtensa-esp-elf
+-- USING O3
+-- App "hydroponics" version: 2d88282
+-- Adding linker script C:/Users/admin/2/hydro1.0/build/esp-idf/esp_system/ld/memory.ld
+-- Adding linker script C:/Users/admin/2/hydro1.0/build/esp-idf/esp_system/ld/sections.ld.in
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_rom/esp32s3/ld/esp32s3.rom.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_rom/esp32s3/ld/esp32s3.rom.api.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_rom/esp32s3/ld/esp32s3.rom.bt_funcs.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_rom/esp32s3/ld/esp32s3.rom.libgcc.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_rom/esp32s3/ld/esp32s3.rom.wdt.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_rom/esp32s3/ld/esp32s3.rom.version.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_master.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_50.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_smp.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_dtm.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_test.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_scan.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_rom/esp32s3/ld/esp32s3.rom.libc.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_rom/esp32s3/ld/esp32s3.rom.newlib.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.1/components/soc/esp32s3/ld/esp32s3.peripherals.ld
+-- ESP_LCD_ILI9341: 1.2.0
+-- Components: adaptive_pid app_trace app_update bootloader bootloader_support bt ccs811 cmock config_manager console cxx data_logger driver efuse encoder error_handler esp-tls esp_adc esp_app_format esp_bootloader_format esp_coex esp_common esp_driver_ana_cmpr esp_driver_bitscrambler esp_driver_cam esp_driver_dac esp_driver_gpio esp_driver_gptimer esp_driver_i2c esp_driver_i2s esp_driver_isp esp_driver_jpeg esp_driver_ledc esp_driver_mcpwm esp_driver_parlio esp_driver_pcnt esp_driver_ppa esp_driver_rmt esp_driver_sdio esp_driver_sdm esp_driver_sdmmc esp_driver_sdspi esp_driver_spi esp_driver_touch_sens esp_driver_tsens esp_driver_twai esp_driver_uart esp_driver_usb_serial_jtag esp_eth esp_event esp_gdbstub esp_hid esp_http_client esp_http_server esp_https_ota esp_https_server esp_hw_support esp_lcd esp_local_ctrl esp_mm esp_netif esp_netif_stack esp_partition esp_phy esp_pm esp_psram esp_ringbuf esp_rom esp_security esp_system esp_timer esp_vfs_console esp_wifi espcoredump espressif__cmake_utilities espressif__esp_lcd_ili9341 esptool_py fatfs freertos hal heap http_parser i2c_bus idf_test ieee802154 json lcd_ili9341 log lvgl__lvgl lvgl_ui lwip main mbedtls mqtt newlib notification_system nvs_flash nvs_sec_provider openthread ota_update partition_table perfmon peristaltic_pump ph_ec_controller pid_auto_tuner protobuf-c protocomm pthread pump_manager rt sdmmc sensor_manager sht3x soc spi_flash spiffs system_interfaces system_monitor system_tasks task_scheduler tcp_transport touch_element trema_ec trema_expander trema_lux trema_ph trema_relay trend_predictor ulp unity usb vfs wear_levelling wifi_provisioning wpa_supplicant xtensa
+-- Component paths: C:/Users/admin/2/hydro1.0/components/adaptive_pid C:/Espressif/frameworks/esp-idf-v5.5.1/components/app_trace C:/Espressif/frameworks/esp-idf-v5.5.1/components/app_update C:/Espressif/frameworks/esp-idf-v5.5.1/components/bootloader C:/Espressif/frameworks/esp-idf-v5.5.1/components/bootloader_support C:/Espressif/frameworks/esp-idf-v5.5.1/components/bt C:/Users/admin/2/hydro1.0/components/ccs811 C:/Espressif/frameworks/esp-idf-v5.5.1/components/cmock C:/Users/admin/2/hydro1.0/components/config_manager C:/Espressif/frameworks/esp-idf-v5.5.1/components/console C:/Espressif/frameworks/esp-idf-v5.5.1/components/cxx C:/Users/admin/2/hydro1.0/components/data_logger C:/Espressif/frameworks/esp-idf-v5.5.1/components/driver C:/Espressif/frameworks/esp-idf-v5.5.1/components/efuse C:/Users/admin/2/hydro1.0/components/encoder C:/Users/admin/2/hydro1.0/components/error_handler C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp-tls C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_adc C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_app_format C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_bootloader_format C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_coex C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_common C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_ana_cmpr C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_bitscrambler C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_cam C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_dac C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_gpio C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_gptimer C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_i2c C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_i2s C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_isp C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_jpeg C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_ledc C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_mcpwm C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_parlio C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_pcnt C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_ppa C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_rmt C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_sdio C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_sdm C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_sdmmc C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_sdspi C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_spi C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_touch_sens C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_tsens C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_twai C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_uart C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_driver_usb_serial_jtag C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_eth C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_event C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_gdbstub C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_hid C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_http_client C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_http_server C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_https_ota C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_https_server C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_hw_support C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_lcd C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_local_ctrl C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_mm C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_netif C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_netif_stack C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_partition C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_phy C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_pm C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_psram C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_ringbuf C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_rom C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_security C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_system C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_timer C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_vfs_console C:/Espressif/frameworks/esp-idf-v5.5.1/components/esp_wifi C:/Espressif/frameworks/esp-idf-v5.5.1/components/espcoredump C:/Users/admin/2/hydro1.0/managed_components/espressif__cmake_utilities C:/Users/admin/2/hydro1.0/managed_components/espressif__esp_lcd_ili9341 C:/Espressif/frameworks/esp-idf-v5.5.1/components/esptool_py C:/Espressif/frameworks/esp-idf-v5.5.1/components/fatfs C:/Espressif/frameworks/esp-idf-v5.5.1/components/freertos C:/Espressif/frameworks/esp-idf-v5.5.1/components/hal C:/Espressif/frameworks/esp-idf-v5.5.1/components/heap C:/Espressif/frameworks/esp-idf-v5.5.1/components/http_parser C:/Users/admin/2/hydro1.0/components/i2c_bus C:/Espressif/frameworks/esp-idf-v5.5.1/components/idf_test C:/Espressif/frameworks/esp-idf-v5.5.1/components/ieee802154 C:/Espressif/frameworks/esp-idf-v5.5.1/components/json C:/Users/admin/2/hydro1.0/components/lcd_ili9341 C:/Espressif/frameworks/esp-idf-v5.5.1/components/log C:/Users/admin/2/hydro1.0/managed_components/lvgl__lvgl C:/Users/admin/2/hydro1.0/components/lvgl_ui C:/Espressif/frameworks/esp-idf-v5.5.1/components/lwip C:/Users/admin/2/hydro1.0/main C:/Espressif/frameworks/esp-idf-v5.5.1/components/mbedtls C:/Espressif/frameworks/esp-idf-v5.5.1/components/mqtt C:/Espressif/frameworks/esp-idf-v5.5.1/components/newlib C:/Users/admin/2/hydro1.0/components/notification_system C:/Espressif/frameworks/esp-idf-v5.5.1/components/nvs_flash C:/Espressif/frameworks/esp-idf-v5.5.1/components/nvs_sec_provider C:/Espressif/frameworks/esp-idf-v5.5.1/components/openthread C:/Users/admin/2/hydro1.0/components/ota_update C:/Espressif/frameworks/esp-idf-v5.5.1/components/partition_table C:/Espressif/frameworks/esp-idf-v5.5.1/components/perfmon C:/Users/admin/2/hydro1.0/components/peristaltic_pump C:/Users/admin/2/hydro1.0/components/ph_ec_controller C:/Users/admin/2/hydro1.0/components/pid_auto_tuner C:/Espressif/frameworks/esp-idf-v5.5.1/components/protobuf-c C:/Espressif/frameworks/esp-idf-v5.5.1/components/protocomm C:/Espressif/frameworks/esp-idf-v5.5.1/components/pthread C:/Users/admin/2/hydro1.0/components/pump_manager C:/Espressif/frameworks/esp-idf-v5.5.1/components/rt C:/Espressif/frameworks/esp-idf-v5.5.1/components/sdmmc C:/Users/admin/2/hydro1.0/components/sensor_manager C:/Users/admin/2/hydro1.0/components/sht3x C:/Espressif/frameworks/esp-idf-v5.5.1/components/soc C:/Espressif/frameworks/esp-idf-v5.5.1/components/spi_flash C:/Espressif/frameworks/esp-idf-v5.5.1/components/spiffs C:/Users/admin/2/hydro1.0/components/system_interfaces C:/Users/admin/2/hydro1.0/components/system_monitor C:/Users/admin/2/hydro1.0/components/system_tasks C:/Users/admin/2/hydro1.0/components/task_scheduler C:/Espressif/frameworks/esp-idf-v5.5.1/components/tcp_transport C:/Espressif/frameworks/esp-idf-v5.5.1/components/touch_element C:/Users/admin/2/hydro1.0/components/trema_ec C:/Users/admin/2/hydro1.0/components/trema_expander C:/Users/admin/2/hydro1.0/components/trema_lux C:/Users/admin/2/hydro1.0/components/trema_ph C:/Users/admin/2/hydro1.0/components/trema_relay C:/Users/admin/2/hydro1.0/components/trend_predictor C:/Espressif/frameworks/esp-idf-v5.5.1/components/ulp C:/Espressif/frameworks/esp-idf-v5.5.1/components/unity C:/Espressif/frameworks/esp-idf-v5.5.1/components/usb C:/Espressif/frameworks/esp-idf-v5.5.1/components/vfs C:/Espressif/frameworks/esp-idf-v5.5.1/components/wear_levelling C:/Espressif/frameworks/esp-idf-v5.5.1/components/wifi_provisioning C:/Espressif/frameworks/esp-idf-v5.5.1/components/wpa_supplicant C:/Espressif/frameworks/esp-idf-v5.5.1/components/xtensa
+-- Configuring done (14.3s)
+-- Generating done (1.9s)
+-- Build files have been written to: C:/Users/admin/2/hydro1.0/build
+[1/11] Performing build step for 'bootloader'
+[1/1] C:\Windows\system32\cmd.exe /C "cd /D C:\Users\admin\2\hydro1.0\build\bootloader\esp-idf\esptool_py && C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe C:/Espressif/frameworks/esp-idf-v5.5.1/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 C:/Users/admin/2/hydro1.0/build/bootloader/bootloader.bin"
+Bootloader binary size 0x6020 bytes. 0x1fe0 bytes (25%) free.
+[2/11] No install step for 'bootloader'
+[3/11] Building C object esp-idf/esp_app_format/CMakeFiles/__idf_esp_app_format.dir/esp_app_desc.c.obj
+[4/11] Completed 'bootloader'
+[5/11] Linking C static library esp-idf\esp_app_format\libesp_app_format.a
+[6/11] Generating esp-idf/esp_system/ld/sections.ld
+[7/11] Linking CXX executable hydroponics.elf
+[8/11] Generating binary image from built executable
+esptool.py v4.10.0
+Creating esp32s3 image...
+Merged 2 ELF sections
+Successfully created esp32s3 image.
+Generated C:/Users/admin/2/hydro1.0/build/hydroponics.bin
+[9/11] C:\Windows\system32\cmd.exe /C "cd /D C:\Users\admin\2\hydro1.0\build\esp-idf\esptool_py && C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe C:/Espressif/frameworks/esp-idf-v5.5.1/components/partition_table/check_sizes.py --offset 0x8000 partition --type app C:/Users/admin/2/hydro1.0/build/partition_table/partition-table.bin C:/Users/admin/2/hydro1.0/build/hydroponics.bin"
+hydroponics.bin binary size 0xc0970 bytes. Smallest app partition is 0x100000 bytes. 0x3f690 bytes (25%) free.
+[9/11] C:\Windows\system32\cmd.exe /C "cd /D C:\Espressif\frameworks\esp-idf-v5.5.1\components\esptool_py && C:\Espressif\tools\cmake\3.30.2\bin\cmake.exe -D IDF_PATH=C:/Espressif/frameworks/esp-idf-v5.5.1 -D SERIAL_TOOL=C:/Espressif/python_env/idf5.5_py3.11_env/Scripts/python.exe;;C:/Espressif/frameworks/esp-idf-v5.5.1/components/esptool_py/esptool/esptool.py;--chip;esp32s3 -D SERIAL_TOOL_ARGS=--before=default_reset;--after=hard_reset;write_flash;@flash_args -D WORKING_DIRECTORY=C:/Users/admin/2/hydro1.0/build -P C:/Espressif/frameworks/esp-idf-v5.5.1/components/esptool_py/run_serial_tool.cmake"
+esptool.py --chip esp32s3 -p COM5 -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 4MB 0x0 bootloader/bootloader.bin 0x10000 hydroponics.bin 0x8000 partition_table/partition-table.bin
+esptool.py v4.10.0
+Serial port COM5
+
+A fatal error occurred: Could not open COM5, the port is busy or doesn't exist.
+Traceback (most recent call last):
+  File "C:\Espressif\frameworks\esp-idf-v5.5.1\tools\idf.py", line 871, in <module>
+    main()
+  File "C:\Espressif\frameworks\esp-idf-v5.5.1\tools\idf.py", line 761, in main
+    cli(argv, prog_name=PROG, complete_var=SHELL_COMPLETE_VAR)
+  File "C:\Espressif\python_env\idf5.5_py3.11_env\Lib\site-packages\click\core.py", line 1161, in __call__
+    return self.main(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Espressif\python_env\idf5.5_py3.11_env\Lib\site-packages\click\core.py", line 1082, in main
+    rv = self.invoke(ctx)
+         ^^^^^^^^^^^^^^^^
+  File "C:\Espressif\python_env\idf5.5_py3.11_env\Lib\site-packages\click\core.py", line 1729, in invoke
+    return _process_result(rv)
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Espressif\python_env\idf5.5_py3.11_env\Lib\site-packages\click\core.py", line 1666, in _process_result
+    value = ctx.invoke(self._result_callback, value, **ctx.params)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Espressif\python_env\idf5.5_py3.11_env\Lib\site-packages\click\core.py", line 788, in invoke
+    return __callback(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Espressif\frameworks\esp-idf-v5.5.1\tools\idf.py", line 656, in execute_tasks
+    task(ctx, global_args, task.action_args)
+  File "C:\Espressif\frameworks\esp-idf-v5.5.1\tools\idf.py", line 214, in __call__
+    self.callback(self.name, context, global_args, **action_args)
+  File "C:\Espressif\frameworks\esp-idf-v5.5.1\tools\idf_py_actions\serial_ext.py", line 242, in flash
+    run_target(action, args, env, force_progression=True)
+  File "C:\Espressif\frameworks\esp-idf-v5.5.1\tools\idf_py_actions\tools.py", line 501, in run_target
+    RunTool(generator_cmd[0], generator_cmd + [target_name], args.build_dir, env, custom_error_handler, hints=not args.no_hints,
+  File "C:\Espressif\frameworks\esp-idf-v5.5.1\tools\idf_py_actions\tools.py", line 319, in __call__
+    process, stderr_output_file, stdout_output_file = asyncio.run(self.run_command(self.args, env_copy))
+                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "asyncio\runners.py", line 190, in run
+  File "asyncio\runners.py", line 118, in run
+  File "asyncio\base_events.py", line 653, in run_until_complete
+  File "C:\Espressif\frameworks\esp-idf-v5.5.1\tools\idf_py_actions\tools.py", line 364, in run_command
+    await asyncio.gather(
+  File "C:\Espressif\frameworks\esp-idf-v5.5.1\tools\idf_py_actions\tools.py", line 463, in read_and_write_stream
+    output_converter.write(output)
+  File "encodings\cp1251.py", line 19, in encode
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2550' in position 51: character maps to <undefined>
+Exception ignored in: <function BaseSubprocessTransport.__del__ at 0x000002A927BAA3E0>
+Traceback (most recent call last):
+  File "asyncio\base_subprocess.py", line 126, in __del__
+  File "asyncio\base_subprocess.py", line 104, in close
+  File "asyncio\proactor_events.py", line 109, in close
+  File "asyncio\base_events.py", line 761, in call_soon
+  File "asyncio\base_events.py", line 519, in _check_closed
+RuntimeError: Event loop is closed

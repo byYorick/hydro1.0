@@ -207,7 +207,7 @@ esp_err_t ph_ec_controller_correct_ph(float current_ph)
     xSemaphoreGive(g_mutex);
 
     // АДАПТИВНАЯ PID коррекция с предсказанием и обучением
-    ESP_LOGI(TAG, "Адаптивная коррекция pH: текущ=%.2f цель=%.2f насос=%s",
+    ESP_LOGD(TAG, "Адаптивная коррекция pH: текущ=%.2f цель=%.2f насос=%s",
              current_ph, target_ph, PUMP_NAMES[pump_idx]);
     
     return pump_manager_compute_and_execute_adaptive(pump_idx, current_ph, target_ph);
@@ -230,14 +230,14 @@ esp_err_t ph_ec_controller_correct_ec(float current_ec)
 
     if (error < 0) {
         // EC выше целевого, нужно разбавить водой
-        ESP_LOGI(TAG, "Адаптивная коррекция EC водой: текущ=%.2f цель=%.2f",
+        ESP_LOGD(TAG, "Адаптивная коррекция EC водой: текущ=%.2f цель=%.2f",
                  current_ec, target_ec);
         
         return pump_manager_compute_and_execute_adaptive(PUMP_INDEX_WATER, current_ec, target_ec);
     } else {
         // EC ниже целевого, нужно добавить питательные вещества
         // Запускаем все три насоса EC последовательно через адаптивный PID
-        ESP_LOGI(TAG, "Адаптивная коррекция EC питательными веществами: текущ=%.2f цель=%.2f",
+        ESP_LOGD(TAG, "Адаптивная коррекция EC питательными веществами: текущ=%.2f цель=%.2f",
                  current_ec, target_ec);
 
         esp_err_t result = ESP_OK;

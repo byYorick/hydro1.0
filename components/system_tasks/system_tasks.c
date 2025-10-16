@@ -336,9 +336,12 @@ static void sensor_task(void *pvParameters)
             
             ph_ec_controller_update_values(sensor_data.ph, sensor_data.ec);
 
-            data_logger_log_sensor_data(sensor_data.ph, sensor_data.ec,
-                                        sensor_data.temperature, sensor_data.humidity,
-                                        sensor_data.lux, sensor_data.co2);
+            // Логируем данные датчиков раз в минуту (60 циклов), а не каждую секунду
+            if (task_context.sensor_stats.execution_count % 60 == 0) {
+                data_logger_log_sensor_data(sensor_data.ph, sensor_data.ec,
+                                            sensor_data.temperature, sensor_data.humidity,
+                                            sensor_data.lux, sensor_data.co2);
+            }
 
             sensor_stats.successful_cycles++;
         } else {

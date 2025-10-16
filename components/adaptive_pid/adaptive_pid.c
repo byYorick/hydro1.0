@@ -471,7 +471,7 @@ esp_err_t adaptive_pid_learn_buffer_capacity(pump_index_t pump_idx,
     
     state->total_corrections++;
     
-    ESP_LOGI(TAG, "Насос %d: обучение - изменение=%.2f, доза=%.1fмл, емкость=%.2fмл/0.1",
+    ESP_LOGD(TAG, "Насос %d: обучение - изменение=%.2f, доза=%.1fмл, емкость=%.2fмл/0.1",
              pump_idx, value_change, dose_ml, state->buffer_capacity);
     
     // ЭТАП 10: Периодическое сохранение каждые 10 коррекций
